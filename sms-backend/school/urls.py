@@ -16,6 +16,7 @@ from .views import (
     ImportTemplateDownloadView, StudentsBulkImportView, StaffBulkImportView,
     TenantSettingsView, TenantSettingDeleteView,
     FinanceSettingsView, GeneralSettingsView,
+    MpesaStkPushView, MpesaStkCallbackView, MpesaStkStatusView,
     ControlPlaneSummaryView, SecurityPolicyView,
     LifecycleTemplateListView, LifecycleRunListCreateView,
     LifecycleRunDetailView, LifecycleRunStartView,
@@ -388,10 +389,9 @@ urlpatterns = [
     path('settings/domain/request/',        SchoolDomainRequestView.as_view(),  name='school_domain_request'),
     path('settings/domain/verify/',         SchoolDomainVerifyView.as_view(),   name='school_domain_verify'),
     # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    # ── M-Pesa STK Push ──────────────────────────────────────────────────────
+    path('finance/mpesa/push/',             MpesaStkPushView.as_view(),         name='mpesa_stk_push'),
+    path('finance/mpesa/callback/',         MpesaStkCallbackView.as_view(),     name='mpesa_stk_callback'),
+    path('finance/mpesa/status/',           MpesaStkStatusView.as_view(),       name='mpesa_stk_status'),
 ]
-
-
-
-
-
-

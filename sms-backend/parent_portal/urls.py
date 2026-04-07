@@ -42,6 +42,7 @@ from .views import (
     ParentTimetableExportView,
     ParentTimetableView,
     ParentHealthView,
+    ParentMpesaStatusView,
     ParentTransportView,
 )
 
@@ -67,6 +68,7 @@ urlpatterns = [
     path("finance/payments/", ParentFinancePaymentsView.as_view()),
     path("finance/payments/<int:payment_id>/receipt/", ParentFinanceReceiptView.as_view()),
     path("finance/pay/", ParentFinancePayView.as_view()),
+    path("finance/mpesa-status/", ParentMpesaStatusView.as_view()),
     path("finance/statement/", ParentFinanceStatementView.as_view()),
     path("messages/", ParentMessagesView.as_view()),
     path("announcements/", ParentAnnouncementsView.as_view()),

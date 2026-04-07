@@ -8452,6 +8452,199 @@ class FinanceSettingsView(APIView):
         return Response({'detail': 'Finance settings updated.', **data})
 
 
+class MpesaStkPushView(APIView):
+    """
+    POST /api/finance/mpesa/push/
+    Admin / finance staff can initiate an STK push for any student or invoice.
+
+    Body:
+        phone        (str, required)  — customer's Kenyan phone number
+        amount       (str, required)  — amount in KES
+        student_id   (int, optional)  — link transaction to a student
+        invoice_id   (int, optional)  — link transaction to a specific invoice
+        description  (str, optional)  — max 13 chars shown on phone
+    """
+    permission_classes = [permissions.IsAuthenticated, HasModuleAccess]
+    module_key = "FINANCE"
+
+    def post(self, request):
+        from .mpesa import initiate_stk_push, MpesaError, _normalise_phone
+        from .models import PaymentGatewayTransaction
+        from decimal import Decimal, InvalidOperation
+        import uuid
+
+        phone = (request.data.get("phone") or "").strip()
+        if not phone:
+            return Response({"error": "Phone number is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            amount = Decimal(str(request.data.get("amount") or "0"))
+        except InvalidOperation:
+            return Response({"error": "Invalid amount."}, status=status.HTTP_400_BAD_REQUEST)
+        if amount <= 0:
+            return Response({"error": "Amount must be greater than zero."}, status=status.HTTP_400_BAD_REQUEST)
+
+        student_id = request.data.get("student_id")
+        invoice_id = request.data.get("invoice_id")
+        description = (request.data.get("description") or "School Fees")[:13]
+
+        # Build callback URL — Safaricom requires HTTPS in production
+        callback_url = request.build_absolute_uri("/api/finance/mpesa/callback/")
+        if not callback_url.startswith("https://") and settings.DEBUG:
+            # In sandbox mode Daraja accepts http; just log a warning
+            import logging
+            logging.getLogger(__name__).warning(
+                "MPesa callback URL is not HTTPS: %s. This is only acceptable in sandbox mode.", callback_url
+            )
+
+        reference = f"FEES-{uuid.uuid4().hex[:6].upper()}"
+
+        try:
+            result = initiate_stk_push(
+                phone=phone,
+                amount=amount,
+                account_ref=reference,
+                callback_url=callback_url,
+                description=description,
+            )
+        except MpesaError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Record the pending transaction
+        tx = PaymentGatewayTransaction.objects.create(
+            provider="mpesa",
+            external_id=result["checkout_request_id"],
+            student_id=student_id,
+            invoice_id=invoice_id,
+            amount=amount,
+            currency="KES",
+            status="PENDING",
+            payload={
+                "checkout_request_id": result["checkout_request_id"],
+                "merchant_request_id": result["merchant_request_id"],
+                "phone": phone,
+                "reference": reference,
+                "description": description,
+                "environment": result["environment"],
+                "initiated_by_user_id": request.user.id,
+                "initiated_by_username": request.user.username,
+            },
+        )
+
+        return Response(
+            {
+                "transaction_id": tx.id,
+                "checkout_request_id": result["checkout_request_id"],
+                "reference": reference,
+                "message": result["customer_message"] or "STK push sent. Please check your phone.",
+                "status": "PENDING",
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class MpesaStkCallbackView(APIView):
+    """
+    POST /api/finance/mpesa/callback/
+    Safaricom Daraja posts the STK push result here.
+    This endpoint is public (no auth) — Safaricom cannot send auth headers.
+    On success: updates the PaymentGatewayTransaction and creates a Payment record.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        from .mpesa import parse_stk_callback
+        from .models import PaymentGatewayTransaction, Payment
+        from django.utils import timezone as tz
+        import logging
+
+        log = logging.getLogger(__name__)
+        payload = request.data if isinstance(request.data, dict) else {}
+        parsed = parse_stk_callback(payload)
+
+        checkout_id = parsed.get("checkout_request_id", "")
+        if not checkout_id:
+            return Response({"ResultCode": 0, "ResultDesc": "Accepted (no checkout id)"})
+
+        try:
+            tx = PaymentGatewayTransaction.objects.filter(
+                provider="mpesa",
+                external_id=checkout_id,
+            ).first()
+
+            if tx:
+                if parsed["success"]:
+                    tx.status = "SUCCEEDED"
+                    tx.payload.update({
+                        "mpesa_receipt": parsed["mpesa_receipt"],
+                        "transaction_date": parsed["transaction_date"],
+                        "phone": parsed["phone"],
+                        "callback_result_desc": parsed["result_desc"],
+                    })
+                    tx.save(update_fields=["status", "payload", "updated_at"])
+
+                    # Create a Payment record if one doesn't already exist for this receipt
+                    if parsed["mpesa_receipt"] and not Payment.objects.filter(
+                        reference_number=parsed["mpesa_receipt"]
+                    ).exists():
+                        Payment.objects.create(
+                            student=tx.student,
+                            invoice=tx.invoice,
+                            amount=parsed["amount"] or tx.amount,
+                            payment_method="M-Pesa",
+                            payment_date=tz.now().date(),
+                            reference_number=parsed["mpesa_receipt"],
+                            received_by=None,
+                            notes=f"M-Pesa STK Push | {parsed['phone']} | {parsed['transaction_date']}",
+                            is_active=True,
+                        )
+                else:
+                    tx.status = "FAILED"
+                    tx.payload.update({
+                        "result_code": parsed["result_code"],
+                        "result_desc": parsed["result_desc"],
+                    })
+                    tx.save(update_fields=["status", "payload", "updated_at"])
+            else:
+                log.warning("MPesa callback received for unknown checkout_id: %s", checkout_id)
+
+        except Exception as exc:
+            log.error("Error processing MPesa callback: %s", exc, exc_info=True)
+
+        # Always return 200 — Safaricom retries on non-200
+        return Response({"ResultCode": 0, "ResultDesc": "Accepted"})
+
+
+class MpesaStkStatusView(APIView):
+    """
+    GET /api/finance/mpesa/status/?checkout_request_id=xxx
+    Poll the status of a pending STK push transaction.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from .models import PaymentGatewayTransaction
+
+        checkout_id = request.query_params.get("checkout_request_id", "").strip()
+        if not checkout_id:
+            return Response({"error": "checkout_request_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        tx = PaymentGatewayTransaction.objects.filter(
+            provider="mpesa", external_id=checkout_id
+        ).first()
+        if not tx:
+            return Response({"error": "Transaction not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        return Response({
+            "transaction_id": tx.id,
+            "status": tx.status,
+            "amount": str(tx.amount),
+            "mpesa_receipt": tx.payload.get("mpesa_receipt"),
+            "result_desc": tx.payload.get("callback_result_desc") or tx.payload.get("result_desc"),
+            "updated_at": tx.updated_at,
+        })
+
+
 class GeneralSettingsView(APIView):
     """
     GET/PATCH general school settings: timezone, language, default_date_format

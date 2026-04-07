@@ -459,15 +459,73 @@ class ParentFinancePayView(ParentPortalAccessMixin, APIView):
         child, _ = _pick_child(request)
         if not child:
             return _no_linked_child_response()
+
         amount = Decimal(str(request.data.get("amount") or "0"))
         if amount <= 0:
             return Response({"error": "Amount must be greater than zero."}, status=status.HTTP_400_BAD_REQUEST)
+
         method = (request.data.get("payment_method") or "Online").strip()
+        invoice_id = request.data.get("invoice_id")
+
+        # ── M-Pesa STK Push path ──────────────────────────────────────────
+        if method.lower() in ("mpesa", "m-pesa", "mobile money"):
+            phone = (request.data.get("phone") or "").strip()
+            if not phone:
+                return Response(
+                    {"error": "Phone number is required for M-Pesa payment."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            from school.mpesa import initiate_stk_push, MpesaError
+            callback_url = request.build_absolute_uri("/api/finance/mpesa/callback/")
+            reference = f"FEES-{uuid.uuid4().hex[:6].upper()}"
+            try:
+                result = initiate_stk_push(
+                    phone=phone,
+                    amount=amount,
+                    account_ref=reference,
+                    callback_url=callback_url,
+                    description="School Fees",
+                )
+            except MpesaError as exc:
+                return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+            tx = PaymentGatewayTransaction.objects.create(
+                provider="mpesa",
+                external_id=result["checkout_request_id"],
+                student=child,
+                invoice_id=invoice_id,
+                amount=amount,
+                currency="KES",
+                status="PENDING",
+                payload={
+                    "checkout_request_id": result["checkout_request_id"],
+                    "merchant_request_id": result["merchant_request_id"],
+                    "phone": phone,
+                    "reference": reference,
+                    "source": "parent_portal",
+                    "initiated_by_user_id": request.user.id,
+                    "initiated_by_username": request.user.username,
+                },
+            )
+            return Response(
+                {
+                    "payment_id": tx.id,
+                    "checkout_request_id": result["checkout_request_id"],
+                    "reference_number": reference,
+                    "payment_method": "M-Pesa",
+                    "status": "PENDING",
+                    "message": result["customer_message"] or "STK push sent. Please check your phone and enter your M-Pesa PIN.",
+                },
+                status=status.HTTP_201_CREATED,
+            )
+
+        # ── All other payment methods (manual / bank / cash) ─────────────
         reference_number = f"PPORT-{uuid.uuid4().hex[:8].upper()}"
         row = PaymentGatewayTransaction.objects.create(
             provider="parent_portal",
             external_id=reference_number,
             student=child,
+            invoice_id=invoice_id,
             amount=amount,
             currency="KES",
             status="INITIATED",
@@ -482,10 +540,44 @@ class ParentFinancePayView(ParentPortalAccessMixin, APIView):
             {
                 "payment_id": row.id,
                 "reference_number": row.external_id,
+                "payment_method": method,
                 "status": "Initiated",
             },
             status=status.HTTP_201_CREATED,
         )
+
+
+class ParentMpesaStatusView(ParentPortalAccessMixin, APIView):
+    """
+    GET /api/parent-portal/finance/mpesa-status/?checkout_request_id=xxx
+    Parent polls this after initiating an STK push to check if payment succeeded.
+    """
+    def get(self, request):
+        checkout_id = request.query_params.get("checkout_request_id", "").strip()
+        if not checkout_id:
+            return Response({"error": "checkout_request_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        child, _ = _pick_child(request)
+        tx = PaymentGatewayTransaction.objects.filter(
+            provider="mpesa",
+            external_id=checkout_id,
+            student=child,
+        ).first()
+        if not tx:
+            return Response({"error": "Transaction not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        return Response({
+            "transaction_id": tx.id,
+            "status": tx.status,
+            "amount": str(tx.amount),
+            "mpesa_receipt": tx.payload.get("mpesa_receipt"),
+            "message": (
+                "Payment confirmed." if tx.status == "SUCCEEDED"
+                else "Payment failed. Please try again." if tx.status == "FAILED"
+                else "Waiting for M-Pesa confirmation..."
+            ),
+            "updated_at": tx.updated_at,
+        })
 
 
 class ParentFinanceStatementView(ParentPortalAccessMixin, APIView):
