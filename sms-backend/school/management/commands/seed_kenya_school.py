@@ -203,8 +203,8 @@ class Command(BaseCommand):
         self.stdout.write("  Seeding communication messages…")
         self._seed_communication(students, admin)
 
-        self.stdout.write("  Seeding Kenyan CBC curriculum…")
-        self._seed_curriculum()
+        self.stdout.write("  Seeding Kenyan CBC curriculum (departments + subjects)…")
+        self._seed_curriculum_base()
 
         self.stdout.write("  Seeding gradebook (assessments + marks + term results + report cards)…")
         self._seed_gradebook_and_reports(year, terms, classes)
@@ -259,6 +259,57 @@ class Command(BaseCommand):
 
         self.stdout.write("  Seeding parent portal account links…")
         self._seed_parent_portal(students, admin)
+
+        self.stdout.write("  Seeding admissions pipeline (inquiries → decisions)…")
+        self._seed_admissions_pipeline(year, terms, classes, admin)
+
+        self.stdout.write("  Seeding curriculum (schemes of work, lesson plans, resources)…")
+        self._seed_curriculum(year, terms, classes, admin)
+
+        self.stdout.write("  Seeding comprehensive HR (departments, payroll, recruitment, performance)…")
+        self._seed_hr_comprehensive(admin)
+
+        self.stdout.write("  Seeding staff management (qualifications, attendance, appraisals, observations)…")
+        self._seed_staff_mgmt_comprehensive(admin, classes)
+
+        self.stdout.write("  Seeding communication (conversations, notifications, campaigns)…")
+        self._seed_communication_data(admin)
+
+        self.stdout.write("  Seeding asset assignments, maintenance and warranties…")
+        self._seed_assets_comprehensive(admin)
+
+        self.stdout.write("  Seeding cafeteria meal transactions and wallet top-ups…")
+        self._seed_cafeteria_comprehensive(students, admin)
+
+        self.stdout.write("  Seeding hostel attendance and leave records…")
+        self._seed_hostel_comprehensive(students, admin)
+
+        self.stdout.write("  Seeding timetable duty slots for staff…")
+        self._seed_timetable_comprehensive(terms)
+
+        self.stdout.write("  Seeding transport incidents…")
+        self._seed_transport_comprehensive()
+
+        self.stdout.write("  Seeding visitor authorized pickups and pickup logs…")
+        self._seed_visitor_comprehensive(students, admin)
+
+        self.stdout.write("  Seeding library reservations, inventory audit and acquisition requests…")
+        self._seed_library_comprehensive(admin)
+
+        self.stdout.write("  Seeding e-learning quiz attempts…")
+        self._seed_elearning_comprehensive(students)
+
+        self.stdout.write("  Seeding maintenance checklist items…")
+        self._seed_maintenance_comprehensive()
+
+        self.stdout.write("  Seeding school store (categories, items, transactions, orders)…")
+        self._seed_store_comprehensive(admin)
+
+        self.stdout.write("  Seeding dispensary (stock, visits, prescriptions)…")
+        self._seed_dispensary(students, admin)
+
+        self.stdout.write("  Seeding examination setter assignments…")
+        self._seed_exam_setter_assignments(admin)
 
         self.stdout.write("  Activating all modules for this tenant (TenantModule)…")
         self._seed_tenant_modules()
@@ -461,8 +512,8 @@ class Command(BaseCommand):
             f"    → Grades entered: {total_grades}, Report cards: {total_cards}"
         )
 
-    # ── Kenyan CBC Curriculum ─────────────────────────────────────────────────
-    def _seed_curriculum(self):
+    # ── Kenyan CBC Curriculum (Departments + Subjects) ────────────────────────
+    def _seed_curriculum_base(self):
         # Departments
         DEPT_DATA = [
             ("Sciences", "Biology, Chemistry, Physics, Agriculture"),
@@ -2582,6 +2633,1667 @@ class Command(BaseCommand):
             f"(total: {ParentStudentLink.objects.count()} links for "
             f"{User.objects.filter(username__startswith='parent.').count()} parent accounts)"
         )
+
+    # ── Admissions Pipeline ───────────────────────────────────────────────────
+    def _seed_admissions_pipeline(self, year, terms, classes, admin_user):
+        try:
+            from admissions.models import (
+                AdmissionInquiry, AdmissionApplicationProfile,
+                AdmissionReview, AdmissionAssessment,
+                AdmissionInterview, AdmissionDecision,
+            )
+        except ImportError:
+            self.stdout.write("    Admissions app not available — skipping")
+            return
+        import random
+        random.seed(41)
+        from datetime import datetime as _dt
+
+        term1 = terms[0] if terms else None
+        flat_classes = []
+        if isinstance(classes, dict):
+            for fd in classes.values():
+                if isinstance(fd, dict):
+                    east = fd.get("East")
+                    if east:
+                        flat_classes.append(east)
+        flat_classes = flat_classes[:4]
+
+        INQUIRIES = [
+            ("Mr. Daniel Kiprotich",  "0722345678", "david.kiprotich@gmail.com",   "Leon Kiprotich",    date(2014, 3, 12), "Referral"),
+            ("Mrs. Gladys Mwende",    "0733456789", "gladys.mwende@gmail.com",     "Sharon Mwende",     date(2014, 7, 5),  "Website"),
+            ("Mr. Festus Oduor",      "0701234567", "festus.oduor@gmail.com",      "Caleb Oduor",       date(2014, 9, 20), "Walk-in"),
+            ("Mrs. Lydia Njeri",      "0754321098", "lydia.njeri@gmail.com",       "Brian Njeri",       date(2014, 2, 14), "Event"),
+            ("Mr. Patrick Otieno",    "0789012345", "patrick.otieno@gmail.com",    "Millicent Otieno",  date(2014, 5, 3),  "Advertisement"),
+            ("Mrs. Christine Waweru", "0712345890", "christine.waweru@gmail.com",  "Elvis Waweru",      date(2014, 8, 17), "Referral"),
+        ]
+
+        inquiries = []
+        for parent_name, phone, email, child_name, child_dob, source in INQUIRIES:
+            inq, _ = AdmissionInquiry.objects.get_or_create(
+                parent_email=email,
+                defaults={
+                    "parent_name":   parent_name,
+                    "parent_phone":  phone,
+                    "child_name":    child_name,
+                    "child_dob":     child_dob,
+                    "inquiry_source": source,
+                    "inquiry_date":   date(2025, 1, random.randint(5, 28)),
+                    "preferred_start": term1,
+                    "status":         "Applied",
+                    "assigned_counselor": admin_user,
+                    "grade_level_interest": flat_classes[0] if flat_classes else None,
+                },
+            )
+            inquiries.append(inq)
+
+        # Seed full pipeline using existing AdmissionApplications in school.AdmissionApplication
+        from school.models import AdmissionApplication
+        apps = list(AdmissionApplication.objects.all()[:6])
+
+        for i, app in enumerate(apps):
+            # AdmissionApplicationProfile
+            AdmissionApplicationProfile.objects.get_or_create(
+                application=app,
+                defaults={
+                    "inquiry": inquiries[i] if i < len(inquiries) else None,
+                    "academic_year": year,
+                    "term": term1,
+                    "is_shortlisted": i < 4,
+                    "special_needs": "",
+                    "emergency_contact_name": app.guardian_name,
+                    "emergency_contact_phone": app.guardian_phone,
+                    "languages": "English, Swahili",
+                },
+            )
+
+            # AdmissionReview
+            if not AdmissionReview.objects.filter(application=app).exists():
+                AdmissionReview.objects.create(
+                    application=app,
+                    reviewer=admin_user,
+                    academic_score=Decimal(str(round(random.uniform(60, 95), 1))),
+                    test_score=Decimal(str(round(random.uniform(55, 90), 1))),
+                    interview_score=Decimal(str(round(random.uniform(65, 95), 1))) if i < 4 else None,
+                    overall_score=Decimal(str(round(random.uniform(60, 92), 1))),
+                    recommendation="Accept" if i < 4 else "Waitlist",
+                    comments="Candidate meets all required admission criteria." if i < 4 else "Strong candidate; on waiting list.",
+                )
+
+            # AdmissionAssessment
+            if not AdmissionAssessment.objects.filter(application=app).exists():
+                AdmissionAssessment.objects.create(
+                    application=app,
+                    scheduled_at=_dt(2025, 1, 18, 9, 0),
+                    venue="Examination Hall, Block A",
+                    score=Decimal(str(round(random.uniform(55, 95), 1))),
+                    is_pass=(i < 4),
+                    status="Completed",
+                    notes="Assessment conducted as part of admission screening.",
+                    created_by=admin_user,
+                )
+
+            # AdmissionInterview (for shortlisted)
+            if i < 4 and not AdmissionInterview.objects.filter(application=app).exists():
+                AdmissionInterview.objects.create(
+                    application=app,
+                    interview_date=_dt(2025, 1, 25, 10, 0),
+                    interview_type="In-person",
+                    location="Principal's Office",
+                    panel=["Principal", "Deputy Principal", "HOD"],
+                    status="Completed",
+                    feedback="Candidate demonstrated strong academic potential and good character.",
+                    score=Decimal(str(round(random.uniform(70, 95), 1))),
+                    created_by=admin_user,
+                )
+
+            # AdmissionDecision
+            AdmissionDecision.objects.get_or_create(
+                application=app,
+                defaults={
+                    "decision":        "Accept" if i < 4 else "Waitlist",
+                    "decision_date":   date(2025, 2, 1),
+                    "decision_notes":  "Decision made after full review of application, assessment and interview." if i < 4 else "Placed on waiting list; will be notified if space opens.",
+                    "offer_deadline":  date(2025, 2, 15),
+                    "response_status": "Accepted" if i < 3 else "Pending",
+                    "decided_by":      admin_user,
+                },
+            )
+
+        self.stdout.write(
+            f"    → Admissions: {AdmissionInquiry.objects.count()} inquiries, "
+            f"{AdmissionApplicationProfile.objects.count()} profiles, "
+            f"{AdmissionReview.objects.count()} reviews, "
+            f"{AdmissionAssessment.objects.count()} assessments, "
+            f"{AdmissionInterview.objects.count()} interviews, "
+            f"{AdmissionDecision.objects.count()} decisions"
+        )
+
+    # ── Curriculum ────────────────────────────────────────────────────────────
+    def _seed_curriculum(self, year, terms, classes, admin_user):
+        try:
+            from curriculum.models import SchemeOfWork, SchemeTopic, LessonPlan, LearningResource
+        except ImportError:
+            self.stdout.write("    Curriculum app not available — skipping")
+            return
+        import random
+        random.seed(42)
+        from datetime import datetime as _dt
+
+        term1 = terms[0] if terms else None
+        core_subjects = list(Subject.objects.filter(is_active=True)[:6])
+
+        flat_classes = []
+        if isinstance(classes, dict):
+            for fd in classes.values():
+                if isinstance(fd, dict):
+                    east = fd.get("East")
+                    if east:
+                        flat_classes.append(east)
+        flat_classes = flat_classes[:4]
+
+        TOPICS = [
+            ("Introduction and Overview",            "Sub-topic 1; Sub-topic 2",     "Understand key concepts"),
+            ("Core Concepts and Principles",          "Sub-topic A; Sub-topic B",     "Apply principles to problems"),
+            ("Problem Solving and Application",       "Case studies; Exercises",       "Solve structured problems"),
+            ("Assessment and Review",                 "Practice questions; Summary",   "Review and consolidate learning"),
+            ("Extension and Enrichment",              "Research tasks; Projects",      "Explore advanced applications"),
+            ("Mid-Term Revision",                     "Past papers; Key topics",       "Prepare for mid-term exam"),
+            ("Project Work",                          "Group work; Presentations",     "Develop collaborative skills"),
+            ("End of Term Summary",                   "Summary notes; Class quiz",     "Consolidate term learning"),
+        ]
+
+        scheme_count = topic_count = plan_count = resource_count = 0
+        for cls in flat_classes[:2]:
+            for subj in core_subjects[:3]:
+                scheme, s_created = SchemeOfWork.objects.get_or_create(
+                    subject=subj, school_class=cls, term=term1,
+                    defaults={
+                        "title": f"{subj.name} – {cls.name} – Term 1 2025",
+                        "objectives": f"By the end of Term 1, learners will master foundational {subj.name} concepts.",
+                        "created_by": admin_user,
+                    },
+                )
+                if s_created:
+                    scheme_count += 1
+
+                for week, (topic, sub_topics, outcomes) in enumerate(TOPICS, start=1):
+                    st, t_created = SchemeTopic.objects.get_or_create(
+                        scheme=scheme, week_number=week,
+                        defaults={
+                            "topic":             f"{subj.name}: {topic}",
+                            "sub_topics":        sub_topics,
+                            "learning_outcomes": outcomes,
+                            "teaching_methods":  "Lecture, Discussion, Group Work, Q&A",
+                            "resources":         "Textbook, Whiteboard, Worksheets",
+                            "assessment_type":   "Quiz" if week % 2 == 0 else "Class Exercise",
+                            "is_covered":        week <= 5,
+                            "covered_date":      date(2025, 1, 6) + timedelta(weeks=week - 1) if week <= 5 else None,
+                        },
+                    )
+                    if t_created:
+                        topic_count += 1
+
+                    # Lesson plan for first 3 topics
+                    if week <= 3 and t_created:
+                        lesson_date = date(2025, 1, 6) + timedelta(weeks=week - 1)
+                        lp, lp_created = LessonPlan.objects.get_or_create(
+                            topic=st, date=lesson_date,
+                            defaults={
+                                "lesson_objectives": f"Students will understand {topic.lower()} in {subj.name}.",
+                                "introduction":       "Review of previous lesson. Brainstorm activity.",
+                                "presentation":       "Teacher-led explanation with examples on whiteboard.",
+                                "conclusion":         "Summary of key points. Q&A session.",
+                                "assessment_activity": "Short written exercise (5 questions).",
+                                "homework":           "Read pages 10–15 and attempt exercise set A.",
+                                "is_approved":        True,
+                                "approved_by":        admin_user,
+                            },
+                        )
+                        if lp_created:
+                            plan_count += 1
+
+        # Learning resources
+        RESOURCES = [
+            ("Mathematics Revision Notes – Form 1",    "Link",     "MTH", "https://kenyacurriculumhub.ac.ke/maths-f1"),
+            ("English Grammar Handbook",               "Document", "ENG", "https://kenyacurriculumhub.ac.ke/eng-grammar"),
+            ("Biology Diagrams and Notes",             "Document", "BIO", "https://kenyacurriculumhub.ac.ke/bio-diagrams"),
+            ("Chemistry Formula Sheet",                "Document", "CHE", "https://kenyacurriculumhub.ac.ke/chem-formulae"),
+            ("Physics Formula Sheet",                  "Document", "PHY", "https://kenyacurriculumhub.ac.ke/phys-formulae"),
+            ("History & Government Past Papers",       "Link",     "HIS", "https://kenyacurriculumhub.ac.ke/hist-papers"),
+        ]
+        for title, rtype, subj_code, url in RESOURCES:
+            subj = Subject.objects.filter(code=subj_code).first()
+            if subj:
+                _, r_created = LearningResource.objects.get_or_create(
+                    title=title,
+                    defaults={
+                        "resource_type": rtype,
+                        "subject":       subj,
+                        "external_url":  url,
+                        "description":   f"Reference resource for {subj.name}.",
+                        "uploaded_by":   admin_user,
+                    },
+                )
+                if r_created:
+                    resource_count += 1
+
+        self.stdout.write(
+            f"    → Curriculum: {SchemeOfWork.objects.count()} schemes, "
+            f"{SchemeTopic.objects.count()} topics, "
+            f"{LessonPlan.objects.count()} lesson plans, "
+            f"{LearningResource.objects.count()} resources"
+        )
+
+    # ── Comprehensive HR Data ─────────────────────────────────────────────────
+    def _seed_hr_comprehensive(self, admin_user):
+        try:
+            from hr.models import (
+                Department, Position, Employee,
+                EmployeeEmploymentProfile, EmployeeQualification, EmergencyContact,
+                ShiftTemplate, WorkSchedule, AttendanceRecord,
+                LeaveType, LeavePolicy, LeaveBalance, LeaveRequest,
+                SalaryStructure, SalaryComponent,
+                PayrollBatch, PayrollItem, PayrollItemBreakdown,
+                JobPosting, JobApplication, Interview,
+                OnboardingTask, PerformanceGoal, PerformanceReview,
+                TrainingProgram, TrainingEnrollment,
+                DisciplinaryCase,
+            )
+        except ImportError:
+            self.stdout.write("    HR app not available — skipping")
+            return
+        import random
+        from datetime import time as dt_time
+        random.seed(43)
+
+        # 1. Departments
+        DEPTS = [
+            ("Mathematics & Science",  "MATH-SCI", "Academic"),
+            ("Languages & Humanities", "LANG-HUM", "Academic"),
+            ("Technical & Vocational", "TECH-VOC", "Academic"),
+            ("Administration",         "ADMIN",    "Administrative"),
+            ("Support Services",       "SUPPORT",  "Support"),
+        ]
+        dept_map = {}
+        for name, code, _ in DEPTS:
+            dept, _ = Department.objects.get_or_create(code=code, defaults={"name": name, "is_active": True})
+            dept_map[code] = dept
+
+        # 2. Positions
+        POSITIONS = [
+            ("Head of Department – Mathematics", "MATH-SCI", 80000, 120000),
+            ("Head of Department – Languages",   "LANG-HUM", 80000, 120000),
+            ("Senior Teacher",                   "MATH-SCI", 65000, 90000),
+            ("Class Teacher",                    "LANG-HUM", 55000, 80000),
+            ("Administrative Officer",           "ADMIN",    45000, 65000),
+            ("ICT Technician",                   "TECH-VOC", 40000, 60000),
+            ("Laboratory Technician",            "MATH-SCI", 38000, 55000),
+            ("School Counsellor",                "ADMIN",    50000, 70000),
+        ]
+        pos_map = {}
+        for title, dept_code, sal_min, sal_max in POSITIONS:
+            pos, _ = Position.objects.get_or_create(
+                title=title,
+                defaults={
+                    "department": dept_map.get(dept_code),
+                    "salary_min": Decimal(str(sal_min)),
+                    "salary_max": Decimal(str(sal_max)),
+                    "is_active":  True,
+                },
+            )
+            pos_map[title] = pos
+
+        # 3. EmployeeEmploymentProfile + Qualifications + EmergencyContacts
+        employees = list(Employee.objects.all())
+        QUAL_DATA = [
+            ("Degree", "Bachelor of Education (Mathematics)", "University of Nairobi",        "Education",    2010),
+            ("Degree", "Bachelor of Arts (English)",           "Kenyatta University",           "English",      2008),
+            ("Degree", "Bachelor of Science (Biology)",        "Moi University",                "Biology",      2012),
+            ("Diploma", "Diploma in Education",               "Kenya National Polytechnic",    "Education",    2009),
+            ("Degree", "Bachelor of Commerce",                 "Strathmore University",         "Commerce",     2011),
+            ("Professional", "TSC Professional Certificate",  "Teachers Service Commission",  "Education",    2007),
+        ]
+        EMERGENCY_NAMES = [
+            ("Grace Mwangi",    "Spouse",  "0722100200"),
+            ("Paul Kamau",      "Brother", "0733200300"),
+            ("Jane Wanjiku",    "Spouse",  "0744300400"),
+            ("David Otieno",    "Father",  "0755400500"),
+            ("Susan Achieng",   "Spouse",  "0766500600"),
+            ("Peter Mutua",     "Brother", "0777600700"),
+        ]
+        KRA_PINS = [f"A{random.randint(1000000,9999999)}K" for _ in employees]
+        BANK_NAMES = ["Equity Bank", "KCB Bank", "Co-operative Bank", "NCBA Bank", "Family Bank"]
+        for i, emp in enumerate(employees[:20]):
+            # EmployeeEmploymentProfile
+            EmployeeEmploymentProfile.objects.get_or_create(
+                employee=emp,
+                defaults={
+                    "kra_pin":         KRA_PINS[i % len(KRA_PINS)],
+                    "nhif_number":     f"NHIF{random.randint(100000, 999999)}",
+                    "nssf_number":     f"NSSF{random.randint(100000, 999999)}",
+                    "tsc_number":      f"TSC{random.randint(10000, 99999)}" if emp.staff_category == "TEACHING" else "",
+                    "bank_name":       BANK_NAMES[i % len(BANK_NAMES)],
+                    "bank_branch":     "Nairobi Central Branch",
+                    "bank_account_name": f"{emp.first_name} {emp.last_name}",
+                    "bank_account_number": str(random.randint(10000000000, 99999999999)),
+                    "position_grade":  f"T-{random.randint(1,5)}" if emp.staff_category == "TEACHING" else f"A-{random.randint(1,3)}",
+                    "salary_scale":    f"Job Group {chr(75 + (i % 8))}",
+                    "probation_months": 3,
+                    "confirmation_due_date": date(2024, 6, 1),
+                },
+            )
+            # EmployeeQualification
+            if not emp.qualifications.exists():
+                qtype, qtitle, qinst, qfield, qyear = QUAL_DATA[i % len(QUAL_DATA)]
+                EmployeeQualification.objects.create(
+                    employee=emp,
+                    qualification_type=qtype,
+                    title=qtitle,
+                    institution=qinst,
+                    field_of_study=qfield,
+                    year_obtained=qyear,
+                    is_primary=True,
+                    is_active=True,
+                )
+            # EmergencyContact
+            if not emp.emergency_contacts.exists():
+                ename, erel, ephone = EMERGENCY_NAMES[i % len(EMERGENCY_NAMES)]
+                EmergencyContact.objects.create(
+                    employee=emp,
+                    name=ename,
+                    relationship=erel,
+                    phone_primary=ephone,
+                    is_primary=True,
+                    is_active=True,
+                )
+
+        # 4. ShiftTemplate
+        SHIFTS = [
+            ("Standard Teaching Shift",  "TEACH-STD",  "TEACHING",  dt_time(7, 0), dt_time(17, 0), [1, 2, 3, 4, 5]),
+            ("Admin Office Hours",        "ADMIN-STD",  "ADMIN",     dt_time(8, 0), dt_time(17, 0), [1, 2, 3, 4, 5]),
+            ("Support Services Shift",    "SUPPORT-STD","SUPPORT",   dt_time(6, 0), dt_time(18, 0), [1, 2, 3, 4, 5]),
+        ]
+        shift_map = {}
+        for name, code, cat, start, end, days in SHIFTS:
+            sh, _ = ShiftTemplate.objects.get_or_create(
+                code=code,
+                defaults={
+                    "name": name, "staff_category": cat, "shift_start": start,
+                    "shift_end": end, "working_days": days, "grace_minutes": 15,
+                    "break_duration_minutes": 60, "is_active": True,
+                },
+            )
+            shift_map[cat] = sh
+
+        # 5. WorkSchedule for first 10 employees
+        for emp in employees[:10]:
+            cat = emp.staff_category or "TEACHING"
+            sh = shift_map.get(cat, shift_map.get("TEACHING"))
+            if sh:
+                WorkSchedule.objects.get_or_create(
+                    employee=emp,
+                    shift_template=sh,
+                    effective_from=date(2025, 1, 6),
+                    defaults={
+                        "shift_start": sh.shift_start,
+                        "shift_end":   sh.shift_end,
+                        "working_days": sh.working_days,
+                        "break_duration": sh.break_duration_minutes,
+                        "is_active": True,
+                    },
+                )
+
+        # 6. AttendanceRecord — 5 days for first 15 employees
+        today = date.today()
+        monday = today - timedelta(days=today.weekday())
+        for day_offset in range(5):
+            school_day = monday + timedelta(days=day_offset)
+            for emp in employees[:15]:
+                status = "Present" if random.random() > 0.1 else "Late"
+                AttendanceRecord.objects.get_or_create(
+                    employee=emp, date=school_day,
+                    defaults={
+                        "status": status,
+                        "clock_in": dt_time(7, random.randint(0, 35)),
+                        "clock_out": dt_time(17, random.randint(0, 30)),
+                        "hours_worked": Decimal("8.5"),
+                        "attendance_source": "MANUAL",
+                    },
+                )
+
+        # 7. Leave data
+        leave_type = LeaveType.objects.first()
+        if leave_type:
+            # LeavePolicy
+            LeavePolicy.objects.get_or_create(
+                leave_type=leave_type, employment_type="Full-time",
+                defaults={
+                    "entitlement_days": Decimal("21.00"),
+                    "accrual_method":   "Annual",
+                    "carry_forward_max": 5,
+                    "effective_from":   date(2025, 1, 1),
+                    "is_active":        True,
+                },
+            )
+            # LeaveBalance + LeaveRequest for first 5 employees
+            for emp in employees[:5]:
+                LeaveBalance.objects.get_or_create(
+                    employee=emp, leave_type=leave_type, year=2025,
+                    defaults={
+                        "opening_balance": Decimal("21.00"),
+                        "accrued":         Decimal("21.00"),
+                        "used":            Decimal("3.00"),
+                        "pending":         Decimal("0.00"),
+                        "available":       Decimal("18.00"),
+                        "is_active":       True,
+                    },
+                )
+            # One approved leave request per first 3 employees
+            for emp in employees[:3]:
+                LeaveRequest.objects.get_or_create(
+                    employee=emp, leave_type=leave_type, start_date=date(2025, 3, 10),
+                    defaults={
+                        "end_date":      date(2025, 3, 12),
+                        "days_requested": Decimal("3.00"),
+                        "reason":        "Personal leave for family matter.",
+                        "status":        "Approved",
+                        "approved_by":   employees[0] if employees else None,
+                        "approved_at":   date(2025, 3, 5),
+                    },
+                )
+
+        # 8. SalaryStructure + SalaryComponent + PayrollBatch + PayrollItems
+        sal_structures = []
+        for i, emp in enumerate(employees[:10]):
+            basic = Decimal(str(random.randint(50000, 120000)))
+            struct, _ = SalaryStructure.objects.get_or_create(
+                employee=emp,
+                defaults={
+                    "basic_salary":  basic,
+                    "currency":      "KES",
+                    "pay_frequency": "Monthly",
+                    "effective_from": date(2025, 1, 1),
+                    "is_active":     True,
+                },
+            )
+            sal_structures.append((emp, struct, basic))
+            if not struct.components.exists():
+                SalaryComponent.objects.create(
+                    structure=struct, component_type="Allowance",
+                    name="House Allowance", amount_type="Fixed",
+                    amount=Decimal("15000.00"), is_taxable=True, is_active=True,
+                )
+                SalaryComponent.objects.create(
+                    structure=struct, component_type="Allowance",
+                    name="Transport Allowance", amount_type="Fixed",
+                    amount=Decimal("5000.00"), is_taxable=False, is_active=True,
+                )
+
+        # PayrollBatch for March 2025
+        batch, _ = PayrollBatch.objects.get_or_create(
+            month=3, year=2025,
+            defaults={
+                "status":        "Paid",
+                "total_gross":   Decimal("0.00"),
+                "total_deductions": Decimal("0.00"),
+                "total_net":     Decimal("0.00"),
+                "processed_by":  admin_user,
+                "approved_by":   admin_user,
+                "approved_at":   None,
+                "payment_date":  date(2025, 3, 28),
+            },
+        )
+        total_gross = Decimal("0.00")
+        total_net   = Decimal("0.00")
+        for emp, struct, basic in sal_structures[:8]:
+            allowances  = Decimal("20000.00")
+            gross       = basic + allowances
+            deductions  = (gross * Decimal("0.10")).quantize(Decimal("0.01"))
+            net         = gross - deductions
+            total_gross += gross
+            total_net   += net
+            PayrollItem.objects.get_or_create(
+                payroll=batch, employee=emp,
+                defaults={
+                    "basic_salary":          basic,
+                    "total_allowances":      allowances,
+                    "gross_salary":          gross,
+                    "statutory_deduction_total": deductions,
+                    "total_deductions":      deductions,
+                    "net_salary":            net,
+                },
+            )
+        if not batch.total_gross:
+            PayrollBatch.objects.filter(pk=batch.pk).update(
+                total_gross=total_gross, total_net=total_net,
+                total_deductions=total_gross - total_net,
+            )
+
+        # 9. JobPosting + JobApplication + Interview
+        senior_dept = dept_map.get("MATH-SCI")
+        posting, _ = JobPosting.objects.get_or_create(
+            title="Senior Mathematics Teacher",
+            defaults={
+                "department": senior_dept,
+                "description": "We seek a qualified and experienced Mathematics teacher.",
+                "requirements": "B.Ed Mathematics or BSc Mathematics with PGDE. TSC registered.",
+                "employment_type": "Full-time",
+                "salary_min": Decimal("70000.00"),
+                "salary_max": Decimal("100000.00"),
+                "deadline": date(2025, 2, 28),
+                "status": "Closed",
+                "posted_by": admin_user,
+            },
+        )
+        APPLICANTS = [
+            ("Francis", "Wangari",  "francis.wangari@gmail.com",   "Shortlisted"),
+            ("Diana",   "Achieng",  "diana.achieng@gmail.com",     "Shortlisted"),
+            ("George",  "Bett",     "george.bett@gmail.com",       "Rejected"),
+            ("Mercy",   "Ndungu",   "mercy.ndungu@gmail.com",      "Hired"),
+        ]
+        app_objects = []
+        for first, last, email, status in APPLICANTS:
+            app_obj, _ = JobApplication.objects.get_or_create(
+                job_posting=posting, email=email,
+                defaults={
+                    "first_name": first, "last_name": last,
+                    "cover_letter": f"I am {first} {last}, applying for the mathematics teacher position.",
+                    "status": status, "rating": random.randint(3, 5),
+                    "is_active": True,
+                },
+            )
+            app_objects.append(app_obj)
+        for idx, app_obj in enumerate(app_objects[:2]):
+            if not app_obj.interviews.exists():
+                from datetime import datetime as _dt
+                idate = _dt(2025, 2, 20 + idx, 14, 0)
+                Interview.objects.create(
+                    application=app_obj,
+                    interview_date=idate,
+                    interview_type="In-person",
+                    location="School Board Room",
+                    interviewers=["Principal", "Deputy Principal"],
+                    status="Completed",
+                    feedback="Strong candidate with excellent subject knowledge.",
+                    score=Decimal(str(round(random.uniform(75, 92), 1))),
+                    created_by=admin_user,
+                )
+
+        # 10. OnboardingTask for first 3 employees (newly hired)
+        ONBOARDING = [
+            ("COLLECT_ID",    "Collect and photocopy national ID/passport"),
+            ("TSC_LETTER",    "Obtain TSC posting letter"),
+            ("BANK_FORM",     "Complete bank account / salary payment form"),
+            ("NHIF_REG",      "Register with NHIF and obtain membership card"),
+            ("NSSF_REG",      "Register with NSSF and obtain membership number"),
+            ("INTRO_TOUR",    "Conduct school orientation tour"),
+        ]
+        for emp in employees[:3]:
+            for code, task in ONBOARDING:
+                OnboardingTask.objects.get_or_create(
+                    employee=emp, task_code=code,
+                    defaults={
+                        "task":         task,
+                        "assigned_to":  admin_user,
+                        "due_date":     emp.join_date + timedelta(days=7) if emp.join_date else date(2025, 1, 14),
+                        "status":       "Completed",
+                        "is_required":  True,
+                        "completed_at": None,
+                        "notes":        "Completed during induction week.",
+                    },
+                )
+
+        # 11. PerformanceGoal + PerformanceReview
+        for emp in employees[:8]:
+            PerformanceGoal.objects.get_or_create(
+                employee=emp,
+                title=f"Improve student pass rate to 80% — Term 1 2025",
+                defaults={
+                    "description": "Focus on weaker students through extra lessons and personalized support.",
+                    "target_date": date(2025, 3, 28),
+                    "status":      "In Progress",
+                    "weight":      Decimal("30.00"),
+                    "is_active":   True,
+                },
+            )
+        if len(employees) >= 2:
+            PerformanceReview.objects.get_or_create(
+                employee=employees[0],
+                review_period="Term 1 2025",
+                defaults={
+                    "reviewer":          employees[1] if len(employees) > 1 else None,
+                    "overall_rating":    Decimal("3.80"),
+                    "strengths":         "Excellent classroom management; strong student rapport.",
+                    "areas_improvement": "Could improve formative assessment frequency.",
+                    "status":            "Submitted",
+                    "reviewed_at":       None,
+                    "is_active":         True,
+                },
+            )
+
+        # 12. TrainingProgram + TrainingEnrollment
+        PROGRAMS = [
+            ("KNEC Curriculum Implementation Workshop", "KNEC Secretariat",      date(2025, 4, 7),  date(2025, 4, 9)),
+            ("Digital Literacy for Educators",           "Kenya ICT Authority",   date(2025, 5, 12), date(2025, 5, 14)),
+            ("School Leadership and Management",         "Kenya Education Staff", date(2025, 6, 2),  date(2025, 6, 5)),
+        ]
+        prog_objects = []
+        for title, trainer, start, end in PROGRAMS:
+            prog, _ = TrainingProgram.objects.get_or_create(
+                title=title,
+                defaults={"trainer": trainer, "start_date": start, "end_date": end, "capacity": 30, "is_active": True},
+            )
+            prog_objects.append(prog)
+        for prog in prog_objects:
+            for emp in employees[:5]:
+                TrainingEnrollment.objects.get_or_create(
+                    program=prog, employee=emp,
+                    defaults={"status": "Completed", "completion_date": prog.end_date, "is_active": True},
+                )
+
+        # 13. DisciplinaryCase
+        if employees:
+            DisciplinaryCase.objects.get_or_create(
+                case_number="DC-2025-001",
+                defaults={
+                    "employee":     employees[-1],
+                    "category":     "Lateness",
+                    "opened_on":    date(2025, 2, 10),
+                    "incident_date": date(2025, 2, 7),
+                    "summary":      "Repeated late arrivals — 4 incidents in 3 weeks.",
+                    "details":      "Employee arrived more than 30 minutes late on 4 separate occasions without prior notification.",
+                    "status":       "CLOSED",
+                    "outcome":      "WARNING",
+                    "effective_date": date(2025, 2, 17),
+                    "opened_by":    admin_user,
+                    "notes":        "Written warning issued. Employee acknowledged and signed. Counselled.",
+                },
+            )
+
+        self.stdout.write(
+            f"    → HR: {Department.objects.count()} depts, {Position.objects.count()} positions, "
+            f"{EmployeeEmploymentProfile.objects.count()} employment profiles, "
+            f"{EmployeeQualification.objects.count()} qualifications, "
+            f"{EmergencyContact.objects.count()} emergency contacts, "
+            f"{AttendanceRecord.objects.count()} attendance records, "
+            f"{PayrollBatch.objects.count()} payroll batches, "
+            f"{PayrollItem.objects.count()} payroll items, "
+            f"{LeaveRequest.objects.count()} leave requests, "
+            f"{JobPosting.objects.count()} job postings, "
+            f"{TrainingProgram.objects.count()} training programs, "
+            f"{DisciplinaryCase.objects.count()} disciplinary cases"
+        )
+
+    # ── Staff Management Comprehensive ───────────────────────────────────────
+    def _seed_staff_mgmt_comprehensive(self, admin_user, classes):
+        try:
+            from staff_mgmt.models import (
+                StaffMember, StaffQualification, StaffEmergencyContact,
+                StaffDepartment, StaffRole, StaffAssignment,
+                StaffAttendance, StaffObservation, StaffAppraisal,
+            )
+        except ImportError:
+            self.stdout.write("    Staff Mgmt app not available — skipping")
+            return
+        import random
+        from datetime import time as dt_time
+        random.seed(44)
+
+        members = list(StaffMember.objects.all())
+        if not members:
+            return
+
+        # 1. StaffDepartment
+        DEPTS = [
+            ("Mathematics & Science",  "SMS-MATH", "Academic"),
+            ("Languages & Humanities", "SMS-LANG", "Academic"),
+            ("Administration",         "SMS-ADMIN","Administrative"),
+        ]
+        dept_map = {}
+        for name, code, dtype in DEPTS:
+            dept, _ = StaffDepartment.objects.get_or_create(
+                code=code,
+                defaults={"name": name, "department_type": dtype, "is_active": True},
+            )
+            dept_map[code] = dept
+
+        # 2. StaffRole
+        ROLES = [
+            ("Head of Department",  "SMS-HOD",  3),
+            ("Senior Teacher",      "SMS-SRTCH", 2),
+            ("Class Teacher",       "SMS-CLTCH", 1),
+            ("Support Staff",       "SMS-SUPP",  1),
+        ]
+        role_map = {}
+        for name, code, level in ROLES:
+            role, _ = StaffRole.objects.get_or_create(
+                code=code,
+                defaults={"name": name, "level": level, "is_active": True},
+            )
+            role_map[code] = role
+
+        # 3. StaffQualification (first 20 members)
+        QUALS = [
+            ("Degree",  "B.Ed Mathematics",         "University of Nairobi",   "Mathematics Education", 2010),
+            ("Degree",  "B.A English & Literature",  "Kenyatta University",     "English",               2009),
+            ("Degree",  "B.Sc Biology",              "Moi University",          "Biological Sciences",   2011),
+            ("Diploma", "Diploma in Education",      "Kenya National Poly",     "Education",             2008),
+            ("Degree",  "B.Ed Physical Education",  "JKUAT",                   "Physical Education",    2013),
+        ]
+        for i, member in enumerate(members[:20]):
+            if not member.qualifications.exists():
+                qtype, qtitle, qinst, qfield, qyear = QUALS[i % len(QUALS)]
+                StaffQualification.objects.create(
+                    staff=member,
+                    qualification_type=qtype,
+                    title=qtitle,
+                    institution=qinst,
+                    field_of_study=qfield,
+                    year_obtained=qyear,
+                    is_active=True,
+                )
+
+        # 4. StaffEmergencyContact (first 20 members)
+        CONTACTS = [
+            ("Grace Kamau",    "Spouse",  "0722111222"),
+            ("Peter Oduor",    "Brother", "0733222333"),
+            ("Lydia Njoroge",  "Spouse",  "0744333444"),
+            ("Samuel Kipkos",  "Father",  "0755444555"),
+            ("Judith Achieng", "Spouse",  "0766555666"),
+        ]
+        for i, member in enumerate(members[:20]):
+            if not member.emergency_contacts.exists():
+                cname, crel, cphone = CONTACTS[i % len(CONTACTS)]
+                StaffEmergencyContact.objects.create(
+                    staff=member,
+                    name=cname,
+                    relationship=crel,
+                    phone_primary=cphone,
+                    is_primary=True,
+                    is_active=True,
+                )
+
+        # 5. StaffAssignment (first 15 members)
+        for i, member in enumerate(members[:15]):
+            dept = dept_map.get("SMS-MATH" if member.staff_type == "Teaching" else "SMS-ADMIN")
+            role = role_map.get("SMS-CLTCH" if member.staff_type == "Teaching" else "SMS-SUPP")
+            if dept and role:
+                StaffAssignment.objects.get_or_create(
+                    staff=member, department=dept, role=role,
+                    defaults={
+                        "is_primary":    True,
+                        "effective_from": date(2025, 1, 6),
+                        "is_active":     True,
+                    },
+                )
+
+        # 6. StaffAttendance — 5 days for first 15 members
+        today = date.today()
+        monday = today - timedelta(days=today.weekday())
+        for day_offset in range(5):
+            school_day = monday + timedelta(days=day_offset)
+            for member in members[:15]:
+                status = "Present" if random.random() > 0.08 else "Late"
+                StaffAttendance.objects.get_or_create(
+                    staff=member, date=school_day,
+                    defaults={
+                        "status":    status,
+                        "clock_in":  dt_time(7, random.randint(0, 40)),
+                        "clock_out": dt_time(17, random.randint(0, 30)),
+                        "marked_by": admin_user,
+                        "is_active": True,
+                    },
+                )
+
+        # 7. StaffObservation (first 5 teachers)
+        flat_classes = []
+        if isinstance(classes, dict):
+            for fd in classes.values():
+                if isinstance(fd, dict):
+                    east = fd.get("East")
+                    if east:
+                        flat_classes.append(east)
+        from datetime import datetime as _dt
+        observer = members[0] if members else None
+        obs_base_date = _dt(2025, 2, 15, 9, 0)
+        for i, member in enumerate(members[1:6]):
+            obs_dt = _dt(2025, 2, 15 + i, 9, 0)
+            StaffObservation.objects.get_or_create(
+                staff=member,
+                observer=observer,
+                observation_date=obs_dt,
+                defaults={
+                    "class_observed":    flat_classes[i % len(flat_classes)] if flat_classes else None,
+                    "lesson_topic":      "Algebra — Solving Linear Equations" if i % 2 == 0 else "Reading Comprehension",
+                    "overall_rating":    Decimal(str(round(random.uniform(3.0, 4.8), 1))),
+                    "strengths":         "Clear explanations; good student engagement.",
+                    "areas_improvement": "Could use more visual aids and group activities.",
+                    "recommendations":   "Attend collaborative teaching workshop.",
+                    "status":            "Submitted",
+                    "is_active":         True,
+                },
+            )
+
+        # 8. StaffAppraisal (first 8 members)
+        appraiser = members[0] if members else None
+        for member in members[1:9]:
+            StaffAppraisal.objects.get_or_create(
+                staff=member,
+                appraisal_period="Term 1 2025",
+                defaults={
+                    "appraiser":         appraiser,
+                    "self_rating":       Decimal(str(round(random.uniform(3.0, 4.5), 1))),
+                    "supervisor_rating": Decimal(str(round(random.uniform(3.0, 4.8), 1))),
+                    "overall_rating":    Decimal(str(round(random.uniform(3.0, 4.6), 1))),
+                    "strengths":         "Consistent performance; reliable and punctual.",
+                    "areas_development": "Leadership skills and curriculum innovation.",
+                    "goals_next_period": "Lead one inter-school academic competition.",
+                    "status":            "Submitted",
+                    "appraisal_date":    date(2025, 3, 20),
+                    "is_active":         True,
+                },
+            )
+
+        self.stdout.write(
+            f"    → Staff Mgmt: {StaffQualification.objects.count()} qualifications, "
+            f"{StaffEmergencyContact.objects.count()} emergency contacts, "
+            f"{StaffDepartment.objects.count()} departments, "
+            f"{StaffRole.objects.count()} roles, "
+            f"{StaffAssignment.objects.count()} assignments, "
+            f"{StaffAttendance.objects.count()} attendance records, "
+            f"{StaffObservation.objects.count()} observations, "
+            f"{StaffAppraisal.objects.count()} appraisals"
+        )
+
+    # ── Communication Data ────────────────────────────────────────────────────
+    def _seed_communication_data(self, admin_user):
+        try:
+            from communication.models import (
+                Conversation, ConversationParticipant, CommunicationMessage,
+                Notification, NotificationPreference,
+                EmailCampaign, SmsMessage, MessageTemplate,
+            )
+        except ImportError:
+            self.stdout.write("    Communication app not available — skipping")
+            return
+        import random
+        random.seed(45)
+
+        users = list(User.objects.all()[:8])
+        if not users:
+            return
+
+        # 1. Message Templates
+        TEMPLATES = [
+            ("Fee Reminder",     "Financial","Dear Parent,\nThis is a reminder that school fees of KES {amount} are due on {due_date}.\nKindly ensure timely payment.\n\nRegards,\nBursary Office"),
+            ("Event Invitation", "Event",   "Dear {name},\nYou are cordially invited to {event_name} on {event_date} at {venue}.\n\nRegards,\nSt. Mary's Nairobi"),
+            ("Exam Results",     "Academic","Dear Parent,\nYour child {student_name} has received their {exam_name} results.\nOverall grade: {grade}.\n\nFor more details, please contact the class teacher."),
+            ("Absence Alert",    "Alert",   "Dear Parent,\nYour child {student_name} was absent from school on {date}.\nPlease contact the school if this was unplanned.\n\nBest regards,\nSchool Administration"),
+        ]
+        for name, category, body in TEMPLATES:
+            MessageTemplate.objects.get_or_create(
+                name=name,
+                defaults={"category": category, "body": body, "created_by": admin_user},
+            )
+
+        # 2. Conversations + Messages
+        CONV_DATA = [
+            ("Fee Clarification – Term 1 2025",           "Group"),
+            ("Parent Portal Announcement",                 "Group"),
+            ("Staff Noticeboard – April 2025",             "Group"),
+        ]
+        for title, ctype in CONV_DATA:
+            conv, c_created = Conversation.objects.get_or_create(
+                title=title,
+                defaults={"conversation_type": ctype, "created_by": admin_user},
+            )
+            if c_created:
+                for user in users[:4]:
+                    ConversationParticipant.objects.get_or_create(
+                        conversation=conv, user=user,
+                        defaults={"role": "Admin" if user == admin_user else "Member"},
+                    )
+                CommunicationMessage.objects.create(
+                    conversation=conv,
+                    sender=admin_user,
+                    content=f"Welcome to '{title}'. Please check notices regularly.",
+                    message_type="Text",
+                    delivery_status="Read",
+                )
+
+        # 3. Notifications for all users
+        NOTIF_MESSAGES = [
+            ("Fee Statement Available",  "Your Term 1 2025 fee statement is ready for download.",  "Finance"),
+            ("Exam Timetable Released",  "The Term 2 mid-term exam timetable has been published.",  "Academic"),
+            ("Meeting Reminder",         "Parent-Teacher Meeting is scheduled for 8 March 2025.",   "System"),
+            ("Library Book Due",         "You have a library book due for return on 15 March 2025.", "System"),
+        ]
+        for user in users[:6]:
+            for i, (title, message, ntype) in enumerate(NOTIF_MESSAGES):
+                Notification.objects.get_or_create(
+                    recipient=user,
+                    title=title,
+                    defaults={
+                        "notification_type": ntype,
+                        "message":           message,
+                        "priority":          "Informational",
+                        "is_read":           (i % 2 == 0),
+                        "delivery_status":   "Delivered" if i % 2 == 0 else "Sent",
+                        "created_by":        admin_user,
+                    },
+                )
+            # NotificationPreference
+            NotificationPreference.objects.get_or_create(
+                user=user,
+                notification_type="System",
+                defaults={
+                    "channel_in_app": True,
+                    "channel_email":  True,
+                    "channel_sms":    False,
+                    "channel_push":   False,
+                },
+            )
+
+        # 4. EmailCampaign
+        EmailCampaign.objects.get_or_create(
+            title="Term 2 2025 Welcome Newsletter",
+            defaults={
+                "subject":      "Welcome to Term 2 2025 – St. Mary's Nairobi",
+                "body_text":    "Dear Parent,\n\nWe welcome you to Term 2 2025. Please find enclosed the term calendar and key dates.\n\nBest regards,\nThe Principal",
+                "body_html":    "<p>Dear Parent,</p><p>We welcome you to Term 2 2025. Please find enclosed the term calendar and key dates.</p><p>Best regards,<br>The Principal</p>",
+                "sender_name":  "St. Mary's Nairobi",
+                "sender_email": "info@stmarys.ac.ke",
+                "status":       "Sent",
+                "sent_at":      None,
+                "created_by":   admin_user,
+            },
+        )
+
+        # 5. SmsMessage
+        SMS_MSGS = [
+            ("0722000001", "Dear Parent, your child's Term 1 fee balance is outstanding. Please settle by 15 Jan 2025. Thank you."),
+            ("0733000002", "Exam timetable for Term 2 has been published. Log in to parent portal to view the schedule."),
+            ("0744000003", "School reopens 6 Jan 2025 (Term 1). Please ensure all fees are paid before first day. Regards, Administration."),
+        ]
+        for phone, msg in SMS_MSGS:
+            SmsMessage.objects.get_or_create(
+                recipient_phone=phone,
+                message=msg,
+                defaults={
+                    "channel":    "SMS",
+                    "status":     "Delivered",
+                    "created_by": admin_user,
+                },
+            )
+
+        self.stdout.write(
+            f"    → Communication: {Conversation.objects.count()} conversations, "
+            f"{CommunicationMessage.objects.count()} messages, "
+            f"{Notification.objects.count()} notifications, "
+            f"{EmailCampaign.objects.count()} campaigns, "
+            f"{SmsMessage.objects.count()} SMS messages, "
+            f"{MessageTemplate.objects.count()} templates"
+        )
+
+    # ── Assets Comprehensive ──────────────────────────────────────────────────
+    def _seed_assets_comprehensive(self, admin_user):
+        try:
+            from assets.models import Asset, AssetAssignment, AssetMaintenanceRecord, AssetWarranty, AssetDepreciation
+            from hr.models import Employee
+        except ImportError:
+            self.stdout.write("    Assets app not available — skipping")
+            return
+        import random
+        random.seed(46)
+
+        assets = list(Asset.objects.all())
+        employees = list(Employee.objects.all()[:5])
+        students  = list(Student.objects.all()[:5])
+
+        for i, asset in enumerate(assets[:8]):
+            # AssetAssignment (alternate employee and student)
+            if not asset.assignments.exists():
+                if i % 2 == 0 and employees:
+                    AssetAssignment.objects.create(
+                        asset=asset,
+                        assigned_to_employee=employees[i % len(employees)],
+                        assigned_date=date(2025, 1, 15),
+                        return_due_date=date(2025, 12, 31),
+                        status="Active",
+                        notes=f"Assigned for school use — {asset.name}",
+                    )
+                elif students:
+                    AssetAssignment.objects.create(
+                        asset=asset,
+                        assigned_to_student=students[i % len(students)],
+                        assigned_date=date(2025, 1, 15),
+                        return_due_date=date(2025, 3, 31),
+                        status="Active",
+                    )
+
+            # AssetMaintenanceRecord for first 5 assets
+            if i < 5 and not asset.maintenance_records.exists():
+                AssetMaintenanceRecord.objects.create(
+                    asset=asset,
+                    maintenance_type="Service" if i % 2 == 0 else "Inspection",
+                    scheduled_date=date(2025, 2, 10),
+                    completion_date=date(2025, 2, 12),
+                    cost=Decimal(str(random.randint(2000, 15000))),
+                    performed_by="Mwangi Electrical Services Ltd",
+                    description=f"Routine maintenance of {asset.name}.",
+                    status="Completed",
+                )
+
+            # AssetWarranty for first 6 assets
+            if i < 6 and not asset.warranties.exists():
+                AssetWarranty.objects.create(
+                    asset=asset,
+                    provider=f"{['Samsung', 'HP', 'Dell', 'LG', 'Epson', 'Lenovo'][i % 6]} East Africa",
+                    start_date=date(2024, 1, 1),
+                    expiry_date=date(2027, 1, 1),
+                    coverage_details="Full parts and labour warranty against manufacturing defects.",
+                    status="active",
+                )
+
+            # AssetDepreciation for first 8 assets
+            if not asset.depreciations.exists():
+                book_value = asset.purchase_cost if hasattr(asset, 'purchase_cost') and asset.purchase_cost else Decimal("50000.00")
+                depr_rate  = Decimal("0.20")
+                depr_amt   = (book_value * depr_rate).quantize(Decimal("0.01"))
+                AssetDepreciation.objects.create(
+                    asset=asset,
+                    period_label="FY 2024",
+                    depreciation_amount=depr_amt,
+                    accumulated_depreciation=depr_amt,
+                    net_book_value=book_value - depr_amt,
+                )
+
+        self.stdout.write(
+            f"    → Assets: {AssetAssignment.objects.count()} assignments, "
+            f"{AssetMaintenanceRecord.objects.count()} maintenance records, "
+            f"{AssetWarranty.objects.count()} warranties, "
+            f"{AssetDepreciation.objects.count()} depreciations"
+        )
+
+    # ── Cafeteria Comprehensive ───────────────────────────────────────────────
+    def _seed_cafeteria_comprehensive(self, students, admin_user):
+        try:
+            from cafeteria.models import MealTransaction, CafeteriaWalletTransaction
+        except ImportError:
+            self.stdout.write("    Cafeteria app not available — skipping")
+            return
+        import random
+        random.seed(47)
+
+        today = date.today()
+        monday = today - timedelta(days=today.weekday())
+
+        # MealTransactions — 5 days x 3 meals x first 20 students
+        meals_created = 0
+        for day_offset in range(5):
+            school_day = monday + timedelta(days=day_offset)
+            for student in students[:20]:
+                for meal_type in ["Breakfast", "Lunch", "Supper"]:
+                    _, created = MealTransaction.objects.get_or_create(
+                        student=student, date=school_day, meal_type=meal_type,
+                        defaults={"served": True},
+                    )
+                    if created:
+                        meals_created += 1
+
+        # CafeteriaWalletTransactions — top-ups and debits for first 15 students
+        wallet_created = 0
+        for student in students[:15]:
+            # Credit (top-up)
+            wt, created = CafeteriaWalletTransaction.objects.get_or_create(
+                student=student,
+                transaction_type="Credit",
+                amount=Decimal("5000.00"),
+                defaults={
+                    "description":   "Term 1 2025 meal plan top-up",
+                    "balance_after": Decimal("5000.00"),
+                },
+            )
+            if created:
+                wallet_created += 1
+            # Debit (meal costs)
+            MealTransaction.objects.filter(student=student).first()
+            CafeteriaWalletTransaction.objects.get_or_create(
+                student=student,
+                transaction_type="Debit",
+                amount=Decimal("100.00"),
+                defaults={
+                    "description":   "Daily meal deduction",
+                    "balance_after": Decimal("4900.00"),
+                },
+            )
+
+        self.stdout.write(
+            f"    → Cafeteria: {MealTransaction.objects.count()} meal transactions, "
+            f"{CafeteriaWalletTransaction.objects.count()} wallet transactions"
+        )
+
+    # ── Hostel Comprehensive ──────────────────────────────────────────────────
+    def _seed_hostel_comprehensive(self, students, admin_user):
+        try:
+            from hostel.models import HostelAttendance, HostelLeave
+        except ImportError:
+            self.stdout.write("    Hostel app not available — skipping")
+            return
+        import random
+        random.seed(48)
+
+        today = date.today()
+        monday = today - timedelta(days=today.weekday())
+
+        # HostelAttendance — 5 nights x 3 roll-calls x first 20 students
+        for day_offset in range(5):
+            school_day = monday + timedelta(days=day_offset)
+            for student in students[:20]:
+                for roll_time in ["Morning", "Evening", "Night"]:
+                    status = "Present" if random.random() > 0.05 else "Absent"
+                    HostelAttendance.objects.get_or_create(
+                        student=student, date=school_day, roll_call_time=roll_time,
+                        defaults={"status": status, "recorded_by": admin_user},
+                    )
+
+        # HostelLeave — 5 students with approved exeat leave
+        for i, student in enumerate(students[:5]):
+            HostelLeave.objects.get_or_create(
+                student=student,
+                leave_from=date(2025, 2, 14),
+                leave_to=date(2025, 2, 16),
+                defaults={
+                    "reason":      "Half-term mid-week exeat (parents' request).",
+                    "approved_by": admin_user,
+                    "status":      "Approved",
+                },
+            )
+
+        self.stdout.write(
+            f"    → Hostel: {HostelAttendance.objects.count()} attendance records, "
+            f"{HostelLeave.objects.count()} leave requests"
+        )
+
+    # ── Timetable Duty Slots ──────────────────────────────────────────────────
+    def _seed_timetable_comprehensive(self, terms):
+        try:
+            from timetable.models import StaffDutySlot
+            from hr.models import Employee
+        except ImportError:
+            self.stdout.write("    Timetable/HR app not available — skipping")
+            return
+        from datetime import time as dt_time
+        import random
+        random.seed(49)
+
+        term1 = terms[0] if terms else None
+        employees = list(Employee.objects.all()[:10])
+
+        DUTIES = [
+            (1, "Gate Duty – Morning",       dt_time(6, 30), dt_time(7, 30),  "School Main Gate"),
+            (2, "Library Supervision",        dt_time(13, 0), dt_time(14, 0), "School Library"),
+            (3, "Dining Hall Supervision",    dt_time(12, 30), dt_time(13, 30), "Dining Hall"),
+            (4, "Games & Sports Supervision", dt_time(15, 30), dt_time(17, 0), "Sports Ground"),
+            (5, "Evening Prep Supervision",   dt_time(19, 0), dt_time(21, 0), "Main Classroom Block"),
+            (1, "Dormitory Inspection",       dt_time(21, 30), dt_time(22, 0), "Dormitory Block A"),
+            (3, "Gate Duty – Afternoon",      dt_time(16, 30), dt_time(17, 30), "School Main Gate"),
+        ]
+
+        for i, (day_of_week, description, start, end, location) in enumerate(DUTIES):
+            if i < len(employees):
+                emp = employees[i]
+                StaffDutySlot.objects.get_or_create(
+                    employee=emp, day_of_week=day_of_week, description=description,
+                    defaults={
+                        "duty_start": start,
+                        "duty_end":   end,
+                        "location":   location,
+                        "term":       term1,
+                        "is_active":  True,
+                    },
+                )
+
+        self.stdout.write(f"    → Duty Slots: {StaffDutySlot.objects.count()} seeded")
+
+    # ── Transport Incidents ───────────────────────────────────────────────────
+    def _seed_transport_comprehensive(self):
+        try:
+            from transport.models import TransportIncident, Vehicle
+        except ImportError:
+            self.stdout.write("    Transport app not available — skipping")
+            return
+
+        vehicles = list(Vehicle.objects.all())
+        if not vehicles:
+            return
+
+        INCIDENTS = [
+            (vehicles[0], date(2025, 2, 5),  "Minor", "Flat tyre on Ngong Road. Students were safe. Spare changed on-site.", True),
+            (vehicles[1], date(2025, 2, 28), "Minor", "Minor fender bender in school parking area. No injuries. Driver reprimanded.", True),
+            (vehicles[0], date(2025, 3, 12), "Minor", "Engine warning light activated en route. Vehicle returned to school and serviced.", True),
+        ]
+        for vehicle, inc_date, severity, desc, resolved in INCIDENTS:
+            TransportIncident.objects.get_or_create(
+                vehicle=vehicle, incident_date=inc_date,
+                defaults={
+                    "description":   desc,
+                    "severity":      severity,
+                    "reported_by":   "Joseph Mwangi (Driver)",
+                    "resolved":      resolved,
+                },
+            )
+
+        self.stdout.write(f"    → Transport: {TransportIncident.objects.count()} incidents seeded")
+
+    # ── Visitor Authorized Pickups + Logs ────────────────────────────────────
+    def _seed_visitor_comprehensive(self, students, admin_user):
+        try:
+            from visitor_mgmt.models import AuthorizedPickup, StudentPickupLog
+        except ImportError:
+            self.stdout.write("    Visitor Mgmt app not available — skipping")
+            return
+        import random
+        random.seed(50)
+
+        authorized_list = []
+        for student in students[:15]:
+            guardian = Guardian.objects.filter(student=student).first()
+            if guardian:
+                ap, _ = AuthorizedPickup.objects.get_or_create(
+                    student=student,
+                    guardian_name=guardian.name,
+                    defaults={
+                        "relationship": guardian.relationship or "Parent",
+                        "id_number":    f"ID{random.randint(10000000, 39999999)}",
+                        "phone":        guardian.phone or "0722000000",
+                        "is_active":    True,
+                    },
+                )
+                authorized_list.append((student, ap))
+
+        # StudentPickupLog — one entry per authorized pair
+        for student, ap in authorized_list[:8]:
+            if not StudentPickupLog.objects.filter(student=student, picked_up_by=ap).exists():
+                StudentPickupLog.objects.create(
+                    student=student,
+                    picked_up_by=ap,
+                    authorized=True,
+                    notes="",
+                )
+
+        self.stdout.write(
+            f"    → Visitor: {AuthorizedPickup.objects.count()} authorized pickups, "
+            f"{StudentPickupLog.objects.count()} pickup logs"
+        )
+
+    # ── Library Comprehensive ─────────────────────────────────────────────────
+    def _seed_library_comprehensive(self, admin_user):
+        try:
+            from library.models import (
+                LibraryResource, LibraryMember, Reservation,
+                InventoryAudit, AcquisitionRequest,
+            )
+        except ImportError:
+            self.stdout.write("    Library app not available — skipping")
+            return
+        import random
+        random.seed(51)
+
+        resources = list(LibraryResource.objects.all()[:10])
+        members   = list(LibraryMember.objects.all()[:10])
+
+        # Reservations
+        for i, (member, resource) in enumerate(zip(members[:8], resources[:8])):
+            status = "Picked" if i < 4 else "Waiting"
+            Reservation.objects.get_or_create(
+                resource=resource, member=member,
+                defaults={
+                    "status":           status,
+                    "pickup_deadline":  date(2025, 3, 31) if status == "Waiting" else None,
+                },
+            )
+
+        # InventoryAudit
+        total = LibraryResource.objects.count()
+        InventoryAudit.objects.get_or_create(
+            audit_date=date(2025, 1, 10),
+            defaults={
+                "conducted_by":  admin_user,
+                "total_expected": total,
+                "total_found":    total - random.randint(0, 3),
+                "status":        "Completed",
+            },
+        )
+
+        # AcquisitionRequests
+        BOOKS = [
+            ("Advanced Chemistry for Secondary Schools – Form 3", "Kimani Muturi",    "9789966252"),
+            ("Physics Concepts and Applications – Form 4",         "James Wanyoike",   "9789966253"),
+            ("Kenya History & Government – Comprehensive Guide",   "Grace Njeri",      "9789966254"),
+        ]
+        for title, author, isbn in BOOKS:
+            AcquisitionRequest.objects.get_or_create(
+                title=title,
+                defaults={
+                    "requested_by": admin_user,
+                    "author":       author,
+                    "isbn":         isbn,
+                    "quantity":     5,
+                    "justification": "High student demand; existing copies are insufficient.",
+                    "status":       "Approved",
+                },
+            )
+
+        self.stdout.write(
+            f"    → Library: {Reservation.objects.count()} reservations, "
+            f"{InventoryAudit.objects.count()} inventory audits, "
+            f"{AcquisitionRequest.objects.count()} acquisition requests"
+        )
+
+    # ── E-Learning Quiz Attempts ──────────────────────────────────────────────
+    def _seed_elearning_comprehensive(self, students):
+        try:
+            from elearning.models import OnlineQuiz, QuizAttempt
+        except ImportError:
+            self.stdout.write("    E-Learning app not available — skipping")
+            return
+        import random
+        from django.utils import timezone as tz
+        random.seed(52)
+
+        quizzes = list(OnlineQuiz.objects.all()[:5])
+        if not quizzes:
+            return
+
+        for quiz in quizzes:
+            for student in students[:10]:
+                score = Decimal(str(round(random.gauss(70, 15), 1)))
+                score = max(Decimal("0"), min(Decimal("100"), score))
+                percentage = score  # 100-point scale
+                QuizAttempt.objects.get_or_create(
+                    quiz=quiz, student=student,
+                    defaults={
+                        "score":        score,
+                        "percentage":   percentage,
+                        "submitted_at": tz.now(),
+                        "status":       "Graded",
+                    },
+                )
+
+        self.stdout.write(f"    → E-Learning: {QuizAttempt.objects.count()} quiz attempts seeded")
+
+    # ── Maintenance Checklist Items ────────────────────────────────────────────
+    def _seed_maintenance_comprehensive(self):
+        try:
+            from maintenance.models import MaintenanceRequest, MaintenanceChecklist
+        except ImportError:
+            self.stdout.write("    Maintenance app not available — skipping")
+            return
+        from django.utils import timezone as tz
+
+        requests = list(MaintenanceRequest.objects.all())
+        TASKS = [
+            "Inspect and diagnose the reported fault",
+            "Source required materials / spare parts",
+            "Carry out repair work",
+            "Test and verify the fix is effective",
+            "Clean up and restore work area",
+        ]
+        count = 0
+        for req in requests[:6]:
+            if not req.checklist_items.exists():
+                for i, task_desc in enumerate(TASKS):
+                    is_done = i < 3
+                    MaintenanceChecklist.objects.create(
+                        request=req,
+                        task_description=task_desc,
+                        is_completed=is_done,
+                        completed_at=tz.now() if is_done else None,
+                    )
+                    count += 1
+
+        self.stdout.write(f"    → Maintenance: {MaintenanceChecklist.objects.count()} checklist items seeded")
+
+    # ── School Store ──────────────────────────────────────────────────────────
+    def _seed_store_comprehensive(self, admin_user):
+        try:
+            from school.models import (
+                StoreCategory, StoreSupplier, StoreItem,
+                StoreTransaction, StoreOrderRequest, StoreOrderItem,
+            )
+        except ImportError:
+            self.stdout.write("    Store app not available — skipping")
+            return
+        import random
+        random.seed(53)
+
+        # 1. StoreCategory
+        CATEGORIES = [
+            ("Stationery & Office Supplies", "OFFICE",   "OFFICE"),
+            ("Food & Provisions",            "FOOD",     "FOOD"),
+            ("Cleaning & Hygiene",           "CLEANING", "OFFICE"),
+            ("Sports Equipment",             "SPORTS",   "OFFICE"),
+            ("Laboratory Supplies",          "LAB",      "OFFICE"),
+        ]
+        cat_map = {}
+        for name, _, itype in CATEGORIES:
+            cat, _ = StoreCategory.objects.get_or_create(
+                name=name,
+                defaults={"item_type": itype, "is_active": True},
+            )
+            cat_map[name] = cat
+
+        # 2. StoreSupplier
+        SUPPLIERS = [
+            ("Kenya Office Supplies Ltd",  "James Kimani",  "0722300400", "supplies@kenyaoffice.co.ke"),
+            ("Nairobi Food Distributors",  "Mary Wanjiku",  "0733400500", "orders@nairobifood.co.ke"),
+            ("CleanPro Kenya Ltd",         "Peter Mwangi",  "0744500600", "info@cleanpro.co.ke"),
+        ]
+        supplier_map = {}
+        for name, contact, phone, email in SUPPLIERS:
+            sup, _ = StoreSupplier.objects.get_or_create(
+                name=name,
+                defaults={
+                    "contact_person": contact, "phone": phone,
+                    "email": email, "is_active": True,
+                },
+            )
+            supplier_map[name] = sup
+
+        # 3. StoreItem
+        ITEMS = [
+            ("A4 Copy Paper (Ream 80gsm)",   "PAP-A4-80",  "Stationery & Office Supplies", "reams",  "OFFICE", 120, 20,  200,  Decimal("420.00")),
+            ("Ballpoint Pens (Box of 50)",   "PEN-BP-50",  "Stationery & Office Supplies", "boxes",  "OFFICE",  45, 10,   80,  Decimal("350.00")),
+            ("Whiteboard Markers (Box 12)",  "MRK-WB-12",  "Stationery & Office Supplies", "boxes",  "OFFICE",  30,  8,   60,  Decimal("480.00")),
+            ("Maize Meal (2 kg bag)",        "FD-MAZ-2KG", "Food & Provisions",            "bags",   "FOOD",   200, 50,  400,  Decimal("130.00")),
+            ("Cooking Oil (5 L jerry)",      "FD-OIL-5L",  "Food & Provisions",            "jerries","FOOD",    40, 15,   80,  Decimal("950.00")),
+            ("Hand Sanitiser (500 ml)",      "CLN-SAN-500","Cleaning & Hygiene",           "bottles","OFFICE",  60, 20,  100,  Decimal("280.00")),
+            ("Detergent Powder (2 kg)",      "CLN-DET-2KG","Cleaning & Hygiene",           "packets","OFFICE",  35, 10,   70,  Decimal("350.00")),
+            ("Football (Size 5)",            "SPT-FB-5",   "Sports Equipment",             "pcs",    "OFFICE",  10,  3,   20,  Decimal("2200.00")),
+        ]
+        item_map = {}
+        for name, sku, cat_name, unit, itype, curr_stk, reorder, max_stk, cost in ITEMS:
+            cat = cat_map.get(cat_name)
+            item, _ = StoreItem.objects.get_or_create(
+                name=name,
+                defaults={
+                    "sku":           sku,
+                    "category":      cat,
+                    "unit":          unit,
+                    "item_type":     itype,
+                    "current_stock": Decimal(str(curr_stk)),
+                    "reorder_level": Decimal(str(reorder)),
+                    "max_stock":     Decimal(str(max_stk)),
+                    "cost_price":    cost,
+                    "is_active":     True,
+                },
+            )
+            item_map[name] = item
+
+        # 4. StoreTransactions — OPENING stock for first 5 items (only once)
+        for name, item in list(item_map.items())[:5]:
+            if not item.transactions.filter(transaction_type="OPENING").exists():
+                StoreTransaction.objects.create(
+                    item=item,
+                    transaction_type="OPENING",
+                    quantity=item.current_stock,
+                    reference="OPENING-JAN-2025",
+                    department="Store",
+                    purpose="Opening stock entry for FY 2025",
+                    performed_by=admin_user,
+                    date=date(2025, 1, 3),
+                )
+
+        # 5. StoreOrderRequest + StoreOrderItems
+        items_list = list(item_map.values())
+        order, _ = StoreOrderRequest.objects.get_or_create(
+            title="Q1 2025 Stationery and Provisions Requisition",
+            defaults={
+                "description":   "Quarterly requisition for office supplies and food provisions.",
+                "requested_by":  admin_user,
+                "send_to":       "FINANCE",
+                "status":        "APPROVED",
+                "notes":         "Approved by Principal on 20 Jan 2025.",
+            },
+        )
+        for item in items_list[:4]:
+            StoreOrderItem.objects.get_or_create(
+                order=order, item=item,
+                defaults={
+                    "item_name":          item.name,
+                    "unit":               item.unit,
+                    "quantity_requested": Decimal("20.00"),
+                    "quantity_approved":  Decimal("20.00"),
+                },
+            )
+
+        self.stdout.write(
+            f"    → Store: {StoreCategory.objects.count()} categories, "
+            f"{StoreSupplier.objects.count()} suppliers, "
+            f"{StoreItem.objects.count()} items, "
+            f"{StoreTransaction.objects.count()} transactions, "
+            f"{StoreOrderRequest.objects.count()} orders"
+        )
+
+    # ── Dispensary ────────────────────────────────────────────────────────────
+    def _seed_dispensary(self, students, admin_user):
+        try:
+            from school.models import DispensaryVisit, DispensaryPrescription, DispensaryStock
+        except ImportError:
+            self.stdout.write("    Dispensary app not available — skipping")
+            return
+        import random
+        random.seed(54)
+        from datetime import time as dt_time
+
+        # 1. DispensaryStock
+        STOCK = [
+            ("Paracetamol 500mg",        "PCM-500",  500,  "tablets", 50, date(2027, 6, 30), "Cosmos Ltd"),
+            ("Ibuprofen 400mg",           "IBU-400",  200,  "tablets", 30, date(2027, 3, 31), "Dawa Ltd"),
+            ("Amoxicillin 250mg Capsules","AMX-250",  100,  "capsules",20, date(2026, 12, 31),"Universal Corp"),
+            ("ORS Sachets",               "ORS-SAC",  150,  "sachets", 30, date(2027, 1, 31), "Cosmos Ltd"),
+            ("Antiseptic Cream (50g)",    "ANT-50G",   40,  "tubes",   10, date(2026, 9, 30), "Dawa Ltd"),
+            ("Bandages (7.5cm roll)",     "BAN-75",    80,  "rolls",   15, date(2028, 1, 1),  "Universal Corp"),
+            ("Eye Drops (10ml)",          "EYE-10ML",  60,  "bottles", 10, date(2026, 6, 30), "Cosmos Ltd"),
+        ]
+        for name, generic, qty, unit, reorder, expiry, supplier in STOCK:
+            DispensaryStock.objects.get_or_create(
+                medication_name=name,
+                defaults={
+                    "generic_name":    generic,
+                    "current_quantity": Decimal(str(qty)),
+                    "unit":            unit,
+                    "reorder_level":   Decimal(str(reorder)),
+                    "expiry_date":     expiry,
+                    "supplier":        supplier,
+                },
+            )
+
+        # 2. DispensaryVisit + DispensaryPrescription for 10 students
+        COMPLAINTS = [
+            ("Headache and mild fever",               "Febrile illness — pyrexia",          "Paracetamol 500mg",        "500mg twice daily",   "3 days",   2),
+            ("Stomach pain and nausea",               "Gastritis",                           "Ibuprofen 400mg",          "400mg with meals",    "2 days",   1),
+            ("Sore throat and cough",                 "Upper respiratory tract infection",   "Amoxicillin 250mg Capsules","3 capsules daily",   "5 days",   5),
+            ("Diarrhoea and dehydration signs",       "Mild dehydration — gastroenteritis",  "ORS Sachets",              "1 sachet per hour",   "2 days",   3),
+            ("Eye irritation and redness",            "Conjunctivitis",                      "Eye Drops (10ml)",         "2 drops 3x daily",    "5 days",   1),
+            ("Cut on right hand",                     "Minor laceration — cleaned",          "Antiseptic Cream (50g)",   "Apply twice daily",   "3 days",   1),
+            ("Leg pain after sports",                 "Sports strain — soft tissue injury",  "Ibuprofen 400mg",          "400mg twice daily",   "3 days",   1),
+            ("Dizzy spells and weakness",             "Low blood sugar — hypoglycaemia",     "ORS Sachets",              "Oral rehydration",    "1 day",    1),
+            ("Toothache",                             "Dental pain — referred to dentist",   "Paracetamol 500mg",        "500mg as needed",     "2 days",   2),
+            ("Skin rash on arms",                     "Allergic contact dermatitis",         "Antiseptic Cream (50g)",   "Apply morning/evening","5 days",  1),
+        ]
+        visit_dates = [date(2025, 2, 10), date(2025, 2, 17), date(2025, 3, 3),
+                       date(2025, 3, 10), date(2025, 3, 17)]
+
+        for i, student in enumerate(students[:10]):
+            complaint, diagnosis, med_name, dosage, duration, qty = COMPLAINTS[i]
+            v_date = visit_dates[i % len(visit_dates)]
+            visit, v_created = DispensaryVisit.objects.get_or_create(
+                student=student, visit_date=v_date,
+                defaults={
+                    "visit_time":       dt_time(10, random.randint(0, 59)),
+                    "complaint":        complaint,
+                    "diagnosis":        diagnosis,
+                    "treatment":        "Medication dispensed as per prescription below.",
+                    "attended_by":      admin_user,
+                    "severity":         "MINOR",
+                    "parent_notified":  i < 3,
+                    "referred":         i == 8,
+                    "referred_to":      "Kenyatta National Hospital Dental Clinic" if i == 8 else "",
+                    "follow_up_date":   v_date + timedelta(days=5) if i < 5 else None,
+                },
+            )
+            if v_created:
+                DispensaryPrescription.objects.create(
+                    visit=visit,
+                    medication_name=med_name,
+                    dosage=dosage,
+                    frequency=f"For {duration}",
+                    quantity_dispensed=Decimal(str(qty)),
+                    unit="tablets" if "tablet" in med_name.lower() else "units",
+                )
+
+        self.stdout.write(
+            f"    → Dispensary: {DispensaryStock.objects.count()} stock items, "
+            f"{DispensaryVisit.objects.count()} visits, "
+            f"{DispensaryPrescription.objects.count()} prescriptions"
+        )
+
+    # ── Examination Setter Assignments ────────────────────────────────────────
+    def _seed_exam_setter_assignments(self, admin_user):
+        try:
+            from examinations.models import ExamSession, ExamSetterAssignment
+        except ImportError:
+            self.stdout.write("    Examinations app not available — skipping")
+            return
+        import random
+        random.seed(56)
+
+        sessions = list(ExamSession.objects.all()[:2])
+        teachers  = list(User.objects.exclude(username="admin")[:8])
+        core_subjects = list(Subject.objects.filter(is_active=True)[:8])
+        flat_classes  = list(SchoolClass.objects.all()[:4])
+
+        if not sessions or not teachers or not core_subjects:
+            return
+
+        session = sessions[-1]  # Upcoming session
+        for i, subj in enumerate(core_subjects):
+            for cls in flat_classes[:2]:
+                teacher = teachers[i % len(teachers)]
+                ExamSetterAssignment.objects.get_or_create(
+                    session=session, subject=subj, school_class=cls,
+                    defaults={
+                        "teacher":     teacher,
+                        "deadline":    date(2025, 5, 16),
+                        "notes":       f"Please prepare the {subj.name} exam paper for {cls.name}.",
+                        "assigned_by": admin_user,
+                    },
+                )
+
+        self.stdout.write(f"    → Exam Setter Assignments: {ExamSetterAssignment.objects.count()} seeded")
 
     # ── TenantModule Activations ──────────────────────────────────────────────
     def _seed_tenant_modules(self):

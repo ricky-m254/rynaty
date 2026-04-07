@@ -75,6 +75,101 @@ class Command(BaseCommand):
             Subject.objects.all().delete()
             Department.objects.all().delete()
 
+            # ── E-Learning (must be before academic structures due to Term FK) ──
+            self.stdout.write("Clearing e-learning records...")
+            try:
+                from elearning.models import QuizAttempt, QuizQuestion, OnlineQuiz, CourseMaterial, Course
+                QuizAttempt.objects.all().delete()
+                QuizQuestion.objects.all().delete()
+                OnlineQuiz.objects.all().delete()
+                CourseMaterial.objects.all().delete()
+                Course.objects.all().delete()
+            except Exception as e:
+                self.stdout.write(f"  E-learning clear warning: {e}")
+                # Fallback: use raw SQL to clear FK constraint
+                from django.db import connection
+                with connection.cursor() as cursor:
+                    cursor.execute("DELETE FROM elearning_quizattempt")
+                    cursor.execute("DELETE FROM elearning_quizquestion")
+                    cursor.execute("DELETE FROM elearning_onlinequiz")
+                    cursor.execute("DELETE FROM elearning_coursematerial")
+                    cursor.execute("DELETE FROM elearning_course")
+
+            # ── Timetable (before Term/Class) ────────────────────────────────
+            self.stdout.write("Clearing timetable records...")
+            try:
+                from timetable.models import Period, StaffDutySlot
+                Period.objects.all().delete()
+                StaffDutySlot.objects.all().delete()
+            except Exception:
+                pass
+
+            # ── Curriculum (before Term/Subject) ─────────────────────────────
+            self.stdout.write("Clearing curriculum (schemes, lesson plans)...")
+            try:
+                from curriculum.models import LearningResource, LessonPlan, SchemeTopic, SchemeOfWork
+                LearningResource.objects.all().delete()
+                LessonPlan.objects.all().delete()
+                SchemeTopic.objects.all().delete()
+                SchemeOfWork.objects.all().delete()
+            except Exception:
+                pass
+
+            # ── Clear ALL remaining FK references to school_term before deletion
+            self.stdout.write("Clearing all remaining Term-linked records...")
+            try:
+                from ptm.models import PTMBooking, PTMSlot, PTMSession
+                PTMBooking.objects.all().delete()
+                PTMSlot.objects.all().delete()
+                PTMSession.objects.all().delete()
+            except Exception:
+                pass
+            try:
+                from admissions.models import (
+                    AdmissionDecision, AdmissionInterview, AdmissionAssessment,
+                    AdmissionReview, AdmissionApplicationProfile, AdmissionInquiry,
+                )
+                AdmissionDecision.objects.all().delete()
+                AdmissionInterview.objects.all().delete()
+                AdmissionAssessment.objects.all().delete()
+                AdmissionReview.objects.all().delete()
+                AdmissionApplicationProfile.objects.all().delete()
+                AdmissionInquiry.objects.all().delete()
+            except Exception:
+                pass
+            try:
+                from cafeteria.models import StudentMealEnrollment, CafeteriaWalletTransaction, MealTransaction
+                StudentMealEnrollment.objects.all().delete()
+                CafeteriaWalletTransaction.objects.all().delete()
+                MealTransaction.objects.all().delete()
+            except Exception:
+                pass
+            try:
+                from hostel.models import HostelAllocation, HostelLeave, HostelAttendance
+                HostelAllocation.objects.all().delete()
+                HostelLeave.objects.all().delete()
+                HostelAttendance.objects.all().delete()
+            except Exception:
+                pass
+            try:
+                from transport.models import StudentTransport
+                StudentTransport.objects.all().delete()
+            except Exception:
+                pass
+            # Use raw SQL to null-out any remaining school_term FKs we can't find by model
+            from django.db import connection
+            term_fk_tables = [
+                "school_balancecarryforward", "school_calendarevent",
+                "school_institutionlifecyclerun", "school_optionalcharge",
+                "school_syllabustopic", "school_teacherassignment",
+            ]
+            with connection.cursor() as cursor:
+                for tbl in term_fk_tables:
+                    try:
+                        cursor.execute(f"DELETE FROM {tbl}")
+                    except Exception:
+                        pass
+
             # ── Academic structures ──────────────────────────────────────────
             self.stdout.write("Clearing academic structures...")
             SchoolClass.objects.all().delete()
@@ -259,6 +354,213 @@ class Command(BaseCommand):
                 # Remove seeded parent portal users (username starts with 'parent.')
                 from django.contrib.auth import get_user_model
                 get_user_model().objects.filter(username__startswith="parent.").delete()
+            except Exception:
+                pass
+
+            # ── Admissions pipeline ───────────────────────────────────────────
+            self.stdout.write("Clearing admissions pipeline...")
+            try:
+                from admissions.models import (
+                    AdmissionDecision, AdmissionInterview, AdmissionAssessment,
+                    AdmissionReview, AdmissionApplicationProfile, AdmissionInquiry,
+                )
+                AdmissionDecision.objects.all().delete()
+                AdmissionInterview.objects.all().delete()
+                AdmissionAssessment.objects.all().delete()
+                AdmissionReview.objects.all().delete()
+                AdmissionApplicationProfile.objects.all().delete()
+                AdmissionInquiry.objects.all().delete()
+            except Exception:
+                pass
+
+            # ── Curriculum ────────────────────────────────────────────────────
+            self.stdout.write("Clearing curriculum...")
+            try:
+                from curriculum.models import LearningResource, LessonPlan, SchemeTopic, SchemeOfWork
+                LearningResource.objects.all().delete()
+                LessonPlan.objects.all().delete()
+                SchemeTopic.objects.all().delete()
+                SchemeOfWork.objects.all().delete()
+            except Exception:
+                pass
+
+            # ── HR comprehensive ──────────────────────────────────────────────
+            self.stdout.write("Clearing comprehensive HR records...")
+            try:
+                from hr.models import (
+                    DisciplinaryCase, TrainingEnrollment, TrainingProgram,
+                    PerformanceReview, PerformanceGoal, OnboardingTask,
+                    Interview as HrInterview, JobApplication, JobPosting,
+                    PayrollItem, PayrollBatch, SalaryComponent, SalaryStructure,
+                    LeaveRequest, LeaveBalance, LeavePolicy,
+                    WorkSchedule, AttendanceRecord, ShiftTemplate,
+                    EmergencyContact, EmployeeQualification, EmployeeEmploymentProfile,
+                )
+                DisciplinaryCase.objects.all().delete()
+                TrainingEnrollment.objects.all().delete()
+                TrainingProgram.objects.all().delete()
+                PerformanceReview.objects.all().delete()
+                PerformanceGoal.objects.all().delete()
+                OnboardingTask.objects.all().delete()
+                HrInterview.objects.all().delete()
+                JobApplication.objects.all().delete()
+                JobPosting.objects.all().delete()
+                PayrollItem.objects.all().delete()
+                PayrollBatch.objects.all().delete()
+                SalaryComponent.objects.all().delete()
+                SalaryStructure.objects.all().delete()
+                LeaveRequest.objects.all().delete()
+                LeaveBalance.objects.all().delete()
+                LeavePolicy.objects.all().delete()
+                AttendanceRecord.objects.all().delete()
+                WorkSchedule.objects.all().delete()
+                ShiftTemplate.objects.all().delete()
+                EmergencyContact.objects.all().delete()
+                EmployeeQualification.objects.all().delete()
+                EmployeeEmploymentProfile.objects.all().delete()
+            except Exception:
+                pass
+
+            # ── Staff management comprehensive ────────────────────────────────
+            self.stdout.write("Clearing staff management records...")
+            try:
+                from staff_mgmt.models import (
+                    StaffAppraisal, StaffObservation, StaffAttendance,
+                    StaffAssignment, StaffRole, StaffDepartment,
+                    StaffEmergencyContact, StaffQualification,
+                )
+                StaffAppraisal.objects.all().delete()
+                StaffObservation.objects.all().delete()
+                StaffAttendance.objects.all().delete()
+                StaffAssignment.objects.all().delete()
+                StaffRole.objects.all().delete()
+                StaffDepartment.objects.all().delete()
+                StaffEmergencyContact.objects.all().delete()
+                StaffQualification.objects.all().delete()
+            except Exception:
+                pass
+
+            # ── Communication comprehensive ───────────────────────────────────
+            self.stdout.write("Clearing comprehensive communication records...")
+            try:
+                from communication.models import (
+                    SmsMessage, EmailCampaign, NotificationPreference,
+                    Notification, CommunicationMessage, ConversationParticipant,
+                    Conversation, MessageTemplate,
+                )
+                SmsMessage.objects.all().delete()
+                EmailCampaign.objects.all().delete()
+                NotificationPreference.objects.all().delete()
+                Notification.objects.all().delete()
+                CommunicationMessage.objects.all().delete()
+                ConversationParticipant.objects.all().delete()
+                Conversation.objects.all().delete()
+                MessageTemplate.objects.all().delete()
+            except Exception:
+                pass
+
+            # ── Assets comprehensive ──────────────────────────────────────────
+            self.stdout.write("Clearing comprehensive asset records...")
+            try:
+                from assets.models import AssetDepreciation, AssetWarranty, AssetMaintenanceRecord, AssetAssignment
+                AssetDepreciation.objects.all().delete()
+                AssetWarranty.objects.all().delete()
+                AssetMaintenanceRecord.objects.all().delete()
+                AssetAssignment.objects.all().delete()
+            except Exception:
+                pass
+
+            # ── Cafeteria comprehensive ───────────────────────────────────────
+            self.stdout.write("Clearing cafeteria transaction records...")
+            try:
+                from cafeteria.models import CafeteriaWalletTransaction, MealTransaction
+                CafeteriaWalletTransaction.objects.all().delete()
+                MealTransaction.objects.all().delete()
+            except Exception:
+                pass
+
+            # ── Hostel comprehensive ──────────────────────────────────────────
+            self.stdout.write("Clearing hostel attendance and leave records...")
+            try:
+                from hostel.models import HostelLeave, HostelAttendance
+                HostelLeave.objects.all().delete()
+                HostelAttendance.objects.all().delete()
+            except Exception:
+                pass
+
+            # ── Timetable duty slots ──────────────────────────────────────────
+            self.stdout.write("Clearing timetable duty slots...")
+            try:
+                from timetable.models import StaffDutySlot
+                StaffDutySlot.objects.all().delete()
+            except Exception:
+                pass
+
+            # ── Transport incidents ───────────────────────────────────────────
+            self.stdout.write("Clearing transport incidents...")
+            try:
+                from transport.models import TransportIncident
+                TransportIncident.objects.all().delete()
+            except Exception:
+                pass
+
+            # ── Library comprehensive ─────────────────────────────────────────
+            self.stdout.write("Clearing library reservations, audits and requests...")
+            try:
+                from library.models import AcquisitionRequest, InventoryAudit, Reservation
+                AcquisitionRequest.objects.all().delete()
+                InventoryAudit.objects.all().delete()
+                Reservation.objects.all().delete()
+            except Exception:
+                pass
+
+            # ── E-Learning quiz attempts ──────────────────────────────────────
+            self.stdout.write("Clearing e-learning quiz attempts...")
+            try:
+                from elearning.models import QuizAttempt
+                QuizAttempt.objects.all().delete()
+            except Exception:
+                pass
+
+            # ── Maintenance checklist ─────────────────────────────────────────
+            self.stdout.write("Clearing maintenance checklist items...")
+            try:
+                from maintenance.models import MaintenanceChecklist
+                MaintenanceChecklist.objects.all().delete()
+            except Exception:
+                pass
+
+            # ── Store ─────────────────────────────────────────────────────────
+            self.stdout.write("Clearing school store data...")
+            try:
+                from school.models import (
+                    StoreOrderItem, StoreOrderRequest, StoreTransaction,
+                    StoreItem, StoreSupplier, StoreCategory,
+                )
+                StoreOrderItem.objects.all().delete()
+                StoreOrderRequest.objects.all().delete()
+                StoreTransaction.objects.all().delete()
+                StoreItem.objects.all().delete()
+                StoreSupplier.objects.all().delete()
+                StoreCategory.objects.all().delete()
+            except Exception:
+                pass
+
+            # ── Dispensary ────────────────────────────────────────────────────
+            self.stdout.write("Clearing dispensary data...")
+            try:
+                from school.models import DispensaryPrescription, DispensaryVisit, DispensaryStock
+                DispensaryPrescription.objects.all().delete()
+                DispensaryVisit.objects.all().delete()
+                DispensaryStock.objects.all().delete()
+            except Exception:
+                pass
+
+            # ── Exam setter assignments ───────────────────────────────────────
+            self.stdout.write("Clearing exam setter assignments...")
+            try:
+                from examinations.models import ExamSetterAssignment
+                ExamSetterAssignment.objects.all().delete()
             except Exception:
                 pass
 
