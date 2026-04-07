@@ -1,0 +1,25 @@
+uploads = []
+
+[[generated]]
+id = "e7MbO3JXplOGGPE5reEOJ"
+uri = "file://attached_assets/generated_images/rynatyschool_management_logo.png"
+type = "image"
+title = "RynatySchool management system logo"
+
+[[generated]]
+id = "dvKxF4J58dE1aC1pEcdYk"
+uri = "file://attached_assets/generated_images/rynatyspace_technologies_logo.png"
+type = "image"
+title = "RynatySpace Technologies company logo"
+
+[[outputs]]
+id = "ev2sdnkvaVeNWAXZ9lxvB"
+uri = "file://attached_assets/generated_images/rynatyschool_management_logo.png"
+type = "image"
+title = "RynatySchool SmartCampus — Management System Logo"
+
+[[outputs]]
+id = "T3PxSFDTbwf8_cOwlGoDf"
+uri = "file://attached_assets/generated_images/rynatyspace_technologies_logo.png"
+type = "image"
+title = "RynatySpace Technologies — Mother Company Logo"
