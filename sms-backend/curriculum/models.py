@@ -2,17 +2,25 @@ from django.db import models
 
 class SchemeOfWork(models.Model):
     subject = models.ForeignKey('school.Subject', on_delete=models.CASCADE, related_name='schemes')
-    school_class = models.ForeignKey('school.SchoolClass', on_delete=models.CASCADE)
-    term = models.ForeignKey('school.Term', on_delete=models.CASCADE)
+    # Nullable so templates can be generic (not tied to a specific class/term)
+    school_class = models.ForeignKey('school.SchoolClass', on_delete=models.CASCADE, null=True, blank=True)
+    term = models.ForeignKey('school.Term', on_delete=models.CASCADE, null=True, blank=True)
     title = models.CharField(max_length=200)
     objectives = models.TextField(blank=True)
     created_by = models.ForeignKey('auth.User', null=True, blank=True, on_delete=models.SET_NULL)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    # Template fields
+    is_template = models.BooleanField(default=False)
+    template_name = models.CharField(max_length=200, blank=True, help_text="Friendly name shown in the template picker")
+    template_description = models.TextField(blank=True, help_text="Describes what this template covers")
+
     class Meta:
         unique_together = ('subject', 'school_class', 'term')
 
     def __str__(self):
+        if self.is_template:
+            return f"[TEMPLATE] {self.template_name or self.title}"
         return f"{self.title} - {self.subject.name}"
 
 class SchemeTopic(models.Model):

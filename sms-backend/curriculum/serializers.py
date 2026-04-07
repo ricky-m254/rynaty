@@ -9,12 +9,19 @@ class SchemeTopicSerializer(serializers.ModelSerializer):
 class SchemeOfWorkSerializer(serializers.ModelSerializer):
     topics = SchemeTopicSerializer(many=True, read_only=True)
     subject_name = serializers.CharField(source='subject.name', read_only=True)
-    school_class_name = serializers.CharField(source='school_class.display_name', read_only=True)
-    term_name = serializers.CharField(source='term.name', read_only=True)
+    # allow_null so templates (no class/term) don't raise SerializerError
+    school_class_name = serializers.SerializerMethodField()
+    term_name = serializers.SerializerMethodField()
 
     class Meta:
         model = SchemeOfWork
         fields = '__all__'
+
+    def get_school_class_name(self, obj):
+        return obj.school_class.display_name if obj.school_class else None
+
+    def get_term_name(self, obj):
+        return obj.term.name if obj.term else None
 
 class LessonPlanSerializer(serializers.ModelSerializer):
     topic_name = serializers.CharField(source='topic.topic', read_only=True)
