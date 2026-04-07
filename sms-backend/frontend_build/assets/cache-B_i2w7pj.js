@@ -1,0 +1,1 @@
+const n=new Map;function o(e){const t=n.get(e);return t?Date.now()-t.timestamp>t.ttl?(n.delete(e),null):t.data:null}function s(e,t,a=6e4){n.set(e,{data:t,timestamp:Date.now(),ttl:a})}function r(e){for(const t of n.keys())t.includes(e)&&n.delete(t)}async function u(e,t,a=6e4){const c=o(e);if(c!==null)return c;const i=await t();return s(e,i,a),i}export{u as c,r as i};

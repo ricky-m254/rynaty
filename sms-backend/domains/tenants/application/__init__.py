@@ -1,0 +1,1 @@
+"""Tenants application layer."""

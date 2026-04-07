@@ -1,0 +1,1 @@
+const s=t=>{if(Array.isArray(t))return{items:t,totalCount:t.length,isPaginated:!1};const e=Array.isArray(t.results)?t.results:[],r=typeof t.count=="number"?t.count:e.length;return{items:e,totalCount:r,isPaginated:!0}};export{s as n};

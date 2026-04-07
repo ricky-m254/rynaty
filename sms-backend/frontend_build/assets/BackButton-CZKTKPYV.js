@@ -1,0 +1,1 @@
+import{u as n,j as i}from"./index-D7ltaYVC.js";function o({to:e,label:a="Back",onClick:t}){const s=n();return i.jsxs("button",{onClick:()=>{t?t():s(e||-1)},className:"mb-3 flex items-center gap-1.5 text-xs text-slate-400 hover:text-emerald-400 transition",children:["← ",a]})}export{o as B};

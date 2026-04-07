@@ -1,4 +1,4 @@
-modules = ["nodejs-24"]
+modules = ["nodejs-24", "python-3.11"]
 
 [[artifacts]]
 id = "artifacts/api-server"
@@ -17,6 +17,27 @@ env = { "CI" = "true" }
 [workflows]
 runButton = "Project"
 
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Start application"
+
+[[workflows.workflow]]
+name = "Start application"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "bash /home/runner/workspace/sms-backend/start.sh"
+waitForPort = 8080
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
 [agent]
 stack = "PNPM_WORKSPACE"
 expertMode = true
@@ -24,3 +45,25 @@ expertMode = true
 [postMerge]
 path = "scripts/post-merge.sh"
 timeoutMs = 20000
+
+[userenv]
+
+[userenv.shared]
+DJANGO_SETTINGS_MODULE = "config.settings"
+DJANGO_DEBUG = "true"
+DJANGO_ALLOW_INSECURE_DEFAULTS = "true"
+DJANGO_ALLOWED_HOSTS = "*"
+BOOTSTRAP_DEMO_DATA = "true"
+DEMO_SCHEMA_NAME = "demo_school"
+DEMO_SCHOOL_NAME = "RynatySchool Demo"
+DEMO_TENANT_DOMAIN = "demo.localhost"
+DEMO_ADMIN_USER = "admin"
+DEMO_ADMIN_PASS = "admin123"
+DEMO_ADMIN_EMAIL = "admin@demo.school"
+PYTHONPATH = "/home/runner/workspace/sms-backend"
+WEB_CONCURRENCY = "2"
+DJANGO_SECRET_KEY = "_m2h4-xtmu!b&y)x_=-n^)o8&#p0-p&r7146@9mkg3+!v$$9$0"
+
+[nix]
+channel = "stable-25_05"
+packages = ["freetype", "glibcLocales", "lcms2", "libimagequant", "libjpeg", "libtiff", "libwebp", "libxcrypt", "openjpeg", "tcl", "tk", "zlib"]

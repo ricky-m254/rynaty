@@ -1,0 +1,1 @@
+import{r as a,b as o}from"./index-D7ltaYVC.js";let t=null;function i(){const[s,n]=a.useState(t),[r,e]=a.useState(!t);return a.useEffect(()=>{if(t){n(t),e(!1);return}o.get("/academics/current/").then(c=>{t=c.data,n(c.data),e(!1)}).catch(()=>e(!1))},[]),{context:s,loading:r}}export{i as u};
