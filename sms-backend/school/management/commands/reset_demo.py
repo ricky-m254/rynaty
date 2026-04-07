@@ -353,7 +353,10 @@ class Command(BaseCommand):
                 ParentStudentLink.objects.all().delete()
                 # Remove seeded parent portal users (username starts with 'parent.')
                 from django.contrib.auth import get_user_model
-                get_user_model().objects.filter(username__startswith="parent.").delete()
+                _User = get_user_model()
+                _User.objects.filter(username__startswith="parent.").delete()
+                # Remove seeded student login accounts (username matches admission number pattern)
+                _User.objects.filter(username__startswith="stm").delete()
             except Exception:
                 pass
 

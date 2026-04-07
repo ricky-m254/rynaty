@@ -2594,6 +2594,9 @@ class Command(BaseCommand):
         import random
         random.seed(99)
 
+        parent_role = Role.objects.filter(name="PARENT").first()
+        student_role = Role.objects.filter(name="STUDENT").first()
+
         created = 0
         for student in students[:20]:
             guardian = Guardian.objects.filter(student=student).first()
@@ -2605,7 +2608,7 @@ class Command(BaseCommand):
             parent_user, user_created = User.objects.get_or_create(
                 username=portal_username,
                 defaults={
-                    "first_name": guardian.name.replace("Mr./Mrs. ", ""),
+                    "first_name": guardian.name.replace("Mr./Mrs. ", "").split()[0] if guardian.name else "Parent",
                     "last_name":  student.last_name,
                     "email":      guardian.email or f"{portal_username}@stmarys.ac.ke",
                 },
@@ -2613,6 +2616,16 @@ class Command(BaseCommand):
             if user_created:
                 parent_user.set_password("parent123")
                 parent_user.save()
+
+            # ── Assign PARENT role via UserProfile ──────────────────────────
+            if parent_role:
+                profile, _ = UserProfile.objects.get_or_create(
+                    user=parent_user,
+                    defaults={"role": parent_role},
+                )
+                if profile.role_id != parent_role.id:
+                    profile.role = parent_role
+                    profile.save(update_fields=["role"])
 
             _, link_created = ParentStudentLink.objects.get_or_create(
                 parent_user=parent_user,
@@ -2628,10 +2641,38 @@ class Command(BaseCommand):
             if link_created:
                 created += 1
 
+        # ── Create student login accounts ────────────────────────────────────
+        student_logins = 0
+        if student_role:
+            for student in students[:10]:
+                stu_username = student.admission_number.lower()
+                stu_user, stu_created = User.objects.get_or_create(
+                    username=stu_username,
+                    defaults={
+                        "first_name": student.first_name,
+                        "last_name":  student.last_name,
+                        "email":      f"{stu_username}@stmarys.ac.ke",
+                    },
+                )
+                if stu_created:
+                    stu_user.set_password("student123")
+                    stu_user.save()
+                if student_role:
+                    stu_profile, _ = UserProfile.objects.get_or_create(
+                        user=stu_user,
+                        defaults={"role": student_role, "admission_number": student.admission_number},
+                    )
+                    if stu_profile.role_id != student_role.id:
+                        stu_profile.role = student_role
+                        stu_profile.admission_number = student.admission_number
+                        stu_profile.save(update_fields=["role", "admission_number"])
+                student_logins += 1 if stu_created else 0
+
         self.stdout.write(
             f"    → Parent Portal: {created} new links "
             f"(total: {ParentStudentLink.objects.count()} links for "
-            f"{User.objects.filter(username__startswith='parent.').count()} parent accounts)"
+            f"{User.objects.filter(username__startswith='parent.').count()} parent accounts, "
+            f"{student_logins} new student logins)"
         )
 
     # ── Admissions Pipeline ───────────────────────────────────────────────────

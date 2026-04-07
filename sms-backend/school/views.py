@@ -1391,6 +1391,27 @@ class AdmissionsPipelineSummaryView(APIView):
             "counts": ordered,
         }, status=status.HTTP_200_OK)
 
+class LogoutView(APIView):
+    """
+    Blacklist the supplied refresh token, effectively logging the user out
+    on the server side. The client should also clear its stored tokens.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        refresh_token = request.data.get("refresh")
+        if not refresh_token:
+            return Response({"detail": "Refresh token is required."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            from rest_framework_simplejwt.tokens import RefreshToken as JWTRefreshToken
+            token = JWTRefreshToken(refresh_token)
+            token.blacklist()
+            return Response({"detail": "Logged out successfully."}, status=status.HTTP_200_OK)
+        except Exception:
+            # Token already expired/blacklisted — still treat as logged-out
+            return Response({"detail": "Logged out."}, status=status.HTTP_200_OK)
+
+
 class CurrentUserView(APIView):
     """Return the currently authenticated user's profile, role and assigned modules."""
     permission_classes = [permissions.IsAuthenticated]
