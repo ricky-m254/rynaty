@@ -245,6 +245,21 @@ class Command(BaseCommand):
         self.stdout.write("  Seeding Staff Management member records…")
         self._seed_staff_mgmt_members()
 
+        self.stdout.write("  Seeding examination sessions, papers and results…")
+        self._seed_examinations(year, terms, classes, admin)
+
+        self.stdout.write("  Seeding alumni profiles, events, mentorships and donations…")
+        self._seed_alumni()
+
+        self.stdout.write("  Seeding parent-teacher meeting (PTM) sessions…")
+        self._seed_ptm(terms, students)
+
+        self.stdout.write("  Seeding clock-in shifts, person registry and attendance events…")
+        self._seed_clockin(students, admin)
+
+        self.stdout.write("  Seeding parent portal account links…")
+        self._seed_parent_portal(students, admin)
+
         self.stdout.write("  Activating all modules for this tenant (TenantModule)…")
         self._seed_tenant_modules()
 
@@ -2047,6 +2062,525 @@ class Command(BaseCommand):
         self.stdout.write(
             f'    → Staff Members: {created} new records created '
             f'(total: {StaffMember.objects.count()})'
+        )
+
+    # ── Examinations ─────────────────────────────────────────────────────────
+    def _seed_examinations(self, year, terms, classes, admin_user):
+        try:
+            from examinations.models import (
+                ExamSession, ExamPaper, ExamGradeBoundary, ExamResult, ExamSeatAllocation,
+            )
+        except ImportError:
+            self.stdout.write("    Examinations app not available — skipping")
+            return
+        import random
+        random.seed(55)
+        from time import time as _time
+        from datetime import time as dt_time
+
+        term1 = terms[0] if terms else None
+
+        # 1. Exam sessions
+        SESSIONS = [
+            ("Mid-Term Examinations – Term 1 2025", date(2025, 2, 24), date(2025, 2, 28), "Completed"),
+            ("End-of-Term Examinations – Term 1 2025", date(2025, 3, 24), date(2025, 3, 28), "Completed"),
+            ("Mid-Term Examinations – Term 2 2025", date(2025, 6, 9),  date(2025, 6, 13),  "Upcoming"),
+        ]
+        sessions = []
+        for name, start, end, status in SESSIONS:
+            s, _ = ExamSession.objects.get_or_create(
+                name=name,
+                defaults={
+                    "term": term1,
+                    "academic_year": year,
+                    "start_date": start,
+                    "end_date": end,
+                    "status": status,
+                    "notes": f"Formal examination session for {name}.",
+                },
+            )
+            sessions.append(s)
+
+        # 2. Grade boundaries (KNEC A–E)
+        BOUNDARIES = [
+            ("A",  75, 100, "Excellent"),
+            ("B",  60,  74, "Good"),
+            ("C",  45,  59, "Average"),
+            ("D",  30,  44, "Below Average"),
+            ("E",   0,  29, "Fail"),
+        ]
+        for session in sessions:
+            for grade, mn, mx, remarks in BOUNDARIES:
+                ExamGradeBoundary.objects.get_or_create(
+                    session=session, grade=grade,
+                    defaults={"min_marks": mn, "max_marks": mx, "remarks": remarks},
+                )
+
+        # 3. ExamPapers for the first (Completed) session – core subjects x Form 1–4 East
+        EXAM_SUBJECTS = ["MTH", "ENG", "KSW", "BIO", "PHY", "CHE", "HIS", "GEO"]
+        core_subjects = list(Subject.objects.filter(code__in=EXAM_SUBJECTS, is_active=True))
+
+        flat_classes = []
+        if isinstance(classes, dict):
+            for form_dict in classes.values():
+                if isinstance(form_dict, dict):
+                    east = form_dict.get("East")
+                    if east:
+                        flat_classes.append(east)
+        else:
+            flat_classes = list(classes)[:4]
+
+        session0 = sessions[0]  # Completed mid-term
+        start_time = dt_time(8, 0)
+        end_time   = dt_time(10, 0)
+        rooms = ["Hall A", "Hall B", "Science Block", "Computer Lab"]
+        paper_count = 0
+        for i, cls in enumerate(flat_classes):
+            for j, subj in enumerate(core_subjects[:6]):
+                exam_date = date(2025, 2, 24) + timedelta(days=(j % 5))
+                paper, paper_created = ExamPaper.objects.get_or_create(
+                    session=session0, subject=subj, school_class=cls,
+                    defaults={
+                        "exam_date": exam_date,
+                        "start_time": start_time,
+                        "end_time":   end_time,
+                        "exam_room":  rooms[i % len(rooms)],
+                        "total_marks": 100,
+                        "pass_mark":   40,
+                        "invigilator": admin_user,
+                    },
+                )
+                paper_count += 1 if paper_created else 0
+
+                # 4. Seat allocations + results for enrolled students
+                enrolled_students = list(
+                    Enrollment.objects.filter(school_class=cls, is_active=True)
+                    .select_related("student")
+                )
+                for seat_num, enr in enumerate(enrolled_students[:10], start=1):
+                    ExamSeatAllocation.objects.get_or_create(
+                        paper=paper, student=enr.student,
+                        defaults={"seat_number": str(seat_num)},
+                    )
+                    score = round(random.gauss(58, 15), 1)
+                    score = max(5.0, min(100.0, score))
+                    if   score >= 75: grade = "A"
+                    elif score >= 60: grade = "B"
+                    elif score >= 45: grade = "C"
+                    elif score >= 30: grade = "D"
+                    else:             grade = "E"
+                    ExamResult.objects.get_or_create(
+                        paper=paper, student=enr.student,
+                        defaults={
+                            "marks_obtained": Decimal(str(score)),
+                            "grade": grade,
+                            "is_absent": False,
+                            "entered_by": admin_user,
+                        },
+                    )
+
+        self.stdout.write(
+            f"    → Examinations: {ExamSession.objects.count()} sessions, "
+            f"{ExamPaper.objects.count()} papers, "
+            f"{ExamResult.objects.count()} results, "
+            f"{ExamGradeBoundary.objects.count()} boundaries"
+        )
+
+    # ── Alumni ────────────────────────────────────────────────────────────────
+    def _seed_alumni(self):
+        try:
+            from alumni.models import AlumniProfile, AlumniEvent, AlumniEventAttendee, AlumniMentorship, AlumniDonation
+        except ImportError:
+            self.stdout.write("    Alumni app not available — skipping")
+            return
+        import random
+        random.seed(88)
+
+        ALUMNI_DATA = [
+            # (first, last, grad_year, institution, occupation, city)
+            ("Peter",     "Kamau",     2015, "University of Nairobi",             "Software Engineer",       "Nairobi"),
+            ("Grace",     "Wanjiku",   2014, "Strathmore University",             "Accountant",              "Nairobi"),
+            ("David",     "Mwangi",    2013, "Kenya Medical Training College",    "Clinical Officer",        "Nakuru"),
+            ("Faith",     "Njoroge",   2016, "Moi University",                    "Secondary School Teacher","Eldoret"),
+            ("James",     "Wafula",    2012, "Kenyatta University",               "University Lecturer",     "Nairobi"),
+            ("Mary",      "Achieng",   2015, "USIU Africa",                       "Marketing Manager",       "Nairobi"),
+            ("John",      "Mutua",     2011, "Technical University of Kenya",     "Civil Engineer",          "Mombasa"),
+            ("Susan",     "Wafula",    2014, "KCA University",                    "Business Analyst",        "Nairobi"),
+            ("Samuel",    "Kiprotich", 2013, "University of Eldoret",             "Agronomist",              "Rift Valley"),
+            ("Esther",    "Chepkoech", 2016, "Daystar University",               "Broadcast Journalist",    "Nairobi"),
+            ("George",    "Abuya",     2012, "Maseno University",                 "Economist",               "Kisumu"),
+            ("Alice",     "Nyambura",  2015, "Mount Kenya University",            "Pharmacist",              "Thika"),
+            ("Kevin",     "Waweru",    2014, "Multimedia University of Kenya",    "Graphic Designer",        "Nairobi"),
+            ("Joyce",     "Wangari",   2013, "Egerton University",               "Agricultural Officer",    "Nakuru"),
+            ("Victor",    "Cheruiyot", 2017, "Kabarak University",               "Counsellor",              "Nakuru"),
+            ("Ruth",      "Adhiambo",  2011, "Catholic University of East Africa","Social Worker",           "Kisumu"),
+            ("Brian",     "Ndegwa",    2016, "Africa Nazarene University",        "IT Administrator",        "Nairobi"),
+            ("Caroline",  "Kiptoo",    2015, "South Eastern Kenya University",    "Microbiologist",          "Machakos"),
+            ("Emmanuel",  "Kariuki",   2013, "Jomo Kenyatta University",          "Mechanical Engineer",     "Nairobi"),
+            ("Janet",     "Waweru",    2014, "Kenya School of Law",               "Advocate",                "Nairobi"),
+        ]
+
+        profiles = []
+        created = 0
+        for i, (first, last, grad_yr, institution, occupation, city) in enumerate(ALUMNI_DATA):
+            adm_no = f"ADM{grad_yr}{str(i + 1).zfill(3)}"
+            profile, was_created = AlumniProfile.objects.get_or_create(
+                admission_number=adm_no,
+                defaults={
+                    "first_name": first,
+                    "last_name":  last,
+                    "graduation_year": grad_yr,
+                    "email":      f"{first.lower()}.{last.lower()}@alumni.stmarys.ac.ke",
+                    "phone":      f"07{random.randint(10_000_000, 99_999_999)}",
+                    "current_institution": institution,
+                    "current_occupation":  occupation,
+                    "country": "Kenya",
+                    "city":    city,
+                    "linkedin_url": f"https://linkedin.com/in/{first.lower()}-{last.lower()}",
+                    "bio": (
+                        f"{first} {last} graduated from St. Mary's Nairobi in {grad_yr} and "
+                        f"pursued a career as a {occupation.lower()}. Currently based in {city}, Kenya."
+                    ),
+                    "is_verified": (i % 3 != 0),
+                },
+            )
+            profiles.append(profile)
+            if was_created:
+                created += 1
+
+        # Reunion events
+        EVENTS = [
+            (
+                "Class of 2013–2015 Reunion",
+                "Annual reunion for the 2013–2015 graduating classes. Old boys and girls are welcome.",
+                date(2025, 8, 23),
+                "School Hall, St. Mary's Nairobi",
+                "Joseph Karanja (Principal)",
+            ),
+            (
+                "Alumni Career Fair 2025",
+                "Connect with employers and explore internship opportunities. Open to all alumni and current Form 4 students.",
+                date(2025, 9, 13),
+                "KICC Nairobi – Ground Floor",
+                "Alumni Secretariat",
+            ),
+            (
+                "Annual Golf Fundraiser",
+                "Golf tournament in aid of the School Scholarship Fund. Alumni and corporate sponsors welcome.",
+                date(2025, 10, 4),
+                "Karen Country Club, Nairobi",
+                "George Abuya (Class of 2012)",
+            ),
+        ]
+        event_objects = []
+        for title, desc, ev_date, location, organizer in EVENTS:
+            ev, _ = AlumniEvent.objects.get_or_create(
+                title=title,
+                defaults={
+                    "description": desc,
+                    "event_date":  ev_date,
+                    "location":    location,
+                    "is_virtual":  False,
+                    "organizer":   organizer,
+                },
+            )
+            event_objects.append(ev)
+
+        # Attendee registrations
+        for alum in profiles[:10]:
+            AlumniEventAttendee.objects.get_or_create(event=event_objects[0], alumni=alum)
+        for alum in profiles[:7]:
+            AlumniEventAttendee.objects.get_or_create(event=event_objects[1], alumni=alum)
+        for alum in profiles[10:17]:
+            AlumniEventAttendee.objects.get_or_create(event=event_objects[2], alumni=alum)
+
+        # Mentorships
+        MENTORSHIPS = [
+            (profiles[0],  "Victor Omondi",    "student", "Software Engineering",   "Python, Django, Cloud DevOps",            "active"),
+            (profiles[1],  "Grace Nyambura",   "student", "Finance & Accounting",   "CPA, Financial Modelling, Excel",         "active"),
+            (profiles[2],  "Daniel Otieno",    "student", "Medicine & Health",      "Clinical Practice, Medical Research",     "matched"),
+            (profiles[4],  "James Kipkemboi",  "student", "Education",              "Secondary Teaching, Curriculum Design",   "open"),
+            (profiles[6],  "Francis Mwenda",   "student", "Civil Engineering",      "Structural Design, AutoCAD, Site Safety", "active"),
+            (profiles[9],  "Mary Cherono",     "student", "Journalism & Media",     "Broadcast Journalism, Social Media",      "open"),
+            (profiles[11], "Beatrice Njeri",   "student", "Pharmacy & Healthcare",  "Drug Dispensing, Community Health",       "active"),
+        ]
+        for mentor, mentee_name, mentee_type, industry, skills, status in MENTORSHIPS:
+            AlumniMentorship.objects.get_or_create(
+                mentor=mentor, mentee_name=mentee_name,
+                defaults={
+                    "mentee_type":     mentee_type,
+                    "industry":        industry,
+                    "skills_offered":  skills,
+                    "status":          status,
+                    "started_at":      date(2025, 1, 15) if status in ("active", "matched") else None,
+                },
+            )
+
+        # Donations: (profile, campaign, amount, method, status, donation_date)
+        DONATIONS = [
+            (profiles[0],  "Library Renovation Fund",  Decimal("25000.00"), "mobile_money",  "received",     date(2025, 1, 20)),
+            (profiles[1],  "Scholarship Fund 2025",    Decimal("15000.00"), "bank_transfer", "received",     date(2025, 2, 5)),
+            (profiles[4],  "Sports Equipment Drive",   Decimal("10000.00"), "mobile_money",  "acknowledged", date(2025, 2, 14)),
+            (profiles[6],  "Science Lab Upgrade",      Decimal("50000.00"), "bank_transfer", "pledged",      date(2025, 3, 1)),
+            (profiles[9],  "General Fund",             Decimal("5000.00"),  "mobile_money",  "received",     date(2025, 3, 10)),
+            (profiles[11], "Scholarship Fund 2025",    Decimal("20000.00"), "mobile_money",  "received",     date(2025, 3, 22)),
+            (profiles[14], "Library Renovation Fund",  Decimal("8000.00"),  "mobile_money",  "acknowledged", date(2025, 4, 3)),
+            (profiles[19], "ICT Equipment Fund",       Decimal("35000.00"), "bank_transfer", "pledged",      date(2025, 4, 10)),
+        ]
+        for alum, campaign, amount, method, status, don_date in DONATIONS:
+            AlumniDonation.objects.get_or_create(
+                alumni=alum, campaign_name=campaign, amount=amount,
+                defaults={
+                    "currency":      "KES",
+                    "payment_method": method,
+                    "status":        status,
+                    "donation_date": don_date,
+                },
+            )
+
+        self.stdout.write(
+            f"    → Alumni: {created} new profiles (total: {AlumniProfile.objects.count()}), "
+            f"{AlumniEvent.objects.count()} events, "
+            f"{AlumniMentorship.objects.count()} mentorships, "
+            f"{AlumniDonation.objects.count()} donations"
+        )
+
+    # ── Parent-Teacher Meetings (PTM) ─────────────────────────────────────────
+    def _seed_ptm(self, terms, students):
+        try:
+            from ptm.models import PTMSession, PTMSlot, PTMBooking
+        except ImportError:
+            self.stdout.write("    PTM app not available — skipping")
+            return
+        from datetime import time as dt_time
+        import random
+        random.seed(66)
+
+        # PTMSession.term is a FK to academics.Term, not school.Term
+        try:
+            from academics.models import Term as AcademicsTerm
+            acad_term1 = AcademicsTerm.objects.first()
+        except Exception:
+            acad_term1 = None
+
+        SESSIONS_DEF = [
+            (
+                "Term 1 2025 Parent-Teacher Meeting",
+                date(2025, 3, 8),
+                "School Main Hall",
+                acad_term1,
+                dt_time(8, 0),
+                dt_time(16, 0),
+            ),
+            (
+                "Form 4 Parents' Consultation Day",
+                date(2025, 3, 15),
+                "Principal's Conference Room",
+                acad_term1,
+                dt_time(9, 0),
+                dt_time(15, 0),
+            ),
+        ]
+
+        teachers = list(User.objects.exclude(username="admin")[:10])
+        if not teachers:
+            teachers = [User.objects.filter(is_superuser=True).first()]
+
+        for title, sess_date, venue, term, start_t, end_t in SESSIONS_DEF:
+            session, _ = PTMSession.objects.get_or_create(
+                title=title,
+                defaults={
+                    "date": sess_date,
+                    "venue": venue,
+                    "term": term,
+                    "slot_duration_minutes": 15,
+                    "start_time": start_t,
+                    "end_time":   end_t,
+                    "is_virtual": False,
+                    "notes": f"Scheduled parents' consultation for {title}.",
+                },
+            )
+
+            # Create one slot per teacher at staggered times
+            from datetime import datetime, timedelta as td
+            base_dt = datetime(2000, 1, 1, start_t.hour, start_t.minute)
+            for i, teacher in enumerate(teachers):
+                slot_time = (base_dt + td(minutes=15 * i)).time()
+                slot, _ = PTMSlot.objects.get_or_create(
+                    session=session,
+                    teacher=teacher,
+                    slot_time=slot_time,
+                    defaults={"is_booked": False},
+                )
+
+                # Book the first 3 slots with students
+                if i < 3 and students:
+                    student = students[i % len(students)]
+                    guardian = Guardian.objects.filter(student=student).first()
+                    PTMBooking.objects.get_or_create(
+                        slot=slot,
+                        student=student,
+                        defaults={
+                            "parent_name":  guardian.name if guardian else f"Parent of {student.first_name}",
+                            "parent_phone": guardian.phone if guardian else "",
+                            "parent_email": guardian.email if guardian else "",
+                            "notes": "Booked during Term 1 consultation period.",
+                            "status": "Confirmed",
+                        },
+                    )
+
+        self.stdout.write(
+            f"    → PTM: {PTMSession.objects.count()} sessions, "
+            f"{PTMSlot.objects.count()} slots, "
+            f"{PTMBooking.objects.count()} bookings"
+        )
+
+    # ── Clock-In / Biometric Attendance ──────────────────────────────────────
+    def _seed_clockin(self, students, admin_user):
+        try:
+            from clockin.models import SchoolShift, PersonRegistry, ClockEvent
+        except ImportError:
+            self.stdout.write("    Clockin app not available — skipping")
+            return
+        import random
+        from datetime import time as dt_time, datetime, timedelta as td
+        random.seed(77)
+
+        # 1. School shifts
+        SHIFTS = [
+            ("Morning Arrival (Students)", "STUDENT", dt_time(6, 30), 30, dt_time(16, 30)),
+            ("Morning Arrival (Staff)",    "STAFF",   dt_time(7, 0),  15, dt_time(17, 0)),
+            ("All-Person Gate Check",      "ALL",     dt_time(6, 30), 30, dt_time(18, 0)),
+        ]
+        for name, ptype, arrival, grace, departure in SHIFTS:
+            SchoolShift.objects.get_or_create(
+                name=name,
+                defaults={
+                    "person_type":          ptype,
+                    "expected_arrival":     arrival,
+                    "grace_period_minutes": grace,
+                    "expected_departure":   departure,
+                    "is_active":            True,
+                },
+            )
+
+        # 2. Person registry — register first 20 students
+        registry_entries = []
+        for i, student in enumerate(students[:20]):
+            fp_id = f"FP-STU-{str(i + 1).zfill(4)}"
+            card  = f"CARD{str(100 + i).zfill(6)}"
+            entry, _ = PersonRegistry.objects.get_or_create(
+                fingerprint_id=fp_id,
+                defaults={
+                    "card_no":     card,
+                    "person_type": "STUDENT",
+                    "student":     student,
+                    "display_name": f"{student.first_name} {student.last_name}",
+                    "is_active":   True,
+                },
+            )
+            registry_entries.append(entry)
+
+        # 3. Clock events — simulate 5 school days (Mon–Fri last week)
+        today = date.today()
+        monday = today - timedelta(days=today.weekday())  # most recent Monday
+        events_created = 0
+        for day_offset in range(5):
+            school_day = monday + timedelta(days=day_offset)
+            for person in registry_entries[:15]:
+                # Morning IN
+                arrival_hour = random.randint(6, 7)
+                arrival_min  = random.randint(0, 55)
+                in_ts = datetime(school_day.year, school_day.month, school_day.day,
+                                 arrival_hour, arrival_min)
+                is_late = arrival_hour >= 7 and arrival_min > 30
+                existing_in = ClockEvent.objects.filter(
+                    person=person, date=school_day, event_type="IN"
+                ).exists()
+                if not existing_in:
+                    ClockEvent.objects.create(
+                        person=person,
+                        device=None,
+                        event_type="IN",
+                        timestamp=in_ts,
+                        date=school_day,
+                        is_late=is_late,
+                    )
+                    events_created += 1
+
+                # Afternoon OUT
+                out_hour = random.randint(15, 17)
+                out_min  = random.randint(0, 55)
+                out_ts = datetime(school_day.year, school_day.month, school_day.day,
+                                  out_hour, out_min)
+                existing_out = ClockEvent.objects.filter(
+                    person=person, date=school_day, event_type="OUT"
+                ).exists()
+                if not existing_out:
+                    ClockEvent.objects.create(
+                        person=person,
+                        device=None,
+                        event_type="OUT",
+                        timestamp=out_ts,
+                        date=school_day,
+                        is_late=False,
+                    )
+                    events_created += 1
+
+        self.stdout.write(
+            f"    → Clockin: {SchoolShift.objects.count()} shifts, "
+            f"{PersonRegistry.objects.count()} registered persons, "
+            f"{ClockEvent.objects.count()} clock events"
+        )
+
+    # ── Parent Portal Links ───────────────────────────────────────────────────
+    def _seed_parent_portal(self, students, admin_user):
+        try:
+            from parent_portal.models import ParentStudentLink
+        except ImportError:
+            self.stdout.write("    Parent portal app not available — skipping")
+            return
+        import random
+        random.seed(99)
+
+        created = 0
+        for student in students[:20]:
+            guardian = Guardian.objects.filter(student=student).first()
+            if not guardian:
+                continue
+
+            # Create a portal user for the guardian (username = parent.<adm_no>)
+            portal_username = f"parent.{student.admission_number.lower()}"
+            parent_user, user_created = User.objects.get_or_create(
+                username=portal_username,
+                defaults={
+                    "first_name": guardian.name.replace("Mr./Mrs. ", ""),
+                    "last_name":  student.last_name,
+                    "email":      guardian.email or f"{portal_username}@stmarys.ac.ke",
+                },
+            )
+            if user_created:
+                parent_user.set_password("parent123")
+                parent_user.save()
+
+            _, link_created = ParentStudentLink.objects.get_or_create(
+                parent_user=parent_user,
+                student=student,
+                defaults={
+                    "guardian":      guardian,
+                    "relationship":  guardian.relationship or "Parent",
+                    "is_primary":    True,
+                    "is_active":     True,
+                    "created_by":    admin_user,
+                },
+            )
+            if link_created:
+                created += 1
+
+        self.stdout.write(
+            f"    → Parent Portal: {created} new links "
+            f"(total: {ParentStudentLink.objects.count()} links for "
+            f"{User.objects.filter(username__startswith='parent.').count()} parent accounts)"
         )
 
     # ── TenantModule Activations ──────────────────────────────────────────────

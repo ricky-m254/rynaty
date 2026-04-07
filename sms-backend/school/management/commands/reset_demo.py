@@ -207,6 +207,61 @@ class Command(BaseCommand):
             self.stdout.write("Clearing school profile...")
             SchoolProfile.objects.all().delete()
 
+            # ── Examinations ─────────────────────────────────────────────────
+            self.stdout.write("Clearing examination session data...")
+            try:
+                from examinations.models import ExamResult, ExamSeatAllocation, ExamGradeBoundary, ExamPaper, ExamSession
+                ExamResult.objects.all().delete()
+                ExamSeatAllocation.objects.all().delete()
+                ExamGradeBoundary.objects.all().delete()
+                ExamPaper.objects.all().delete()
+                ExamSession.objects.all().delete()
+            except Exception:
+                pass
+
+            # ── Alumni ────────────────────────────────────────────────────────
+            self.stdout.write("Clearing alumni records...")
+            try:
+                from alumni.models import AlumniDonation, AlumniMentorship, AlumniEventAttendee, AlumniEvent, AlumniProfile
+                AlumniDonation.objects.all().delete()
+                AlumniMentorship.objects.all().delete()
+                AlumniEventAttendee.objects.all().delete()
+                AlumniEvent.objects.all().delete()
+                AlumniProfile.objects.all().delete()
+            except Exception:
+                pass
+
+            # ── PTM ──────────────────────────────────────────────────────────
+            self.stdout.write("Clearing PTM records...")
+            try:
+                from ptm.models import PTMBooking, PTMSlot, PTMSession
+                PTMBooking.objects.all().delete()
+                PTMSlot.objects.all().delete()
+                PTMSession.objects.all().delete()
+            except Exception:
+                pass
+
+            # ── Clock-in ─────────────────────────────────────────────────────
+            self.stdout.write("Clearing clock-in records...")
+            try:
+                from clockin.models import ClockEvent, PersonRegistry, SchoolShift
+                ClockEvent.objects.all().delete()
+                PersonRegistry.objects.all().delete()
+                SchoolShift.objects.all().delete()
+            except Exception:
+                pass
+
+            # ── Parent portal ─────────────────────────────────────────────────
+            self.stdout.write("Clearing parent portal links...")
+            try:
+                from parent_portal.models import ParentStudentLink
+                ParentStudentLink.objects.all().delete()
+                # Remove seeded parent portal users (username starts with 'parent.')
+                from django.contrib.auth import get_user_model
+                get_user_model().objects.filter(username__startswith="parent.").delete()
+            except Exception:
+                pass
+
         # Reseed everything
         self.stdout.write(self.style.SUCCESS("Reseeding Kenya school data..."))
         call_command("seed_kenya_school", schema_name=schema)
