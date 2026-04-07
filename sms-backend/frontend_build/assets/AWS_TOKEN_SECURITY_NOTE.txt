@@ -1,0 +1,17 @@
+SECURITY NOTE — False Positive AWS Access Token Detection
+==========================================================
+
+File:   html2canvas.esm-DXEQVQnt.js
+String: AKIAqgCyALoAYABoAGAAaABg
+
+Analysis: This string was flagged by gitleaks as a potential AWS Access Key.
+It is a confirmed FALSE POSITIVE.
+
+Reason: Real AWS Access Key IDs are formatted as AKIA[A-Z0-9]{16} (20 chars,
+all uppercase alphanumeric after the AKIA prefix). The flagged string
+contains lowercase letters in the AKIA body, making it structurally invalid
+as a real AWS key. It appears to be a Base64-encoded chunk produced by the
+html2canvas canvas-to-image library bundler — not a credential.
+
+No credential rotation or remediation is required.
+Reviewed: April 2026

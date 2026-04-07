@@ -5,6 +5,11 @@ from django.views.decorators.csrf import csrf_exempt
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 
+# Security note: @csrf_exempt is correct here.  This is a stateless JWT login
+# endpoint — credentials travel in the JSON request body, not in a cookie.
+# Django's CSRF middleware protects cookie-based sessions; it does not apply
+# to token-based (JWT) authentication flows.  The JWT tokens returned by this
+# view are validated on every subsequent request by JWTAuthentication.
 @csrf_exempt
 def _tenant_aware_login_view(request):
     """

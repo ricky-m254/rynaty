@@ -46,6 +46,34 @@ from communication.models import Message
 from communication.services import send_email_placeholder, send_sms_placeholder
 from reporting.models import AuditLog
 from .control_plane import build_control_plane_summary
+
+# ---------------------------------------------------------------------------
+# CSV formula-injection defence
+# ---------------------------------------------------------------------------
+_CSV_INJECTION_CHARS = ('=', '+', '-', '@', '\t', '\r')
+
+def _csv_safe(value):
+    """Prefix any cell that starts with a formula-injection character with a
+    single quote so spreadsheet applications treat it as plain text."""
+    s = str(value) if value is not None else ''
+    if s and s[0] in _CSV_INJECTION_CHARS:
+        return "'" + s
+    return s
+
+
+class _SafeCsvWriter:
+    """Drop-in replacement for csv.writer that sanitises every cell value
+    against CSV formula injection before writing."""
+    def __init__(self, *args, **kwargs):
+        self._writer = csv.writer(*args, **kwargs)
+
+    def writerow(self, row):
+        return self._writer.writerow([_csv_safe(v) for v in row])
+
+    def writerows(self, rows):
+        return self._writer.writerows([[_csv_safe(v) for v in row] for row in rows])
+
+
 from .serializers import (
     ExpenseSerializer, StaffSerializer,
     StudentSerializer, InvoiceSerializer, PaymentSerializer,
@@ -2562,7 +2590,7 @@ class BankStatementLineViewSet(viewsets.ModelViewSet):
         lines = self.get_queryset()
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = 'attachment; filename="finance_bank_statement_lines.csv"'
-        writer = csv.writer(response)
+        writer = _SafeCsvWriter(response)
         writer.writerow([
             'id', 'statement_date', 'value_date', 'amount', 'reference',
             'narration', 'source', 'status', 'matched_payment_reference', 'matched_gateway_external_id'
@@ -2770,7 +2798,7 @@ class FinanceReceivablesAgingCsvExportView(APIView):
 
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = 'attachment; filename="finance_receivables_aging.csv"'
-        writer = csv.writer(response)
+        writer = _SafeCsvWriter(response)
         writer.writerow(['as_of', str(today)])
         writer.writerow(['bucket', 'invoice_count', 'amount'])
         for key, label in [('0_30', '0-30'), ('31_60', '31-60'), ('61_90', '61-90'), ('90_plus', '90+')]:
@@ -2813,7 +2841,7 @@ class FinanceOverdueAccountsCsvExportView(APIView):
 
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = 'attachment; filename="finance_overdue_accounts.csv"'
-        writer = csv.writer(response)
+        writer = _SafeCsvWriter(response)
         writer.writerow(['invoice_id', 'invoice_number', 'student_name', 'admission_number', 'due_date', 'status', 'balance_due', 'overdue_days'])
         for row in rows:
             writer.writerow([
@@ -3478,7 +3506,7 @@ class StudentsModuleReportCsvExportView(APIView):
         report = StudentsModuleReportView.build_report_data()
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = 'attachment; filename="students_module_report.csv"'
-        writer = csv.writer(response)
+        writer = _SafeCsvWriter(response)
         writer.writerow(['section', 'metric', 'value'])
         writer.writerow(['summary', 'students_active', report.get('students_active', 0)])
         writer.writerow(['summary', 'enrollments_active', report.get('enrollments_active', 0)])
@@ -3512,7 +3540,7 @@ class StudentReportCsvExportView(APIView):
 
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = f'attachment; filename="student_report_{student_id}.csv"'
-        writer = csv.writer(response)
+        writer = _SafeCsvWriter(response)
         writer.writerow(['section', 'field', 'value'])
 
         student = report.get('student', {})
@@ -3885,7 +3913,7 @@ class StudentsDirectoryCsvExportView(APIView):
         queryset = _students_directory_queryset(request)
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = 'attachment; filename="students_directory.csv"'
-        writer = csv.writer(response)
+        writer = _SafeCsvWriter(response)
         writer.writerow(['admission_number', 'first_name', 'last_name', 'gender', 'date_of_birth', 'status'])
         for student in queryset:
             writer.writerow([
@@ -3985,7 +4013,7 @@ class MedicalProfilesCsvExportView(APIView):
 
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = 'attachment; filename="medical_profiles_report.csv"'
-        writer = csv.writer(response)
+        writer = _SafeCsvWriter(response)
         writer.writerow([
             'student_name', 'student_id', 'blood_type', 'allergies', 'chronic_conditions',
             'current_medications', 'doctor_name', 'doctor_phone', 'updated_at'
@@ -4081,7 +4109,7 @@ class MedicalImmunizationsCsvExportView(APIView):
 
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = 'attachment; filename="medical_immunizations_report.csv"'
-        writer = csv.writer(response)
+        writer = _SafeCsvWriter(response)
         writer.writerow(['student_name', 'student_id', 'vaccine_name', 'date_administered', 'booster_due_date'])
         for row in queryset:
             writer.writerow([
@@ -4175,7 +4203,7 @@ class MedicalClinicVisitsCsvExportView(APIView):
 
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = 'attachment; filename="medical_clinic_visits_report.csv"'
-        writer = csv.writer(response)
+        writer = _SafeCsvWriter(response)
         writer.writerow(['student_name', 'student_id', 'visit_date', 'complaint', 'treatment', 'severity', 'parent_notified'])
         for row in queryset:
             writer.writerow([
@@ -4268,7 +4296,7 @@ class StudentsDocumentsCsvExportView(APIView):
         queryset = _student_documents_queryset(request)
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = 'attachment; filename="students_documents_report.csv"'
-        writer = csv.writer(response)
+        writer = _SafeCsvWriter(response)
         writer.writerow(['student_name', 'admission_number', 'file_name', 'file_url', 'uploaded_at'])
         for doc in queryset:
             file_url = doc.file.url if doc.file else ''
@@ -5252,7 +5280,7 @@ class FinanceSummaryCsvExportView(APIView):
         report = FinanceService.get_summary()
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = 'attachment; filename="finance_summary_report.csv"'
-        writer = csv.writer(response)
+        writer = _SafeCsvWriter(response)
         writer.writerow(['section', 'metric', 'value'])
         writer.writerow(['summary', 'revenue_billed', report.get('revenue_billed', 0)])
         writer.writerow(['summary', 'cash_collected', report.get('cash_collected', 0)])
@@ -5350,7 +5378,7 @@ class AttendanceSummaryCsvExportView(APIView):
 
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = 'attachment; filename="attendance_summary_report.csv"'
-        writer = csv.writer(response)
+        writer = _SafeCsvWriter(response)
         writer.writerow(['section', 'metric', 'value'])
         writer.writerow(['summary', 'attendance_rate', attendance_rate])
         writer.writerow(['summary', 'present', present])
@@ -5460,7 +5488,7 @@ class AttendanceRecordsCsvExportView(APIView):
 
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = 'attachment; filename="attendance_records_report.csv"'
-        writer = csv.writer(response)
+        writer = _SafeCsvWriter(response)
         writer.writerow(['student_name', 'student_id', 'status', 'date', 'notes'])
         for record in queryset:
             writer.writerow([
@@ -5581,7 +5609,7 @@ class BehaviorIncidentsCsvExportView(APIView):
 
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = 'attachment; filename="behavior_incidents_report.csv"'
-        writer = csv.writer(response)
+        writer = _SafeCsvWriter(response)
         writer.writerow(['student_name', 'student_id', 'incident_type', 'category', 'incident_date', 'severity', 'description'])
         for incident in queryset:
             writer.writerow([
@@ -8045,7 +8073,7 @@ class ImportTemplateDownloadView(APIView):
             )
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = f'attachment; filename="{module}_import_template.csv"'
-        writer = csv.writer(response)
+        writer = _SafeCsvWriter(response)
         writer.writerow(headers)
         # Write 3 example rows to guide the user
         if module == 'students':

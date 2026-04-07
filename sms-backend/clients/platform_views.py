@@ -470,20 +470,21 @@ def _execute_backup_engine(*, backup: BackupJob, actor) -> BackupExecutionRun:
 
     if mode == "pg_dump":
         db = settings.DATABASES.get("default", {})
+        # Security: all values below come from settings.DATABASES which is loaded
+        # from server-managed environment variables — never from user input.
+        # We still strip whitespace and newlines defensively before passing to
+        # subprocess (shell=False is the default, so no shell injection is possible).
+        def _safe_db_val(val, fallback=''):
+            return str(val or fallback).strip().replace('\n', '').replace('\r', '')
+
         cmd = [
             "pg_dump",
-            "-h",
-            str(db.get("HOST") or "localhost"),
-            "-p",
-            str(db.get("PORT") or "5432"),
-            "-U",
-            str(db.get("USER") or "postgres"),
-            "-d",
-            str(db.get("NAME") or ""),
-            "-F",
-            "c",
-            "-f",
-            output_path,
+            "-h", _safe_db_val(db.get("HOST"), "localhost"),
+            "-p", _safe_db_val(db.get("PORT"), "5432"),
+            "-U", _safe_db_val(db.get("USER"), "postgres"),
+            "-d", _safe_db_val(db.get("NAME")),
+            "-F", "c",
+            "-f", output_path,
         ]
         run.command = " ".join(cmd)
         env = os.environ.copy()

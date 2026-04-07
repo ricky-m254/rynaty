@@ -7,6 +7,24 @@ import urllib.request
 import urllib.error
 import urllib.parse
 import concurrent.futures
+import ipaddress
+
+
+def _validate_device_ip(ip_str: str) -> str:
+    """Return the canonical IP string if valid, raise ValueError otherwise.
+
+    Clockin devices are Dahua hardware on the school LAN, so private addresses
+    are intentional and expected.  This function only guards against non-IP
+    strings (e.g. hostnames that could be manipulated for DNS rebinding attacks)
+    and ensures the value is a properly-formed IPv4/IPv6 address before use in
+    outbound HTTP requests.
+    """
+    try:
+        return str(ipaddress.ip_address(ip_str.strip()))
+    except ValueError:
+        raise ValueError(f'Invalid device IP address: {ip_str!r}')
+
+
 from rest_framework import viewsets, permissions, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -122,6 +140,13 @@ def _dahua_http_identify(ip: str, timeout: float = 1.5) -> dict:
     Works without authentication on most Dahua access control devices.
     Returns a dict with 'model' and/or 'type' when successful.
     """
+    # Validate that ip is a properly-formed IP address before embedding it in
+    # a URL — prevents hostname-injection / DNS rebinding via the device config.
+    try:
+        ip = _validate_device_ip(ip)
+    except ValueError:
+        return {}
+
     info: dict = {}
     for action, key in [
         ('getDeviceType',                        'type'),
@@ -547,10 +572,20 @@ class DahuaSyncView(ClockInModuleMixin, APIView):
         start_time = f"{sync_date} 00:00:00"
         end_time   = f"{sync_date} 23:59:59"
 
-        ip       = device.ip_address
+        try:
+            ip = _validate_device_ip(device.ip_address)
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         port     = device.http_port or 80
         username = device.username or 'admin'
-        password = device.password or 'admin123'
+        # Do not fall back to a hardcoded credential; require the password to be
+        # configured on the BiometricDevice record.
+        password = device.password or ''
+        if not password:
+            return Response(
+                {'error': 'Device password is not configured. Please set it in the device settings.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         # URL-encode datetime strings so spaces become %20 (urllib rejects raw spaces)
         qs_punch = urllib.parse.urlencode({

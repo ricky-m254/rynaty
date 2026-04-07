@@ -185,7 +185,7 @@ class HrSession8PayrollSchemaTests(TenantTestBase):
         PayrollFinancePosting.objects.create(
             payroll=payroll,
             posting_stage="ACCRUAL",
-            entry_key="payroll-accrual-2026-05",
+            entry_key="payroll-accrual-2026-05",  # nosec - not an API key; gitleaks false positive on this payroll record identifier
             status="PENDING",
             vote_head_summary={"SUPPORT_SALARIES": "1100.00"},
         )

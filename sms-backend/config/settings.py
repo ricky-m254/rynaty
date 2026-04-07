@@ -326,6 +326,15 @@ REST_FRAMEWORK = {
         "rest_framework.permissions.IsAuthenticated",
     ],
     "DATETIME_FORMAT": "%Y-%m-%d %H:%M:%S",
+    # Rate limiting: protect all endpoints against brute-force and DoS attacks.
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.AnonRateThrottle",
+        "rest_framework.throttling.UserRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": "30/minute",   # unauthenticated (e.g. login attempts)
+        "user": "300/minute",  # authenticated users
+    },
 }
 
 SIMPLE_JWT = {

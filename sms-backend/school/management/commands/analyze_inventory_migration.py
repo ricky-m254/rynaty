@@ -64,8 +64,12 @@ def _table_exists(table_name: str) -> bool:
 
 def _row_count(table_name: str) -> int:
     try:
+        from psycopg2 import sql as pgsql
         with connection.cursor() as cursor:
-            cursor.execute(f'SELECT COUNT(*) FROM "{table_name}"')
+            query = pgsql.SQL('SELECT COUNT(*) FROM {}').format(
+                pgsql.Identifier(table_name)
+            )
+            cursor.execute(query)
             return cursor.fetchone()[0]
     except Exception:
         return -1
