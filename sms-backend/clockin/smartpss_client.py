@@ -59,17 +59,25 @@ class SmartPSSLiteClient:
 
     Usage:
         client = SmartPSSLiteClient(host='192.168.1.200', port=8443,
-                                    username='admin', password='admin123')
+                                    username='admin', password='<from-db-or-env>')
         with client.session() as token:
             records = client.search_attendance(token, start_dt, end_dt)
     """
 
     def __init__(self, host: str, port: int = 8443, username: str = 'admin',
-                 password: str = 'admin123', use_https: bool = False):
+                 password: str = '', use_https: bool = False):
+        import os
         scheme = 'https' if use_https else 'http'
         self.base = f'{scheme}://{host.strip()}:{port}/evo-apigw'
         self.username = username
-        self.password = password
+        # Never fall back to a hardcoded credential; require the caller to supply
+        # the password explicitly or via the SMARTPSS_PASSWORD environment variable.
+        self.password = password or os.environ.get('SMARTPSS_PASSWORD') or ''
+        if not self.password:
+            raise ValueError(
+                'SmartPSSLiteClient: password must be provided explicitly or via '
+                'the SMARTPSS_PASSWORD environment variable.'
+            )
 
     # ── low-level helpers ────────────────────────────────────────────────────
 

@@ -40,8 +40,10 @@ class BiometricDevice(models.Model):
     # Credentials (Dahua factory defaults)
     username    = models.CharField(max_length=100, default='admin',
                     help_text='Device login username (Dahua default: admin)')
-    password    = models.CharField(max_length=200, default='admin123',
-                    help_text='Device login password (Dahua default: admin123 or blank)')
+    password    = models.CharField(max_length=200, default='',
+                    blank=True,
+                    help_text='Device login password. Required for sync/export. '
+                              'Dahua factory default is "admin123" — change it on the device and enter the new password here.')
 
     # Device identity (populated during auto-discovery)
     brand             = models.CharField(max_length=100, default='Dahua',
@@ -160,7 +162,9 @@ class SmartPSSSource(models.Model):
     use_https     = models.BooleanField(default=False,
                       help_text='Use HTTPS instead of HTTP for the SmartPSS Lite API')
     username      = models.CharField(max_length=100, default='admin')
-    password      = models.CharField(max_length=200, default='admin123')
+    password      = models.CharField(max_length=200, default='', blank=True,
+                      help_text='SmartPSS Lite login password. Required for sync. '
+                                'Enter the password configured in SmartPSS Lite.')
     device_model  = models.CharField(max_length=100, blank=True, default='',
                       help_text='Dahua device model managed by this SmartPSS instance, '
                                 'e.g. "AS16214S", "ASI7213X-T1", "ASI3214S"')
