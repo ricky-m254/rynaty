@@ -917,27 +917,26 @@ class ParentHealthView(APIView):
 
         medical = MedicalRecord.objects.filter(student=child).values(
             'id', 'blood_type', 'allergies', 'chronic_conditions',
-            'disability', 'emergency_contact_name', 'emergency_contact_phone',
-            'created_at', 'updated_at'
+            'current_medications', 'doctor_name', 'doctor_phone',
+            'notes', 'updated_at'
         ).first()
 
         immunizations = list(ImmunizationRecord.objects.filter(student=child).values(
-            'id', 'vaccine_name', 'date_administered', 'dose_number',
-            'administered_by', 'notes', 'next_due_date'
+            'id', 'vaccine_name', 'date_administered', 'booster_due_date', 'created_at'
         ).order_by('-date_administered')[:20])
 
         clinic_visits = list(ClinicVisit.objects.filter(student=child).values(
-            'id', 'visit_date', 'complaint', 'diagnosis', 'treatment',
-            'referred_to_hospital', 'notes', 'created_at'
+            'id', 'visit_date', 'visit_time', 'complaint', 'treatment',
+            'severity', 'parent_notified', 'created_at'
         ).order_by('-visit_date')[:20])
 
         return Response({
             "child_id": child.id,
-            "child_name": child.full_name,
+            "child_name": f"{child.first_name} {child.last_name}".strip(),
             "medical_record": medical,
             "immunizations": immunizations,
             "clinic_visits": clinic_visits,
-            "children": [{"id": c.id, "name": c.full_name} for c in children],
+            "children": [{"id": c.id, "name": f"{c.first_name} {c.last_name}".strip()} for c in children],
         })
 
 
@@ -959,9 +958,9 @@ class ParentTransportView(APIView):
         if not assignment:
             return Response({
                 "child_id": child.id,
-                "child_name": child.full_name,
+                "child_name": f"{child.first_name} {child.last_name}".strip(),
                 "assignment": None,
-                "children": [{"id": c.id, "name": c.full_name} for c in children],
+                "children": [{"id": c.id, "name": f"{c.first_name} {c.last_name}".strip()} for c in children],
             })
 
         route = assignment.route
@@ -972,7 +971,7 @@ class ParentTransportView(APIView):
 
         return Response({
             "child_id": child.id,
-            "child_name": child.full_name,
+            "child_name": f"{child.first_name} {child.last_name}".strip(),
             "assignment": {
                 "id": assignment.id,
                 "route_name": route.name if route else None,
@@ -987,5 +986,5 @@ class ParentTransportView(APIView):
                 "driver_phone": driver.phone if driver else None,
             },
             "route_stops": stops,
-            "children": [{"id": c.id, "name": c.full_name} for c in children],
+            "children": [{"id": c.id, "name": f"{c.first_name} {c.last_name}".strip()} for c in children],
         })
