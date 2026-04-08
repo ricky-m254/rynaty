@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RynatySpace Technologies – Business Card</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #1a1a2e;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 40px 20px;
+    font-family: 'Inter', sans-serif;
+    gap: 60px;
+  }
+
+  .page-label {
+    color: #4ade80;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    margin-bottom: -48px;
+    align-self: flex-start;
+    margin-left: 80px;
+  }
+
+  .cards-row {
+    display: flex;
+    gap: 48px;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .card-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .card-tag {
+    font-size: 10px;
+    color: #64748b;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+
+  /* Standard business card: 85mm × 54mm → scale to 3.4× = 289×184px */
+  .card {
+    width: 340px;
+    height: 216px;
+    border-radius: 10px;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.06);
+  }
+
+  /* ===== FRONT ===== */
+  .card-front {
+    background: linear-gradient(135deg, #050d0a 0%, #0a1a12 40%, #071029 100%);
+  }
+
+  .card-front .accent-bar {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #10b981, #059669, #10b981);
+  }
+
+  .card-front .glow-orb {
+    position: absolute;
+    width: 160px;
+    height: 160px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(16,185,129,0.08) 0%, transparent 70%);
+    top: -40px;
+    right: -40px;
+  }
+
+  .card-front .orbit-ring {
+    position: absolute;
+    width: 90px;
+    height: 90px;
+    border-radius: 50%;
+    border: 1px solid rgba(16,185,129,0.15);
+    top: -20px;
+    right: -20px;
+  }
+
+  .card-front .orbit-ring-2 {
+    position: absolute;
+    width: 130px;
+    height: 130px;
+    border-radius: 50%;
+    border: 1px solid rgba(16,185,129,0.07);
+    top: -42px;
+    right: -42px;
+  }
+
+  .card-front .inner {
+    position: absolute;
+    inset: 0;
+    padding: 22px 24px 20px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+
+  .card-front .logo-zone {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .card-front .brand-name {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+    line-height: 1;
+  }
+
+  .card-front .brand-name .rynaty { color: #ffffff; }
+  .card-front .brand-name .space { color: #10b981; }
+
+  .card-front .brand-sub {
+    font-size: 8px;
+    color: #475569;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    font-weight: 500;
+    margin-top: 2px;
+  }
+
+  .card-front .divider {
+    width: 28px;
+    height: 1.5px;
+    background: linear-gradient(90deg, #10b981, transparent);
+    margin-top: 8px;
+  }
+
+  .card-front .person-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .card-front .person-name {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    color: #f1f5f9;
+  }
+
+  .card-front .person-title {
+    font-size: 8.5px;
+    color: #10b981;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+
+  .card-front .contact-row {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .card-front .contact-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .card-front .contact-item .dot {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: #10b981;
+    flex-shrink: 0;
+  }
+
+  .card-front .contact-item span {
+    font-size: 8.5px;
+    color: #94a3b8;
+    letter-spacing: 0.3px;
+  }
+
+  .card-front .contact-item a {
+    font-size: 8.5px;
+    color: #10b981;
+    text-decoration: none;
+    letter-spacing: 0.3px;
+  }
+
+  /* ===== BACK ===== */
+  .card-back {
+    background: linear-gradient(145deg, #0a1a12 0%, #050d0a 60%, #040810 100%);
+  }
+
+  .card-back .accent-bar-bottom {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, transparent, #10b981, transparent);
+  }
+
+  .card-back .pattern {
+    position: absolute;
+    inset: 0;
+    background-image:
+      repeating-linear-gradient(0deg, rgba(16,185,129,0.03) 0px, rgba(16,185,129,0.03) 1px, transparent 1px, transparent 28px),
+      repeating-linear-gradient(90deg, rgba(16,185,129,0.03) 0px, rgba(16,185,129,0.03) 1px, transparent 1px, transparent 28px);
+  }
+
+  .card-back .inner {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 20px;
+  }
+
+  .card-back .rs-emblem {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    border: 1.5px solid rgba(16,185,129,0.35);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    background: rgba(16,185,129,0.05);
+  }
+
+  .card-back .rs-emblem::before {
+    content: '';
+    position: absolute;
+    inset: -8px;
+    border-radius: 50%;
+    border: 1px solid rgba(16,185,129,0.12);
+  }
+
+  .card-back .rs-text {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 22px;
+    font-weight: 700;
+    color: #10b981;
+    letter-spacing: -1px;
+    line-height: 1;
+  }
+
+  .card-back .rs-text .small-s { font-size: 16px; }
+
+  .card-back .tagline {
+    font-size: 7.5px;
+    color: #475569;
+    text-align: center;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    font-weight: 500;
+    line-height: 1.6;
+  }
+
+  .card-back .tagline strong {
+    color: #64748b;
+    font-weight: 600;
+  }
+
+  .card-back .url-row {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    margin-top: 4px;
+  }
+
+  .card-back .url-chip {
+    padding: 2px 10px;
+    border-radius: 20px;
+    border: 1px solid rgba(16,185,129,0.25);
+    font-size: 7.5px;
+    color: #10b981;
+    letter-spacing: 0.5px;
+    background: rgba(16,185,129,0.05);
+  }
+
+  /* ===== PRINT ===== */
+  .print-note {
+    font-size: 11px;
+    color: #334155;
+    text-align: center;
+    line-height: 1.7;
+    max-width: 400px;
+  }
+
+  @media print {
+    body { background: white; gap: 20px; padding: 10px; }
+    .page-label { display: none; }
+    .print-note { display: none; }
+    .card-tag { color: #333; }
+    .cards-row { gap: 20px; }
+  }
+</style>
+</head>
+<body>
+
+<p class="page-label">RynatySpace Technologies — Business Card</p>
+
+<div class="cards-row">
+
+  <!-- FRONT -->
+  <div class="card-wrap">
+    <span class="card-tag">Front</span>
+    <div class="card card-front">
+      <div class="accent-bar"></div>
+      <div class="glow-orb"></div>
+      <div class="orbit-ring"></div>
+      <div class="orbit-ring-2"></div>
+      <div class="inner">
+        <div class="logo-zone">
+          <div class="brand-name">
+            <span class="rynaty">RYNATY</span><span class="space">SPACE</span>
+          </div>
+          <div class="brand-sub">Technologies Ltd</div>
+          <div class="divider"></div>
+        </div>
+        <div class="person-info">
+          <div class="person-name">Emmanuel Murithi</div>
+          <div class="person-title">Founder &amp; CEO</div>
+        </div>
+        <div class="contact-row">
+          <div class="contact-item">
+            <div class="dot"></div>
+            <span>+254 707 032 911</span>
+          </div>
+          <div class="contact-item">
+            <div class="dot"></div>
+            <a href="https://rynatyspace.com">rynatyspace.com</a>
+          </div>
+          <div class="contact-item">
+            <div class="dot"></div>
+            <a href="https://rynatyschool.app">rynatyschool.app</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BACK -->
+  <div class="card-wrap">
+    <span class="card-tag">Back</span>
+    <div class="card card-back">
+      <div class="accent-bar-bottom"></div>
+      <div class="pattern"></div>
+      <div class="inner">
+        <div class="rs-emblem">
+          <span class="rs-text">R<span class="small-s">s</span></span>
+        </div>
+        <div class="tagline">
+          <strong>Powering Africa's Digital Future</strong><br>
+          Smart Campus · Cloud Solutions · EdTech
+        </div>
+        <div class="url-row">
+          <span class="url-chip">rynatyspace.com</span>
+          <span class="url-chip">rynatyschool.app</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<p class="print-note">
+  To save as PDF: Press <strong>Ctrl+P</strong> (or Cmd+P on Mac) → choose <strong>"Save as PDF"</strong><br>
+  Set paper size to custom or A4, margins to None for best results.
+</p>
+
+</body>
+</html>
