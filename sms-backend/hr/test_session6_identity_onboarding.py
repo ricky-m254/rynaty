@@ -358,7 +358,7 @@ class HrSession6IdentityBackboneTests(TenantTestBase):
             {
                 "employee": employee.id,
                 "qualification_type": "Certificate",
-                "title": "CBC Orientation",
+                "title": "CBE Orientation",
                 "institution": "KICD",
                 "year_obtained": 2024,
                 "is_primary": True,

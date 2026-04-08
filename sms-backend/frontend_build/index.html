@@ -19,5 +19,33 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      (function() {
+        var btn = document.createElement('button');
+        btn.id = 'global-print-btn';
+        btn.title = 'Print this page';
+        btn.innerHTML = '&#128424;';
+        btn.style.cssText = [
+          'position:fixed','bottom:72px','right:18px','z-index:9998',
+          'background:#10b981','color:white','border:none','border-radius:50%',
+          'width:46px','height:46px','font-size:20px','cursor:pointer',
+          'box-shadow:0 2px 12px rgba(0,0,0,0.25)','display:none',
+          'align-items:center','justify-content:center','line-height:1'
+        ].join(';');
+        btn.onclick = function() { window.print(); };
+        document.body.appendChild(btn);
+        function check() {
+          var p = window.location.pathname + window.location.hash;
+          btn.style.display = (p.indexOf('/parent') !== -1 || p.indexOf('#/parent') !== -1) ? 'flex' : 'none';
+        }
+        check();
+        window.addEventListener('popstate', check);
+        window.addEventListener('hashchange', check);
+        var _pushState = history.pushState;
+        history.pushState = function() { _pushState.apply(this, arguments); setTimeout(check, 50); };
+        var _replaceState = history.replaceState;
+        history.replaceState = function() { _replaceState.apply(this, arguments); setTimeout(check, 50); };
+      })();
+    </script>
   </body>
 </html>

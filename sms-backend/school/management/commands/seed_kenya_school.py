@@ -203,7 +203,7 @@ class Command(BaseCommand):
         self.stdout.write("  Seeding communication messages…")
         self._seed_communication(students, admin)
 
-        self.stdout.write("  Seeding Kenyan CBC curriculum (departments + subjects)…")
+        self.stdout.write("  Seeding Kenyan CBE curriculum (departments + subjects)…")
         self._seed_curriculum_base()
 
         self.stdout.write("  Seeding gradebook (assessments + marks + term results + report cards)…")
@@ -512,7 +512,7 @@ class Command(BaseCommand):
             f"    → Grades entered: {total_grades}, Report cards: {total_cards}"
         )
 
-    # ── Kenyan CBC Curriculum (Departments + Subjects) ────────────────────────
+    # ── Kenyan CBE Curriculum (Departments + Subjects) ────────────────────────
     def _seed_curriculum_base(self):
         # Departments
         DEPT_DATA = [
@@ -532,7 +532,7 @@ class Command(BaseCommand):
             )
             depts[name] = d
 
-        # Kenyan 8-4-4 and CBC Senior Secondary subjects
+        # Kenyan 8-4-4 and CBE Senior Secondary subjects
         SUBJECT_DATA = [
             # (name, code, dept_key, subject_type, periods_week)
             ("Mathematics",              "MTH", "Mathematics",  "Compulsory", 8),
@@ -551,7 +551,7 @@ class Command(BaseCommand):
             ("Art & Design",             "ART", "Creative Arts","Elective",   3),
             ("Music",                    "MUS", "Creative Arts","Elective",   3),
             ("Physical Education",       "PE",  "Physical Education", "Compulsory", 3),
-            # CBC strands
+            # CBE strands
             ("Integrated Science",       "ISC", "Sciences",     "Compulsory", 5),
             ("Social Studies",           "SST", "Humanities",   "Compulsory", 5),
             ("Creative Arts & Sports",   "CAS", "Creative Arts","Compulsory", 4),
@@ -1391,7 +1391,7 @@ class Command(BaseCommand):
             SAMPLE_QUESTIONS = [
                 ('What is the main topic covered in this course?', 'A', 'The course subject', 'Mathematics', 'English', 'History'),
                 ('Which method is used to solve quadratic equations?', 'B', 'Factorisation', 'Factorisation', 'Painting', 'Singing'),
-                ('What does CBC stand for in Kenyan education?', 'A', 'Competency Based Curriculum', 'Competency Based Curriculum', 'Central Bank Committee', 'Class Based Content'),
+                ('What does CBE stand for in Kenyan education?', 'A', 'Competency Based Education', 'Competency Based Education', 'Central Bank Committee', 'Class Based Content'),
             ]
             for seq, (qtext, ans, opt_a, opt_b, opt_c, opt_d) in enumerate(SAMPLE_QUESTIONS[:2], 1):
                 if not quiz.questions.filter(sequence=seq).exists():
@@ -2649,28 +2649,48 @@ class Command(BaseCommand):
         # ── Create student login accounts ────────────────────────────────────
         student_logins = 0
         if student_role:
-            for student in students[:10]:
-                stu_username = student.admission_number.lower()
+            for student in students[:40]:
+                stu_username = student.admission_number  # keep original case — matches seed_portal_accounts
                 stu_user, stu_created = User.objects.get_or_create(
                     username=stu_username,
                     defaults={
                         "first_name": student.first_name,
                         "last_name":  student.last_name,
-                        "email":      f"{stu_username}@stmarys.ac.ke",
+                        "email":      f"{stu_username.lower()}@stmarys.ac.ke",
                     },
                 )
                 if stu_created:
                     stu_user.set_password("student123")
                     stu_user.save()
                 if student_role:
-                    stu_profile, _ = UserProfile.objects.get_or_create(
-                        user=stu_user,
-                        defaults={"role": student_role, "admission_number": student.admission_number},
+                    adm = student.admission_number
+                    stu_profile = (
+                        UserProfile.objects.filter(user=stu_user).first()
+                        or UserProfile.objects.filter(admission_number=adm).first()
                     )
-                    if stu_profile.role_id != student_role.id:
-                        stu_profile.role = student_role
-                        stu_profile.admission_number = student.admission_number
-                        stu_profile.save(update_fields=["role", "admission_number"])
+                    if stu_profile is None:
+                        try:
+                            stu_profile = UserProfile.objects.create(
+                                user=stu_user,
+                                role=student_role,
+                                admission_number=adm,
+                                force_password_change=False,
+                            )
+                        except Exception:
+                            stu_profile = UserProfile.objects.filter(admission_number=adm).first()
+                    if stu_profile:
+                        changed = False
+                        if stu_profile.user_id != stu_user.pk:
+                            stu_profile.user = stu_user
+                            changed = True
+                        if stu_profile.role_id != student_role.id:
+                            stu_profile.role = student_role
+                            changed = True
+                        if stu_profile.admission_number != adm:
+                            stu_profile.admission_number = adm
+                            changed = True
+                        if changed:
+                            stu_profile.save()
                 student_logins += 1 if stu_created else 0
 
         self.stdout.write(

@@ -1,7 +1,7 @@
 """
 Management command: seed_curriculum_templates
 ---------------------------------------------
-Seeds CBC-aligned starter templates for Schemes of Work.
+Seeds CBE-aligned starter templates for Schemes of Work.
 Templates are generic (no class/term) so they can be cloned for any class.
 
 Usage:
@@ -13,15 +13,15 @@ from django.core.management.base import BaseCommand
 TEMPLATES = [
     {
         "subject_name": "Mathematics",
-        "template_name": "CBC Mathematics — Grade 4 (Full Term)",
+        "template_name": "CBE Mathematics — Grade 4 (Full Term)",
         "template_description": (
-            "A 12-week CBC-aligned Mathematics scheme covering Number Sense, "
+            "A 12-week CBE-aligned Mathematics scheme covering Number Sense, "
             "Fractions, Geometry, Measurement, and Data Handling."
         ),
         "title": "Mathematics Scheme of Work",
         "objectives": (
             "Develop learners' numeracy skills through problem solving, critical thinking, "
-            "and real-life application of mathematical concepts as per CBC competency framework."
+            "and real-life application of mathematical concepts as per CBE competency framework."
         ),
         "topics": [
             {
@@ -136,15 +136,15 @@ TEMPLATES = [
     },
     {
         "subject_name": "English",
-        "template_name": "CBC English Language — Grade 5 (Full Term)",
+        "template_name": "CBE English Language — Grade 5 (Full Term)",
         "template_description": (
-            "A 12-week CBC-aligned English scheme covering Listening & Speaking, "
+            "A 12-week CBE-aligned English scheme covering Listening & Speaking, "
             "Reading, Writing, Grammar, and Creative Writing."
         ),
         "title": "English Language Scheme of Work",
         "objectives": (
             "Develop learners' communicative competence through integrated skills "
-            "of listening, speaking, reading, and writing aligned to CBC values."
+            "of listening, speaking, reading, and writing aligned to CBE values."
         ),
         "topics": [
             {
@@ -259,15 +259,15 @@ TEMPLATES = [
     },
     {
         "subject_name": "Integrated Science",
-        "template_name": "CBC Integrated Science — Grade 6 (Full Term)",
+        "template_name": "CBE Integrated Science — Grade 6 (Full Term)",
         "template_description": (
-            "A 12-week CBC-aligned Science scheme covering Living Things, "
+            "A 12-week CBE-aligned Science scheme covering Living Things, "
             "Matter, Energy, Environment, and Health."
         ),
         "title": "Integrated Science Scheme of Work",
         "objectives": (
             "Foster scientific inquiry, critical thinking, and environmental stewardship "
-            "through hands-on experiments and observations aligned to CBC."
+            "through hands-on experiments and observations aligned to CBE."
         ),
         "topics": [
             {
@@ -384,7 +384,7 @@ TEMPLATES = [
 
 
 class Command(BaseCommand):
-    help = "Seed CBC-aligned starter templates for Schemes of Work"
+    help = "Seed CBE-aligned starter templates for Schemes of Work"
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -405,6 +405,13 @@ class Command(BaseCommand):
     def _seed(self, schema):
         from school.models import Subject
         from curriculum.models import SchemeOfWork, SchemeTopic
+
+        # Rename any legacy "CBC ..." templates to "CBE ..."
+        for scheme in SchemeOfWork.objects.filter(is_template=True, template_name__contains="CBC"):
+            scheme.template_name = scheme.template_name.replace("CBC", "CBE")
+            scheme.title = (scheme.title or "").replace("CBC", "CBE")
+            scheme.objectives = (scheme.objectives or "").replace("CBC", "CBE")
+            scheme.save(update_fields=["template_name", "title", "objectives"])
 
         created_count = 0
         skipped_count = 0

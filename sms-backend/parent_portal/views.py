@@ -281,12 +281,81 @@ class ParentReportCardsView(ParentPortalAccessMixin, APIView):
 class ParentReportCardDownloadView(ParentPortalAccessMixin, APIView):
     def get(self, request, card_id):
         child, _ = _pick_child(request)
-        from school.models import ReportCard
+        from school.models import ReportCard, AssessmentGrade, SchoolProfile
 
         card = ReportCard.objects.filter(id=card_id, student=child, is_active=True).first() if child else None
         if not card:
             return Response({"error": "Report card not found."}, status=status.HTTP_404_NOT_FOUND)
-        return Response({"download_url": card.pdf_file.url if card.pdf_file else None, "message": "PDF not generated yet." if not card.pdf_file else "OK"})
+        profile = SchoolProfile.objects.filter(is_active=True).first()
+        school_name = getattr(profile, "school_name", "RynatySchool SmartCampus")
+        school_phone = getattr(profile, "phone", "+254 700 000 000")
+        school_email = getattr(profile, "email_address", "info@rynatyschool.app")
+        student_name = f"{child.first_name} {child.last_name}"
+        adm = child.admission_number
+        term_name = card.term.name if card.term else "—"
+        year_name = card.term.academic_year.name if card.term and card.term.academic_year else "—"
+        class_name = card.school_class.name if card.school_class else "—"
+        # Get grade breakdown for this card
+        grades = AssessmentGrade.objects.filter(
+            assessment__term=card.term,
+            assessment__school_class=card.school_class,
+            student=child,
+        ).select_related("assessment__subject").order_by("assessment__subject__name")
+        subject_rows = ""
+        for g in grades:
+            subj = g.assessment.subject.name if g.assessment.subject else "—"
+            score = g.marks_obtained or 0
+            out_of = g.assessment.max_marks or 100
+            pct = round((score / out_of) * 100) if out_of else 0
+            grade_letter = "A" if pct >= 80 else "B" if pct >= 65 else "C" if pct >= 50 else "D" if pct >= 40 else "E"
+            color = "#166534" if pct >= 80 else "#1e40af" if pct >= 65 else "#92400e" if pct >= 50 else "#991b1b"
+            subject_rows += f"<tr><td>{subj}</td><td style='text-align:center'>{score}/{out_of}</td><td style='text-align:center'>{pct}%</td><td style='text-align:center;font-weight:bold;color:{color}'>{grade_letter}</td></tr>"
+        if not subject_rows:
+            subject_rows = "<tr><td colspan='4' style='text-align:center;color:#888'>No assessment grades found for this term.</td></tr>"
+        avg_pct = card.overall_percentage or 0
+        html = f"""<!doctype html><html><head><meta charset='UTF-8'>
+<title>Report Card — {student_name}</title>
+<style>
+  body{{font-family:Arial,sans-serif;max-width:720px;margin:40px auto;color:#222;}}
+  .header{{text-align:center;border-bottom:3px solid #10b981;padding-bottom:16px;margin-bottom:24px;}}
+  .logo{{font-size:24px;font-weight:bold;color:#10b981;}}
+  .subtitle{{font-size:14px;color:#666;margin-top:4px;}}
+  .info-grid{{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin:20px 0;}}
+  .info-box{{background:#f9f9f9;padding:12px;border-radius:6px;}}
+  .info-box label{{font-size:11px;color:#666;text-transform:uppercase;}}
+  .info-box p{{margin:4px 0 0;font-weight:bold;}}
+  table{{width:100%;border-collapse:collapse;margin:16px 0;}}
+  th{{background:#10b981;color:white;padding:10px 12px;text-align:left;}}
+  td{{padding:10px 12px;border-bottom:1px solid #eee;}}
+  .summary{{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:16px;margin:20px 0;text-align:center;}}
+  .avg-pct{{font-size:36px;font-weight:bold;color:#10b981;}}
+  .footer{{margin-top:32px;text-align:center;font-size:12px;color:#888;border-top:1px solid #eee;padding-top:12px;}}
+  @media print{{body{{margin:20px;}} .no-print{{display:none;}}}}
+</style></head><body>
+<div class='header'>
+  <div class='logo'>{school_name}</div>
+  <div class='subtitle'>{school_phone} | {school_email}</div>
+  <div style='font-size:18px;font-weight:bold;margin-top:8px'>STUDENT ACADEMIC REPORT CARD</div>
+  <div style='font-size:14px;color:#666'>{year_name} &bull; {term_name}</div>
+</div>
+<div class='info-grid'>
+  <div class='info-box'><label>Student Name</label><p>{student_name}</p></div>
+  <div class='info-box'><label>Admission No.</label><p>{adm}</p></div>
+  <div class='info-box'><label>Class</label><p>{class_name}</p></div>
+</div>
+<table><thead><tr><th>Subject</th><th style='text-align:center'>Score</th><th style='text-align:center'>Percentage</th><th style='text-align:center'>Grade</th></tr></thead>
+<tbody>{subject_rows}</tbody></table>
+<div class='summary'>
+  <div style='font-size:14px;color:#555;margin-bottom:8px'>Overall Performance</div>
+  <div class='avg-pct'>{avg_pct:.1f}%</div>
+  <div style='font-size:14px;color:#555;margin-top:4px'>{"Excellent" if avg_pct >= 80 else "Good" if avg_pct >= 65 else "Satisfactory" if avg_pct >= 50 else "Needs Improvement"}</div>
+</div>
+<div class='no-print' style='text-align:center;margin:20px'>
+  <button onclick='window.print()' style='background:#10b981;color:white;border:none;padding:10px 32px;border-radius:6px;font-size:16px;cursor:pointer'>🖨️ Print / Save as PDF</button>
+</div>
+<div class='footer'>{school_name} &bull; Generated on {timezone.now().strftime('%d %b %Y %H:%M')} &bull; rynatyschool.app</div>
+</body></html>"""
+        return HttpResponse(html, content_type="text/html")
 
 
 class ParentAttendanceCalendarView(ParentPortalAccessMixin, APIView):
@@ -395,20 +464,65 @@ class ParentFinanceInvoiceDownloadView(ParentPortalAccessMixin, APIView):
         row = Invoice.objects.filter(id=invoice_id, student=child, is_active=True).first() if child else None
         if not row:
             return Response({"error": "Invoice not found."}, status=status.HTTP_404_NOT_FOUND)
-        payload = [
-            "field,value",
-            f"invoice_id,{row.id}",
-            f"student_id,{row.student_id}",
-            f"invoice_date,{row.invoice_date}",
-            f"due_date,{row.due_date}",
-            f"status,{row.status}",
-            f"total_amount,{row.total_amount}",
-            f"amount_paid,{row.amount_paid}",
-            f"balance_due,{row.balance_due}",
-        ]
-        response = HttpResponse("\n".join(payload), content_type="text/csv")
-        response["Content-Disposition"] = f'attachment; filename="invoice_{row.id}.csv"'
-        return response
+        from school.models import InvoiceLineItem, SchoolProfile
+        line_items = InvoiceLineItem.objects.filter(invoice=row)
+        profile = SchoolProfile.objects.filter(is_active=True).first()
+        school_name = getattr(profile, "school_name", "RynatySchool SmartCampus")
+        school_phone = getattr(profile, "phone", "+254 700 000 000")
+        school_email = getattr(profile, "email_address", "info@rynatyschool.app")
+        currency = getattr(profile, "currency", "KES")
+        student_name = f"{row.student.first_name} {row.student.last_name}" if row.student else "—"
+        adm = getattr(row.student, "admission_number", "—")
+        items_html = "".join([
+            f"<tr><td>{li.description or (li.fee_structure.name if li.fee_structure else '—')}</td>"
+            f"<td style='text-align:right'>{currency} {li.amount:,.2f}</td></tr>"
+            for li in line_items
+        ]) or f"<tr><td colspan='2'>Invoice #{row.id}</td></tr>"
+        html = f"""<!doctype html><html><head><meta charset='UTF-8'>
+<title>Invoice {getattr(profile,'invoice_prefix','INV-')}{row.id}</title>
+<style>
+  body{{font-family:Arial,sans-serif;max-width:700px;margin:40px auto;color:#222;}}
+  .header{{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #10b981;padding-bottom:12px;margin-bottom:24px;}}
+  .logo{{font-size:22px;font-weight:bold;color:#10b981;}}
+  h2{{margin:0;font-size:18px;}}
+  .info-grid{{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:24px 0;}}
+  .info-box{{background:#f9f9f9;padding:12px;border-radius:6px;}}
+  .info-box label{{font-size:11px;color:#666;text-transform:uppercase;}}
+  .info-box p{{margin:4px 0 0;font-weight:bold;}}
+  table{{width:100%;border-collapse:collapse;margin:24px 0;}}
+  th{{background:#10b981;color:white;padding:10px 12px;text-align:left;}}
+  td{{padding:10px 12px;border-bottom:1px solid #eee;}}
+  .total-row{{font-weight:bold;font-size:16px;background:#f0fdf4;}}
+  .status-badge{{display:inline-block;padding:4px 12px;border-radius:20px;font-size:13px;font-weight:bold;
+    background:{('#dcfce7' if row.status=='PAID' else '#fff3cd' if row.status=='CONFIRMED' else '#fee2e2')};
+    color:{('#166534' if row.status=='PAID' else '#92400e' if row.status=='CONFIRMED' else '#991b1b')};}}
+  .footer{{margin-top:40px;text-align:center;font-size:12px;color:#888;border-top:1px solid #eee;padding-top:12px;}}
+  @media print{{body{{margin:20px;}} .no-print{{display:none;}}}}
+</style></head><body>
+<div class='header'>
+  <div><div class='logo'>{school_name}</div><div style='font-size:12px;color:#666'>{school_phone} | {school_email}</div></div>
+  <h2>INVOICE</h2>
+</div>
+<div class='info-grid'>
+  <div class='info-box'><label>Student</label><p>{student_name}</p><p style='font-weight:normal;font-size:13px'>Adm: {adm}</p></div>
+  <div class='info-box'><label>Invoice Number</label><p>{getattr(profile,'invoice_prefix','INV-')}{row.id}</p></div>
+  <div class='info-box'><label>Invoice Date</label><p>{row.invoice_date or '—'}</p></div>
+  <div class='info-box'><label>Due Date</label><p>{row.due_date or '—'}</p></div>
+</div>
+<p>Status: <span class='status-badge'>{row.status}</span></p>
+<table><thead><tr><th>Description</th><th style='text-align:right'>Amount ({currency})</th></tr></thead>
+<tbody>{items_html}</tbody>
+<tfoot>
+  <tr class='total-row'><td>Total Billed</td><td style='text-align:right'>{currency} {row.total_amount:,.2f}</td></tr>
+  <tr><td>Amount Paid</td><td style='text-align:right'>{currency} {row.amount_paid:,.2f}</td></tr>
+  <tr class='total-row'><td>Balance Due</td><td style='text-align:right'>{currency} {row.balance_due:,.2f}</td></tr>
+</tfoot></table>
+<div class='no-print' style='text-align:center;margin:20px'>
+  <button onclick='window.print()' style='background:#10b981;color:white;border:none;padding:10px 32px;border-radius:6px;font-size:16px;cursor:pointer'>🖨️ Print / Save as PDF</button>
+</div>
+<div class='footer'>{school_name} &bull; Generated on {timezone.now().strftime('%d %b %Y %H:%M')} &bull; rynatyschool.app</div>
+</body></html>"""
+        return HttpResponse(html, content_type="text/html")
 
 
 class ParentFinancePaymentsView(ParentPortalAccessMixin, APIView):
@@ -438,20 +552,66 @@ class ParentFinanceReceiptView(ParentPortalAccessMixin, APIView):
         row = Payment.objects.filter(id=payment_id, student=child, is_active=True).first() if child else None
         if not row:
             return Response({"error": "Payment not found."}, status=status.HTTP_404_NOT_FOUND)
-        payload = [
-            "field,value",
-            f"payment_id,{row.id}",
-            f"student_id,{row.student_id}",
-            f"payment_date,{row.payment_date}",
-            f"amount,{row.amount}",
-            f"payment_method,{row.payment_method}",
-            f"reference_number,{row.reference_number}",
-            f"receipt_number,{row.receipt_number or ''}",
-            f"notes,{(row.notes or '').replace(',', ' ')}",
-        ]
-        response = HttpResponse("\n".join(payload), content_type="text/csv")
-        response["Content-Disposition"] = f'attachment; filename="receipt_{row.id}.csv"'
-        return response
+        from school.models import SchoolProfile
+        profile = SchoolProfile.objects.filter(is_active=True).first()
+        school_name = getattr(profile, "school_name", "RynatySchool SmartCampus")
+        school_phone = getattr(profile, "phone", "+254 700 000 000")
+        school_email = getattr(profile, "email_address", "info@rynatyschool.app")
+        currency = getattr(profile, "currency", "KES")
+        receipt_prefix = getattr(profile, "receipt_prefix", "RCT-")
+        student_name = f"{row.student.first_name} {row.student.last_name}" if row.student else "—"
+        adm = getattr(row.student, "admission_number", "—")
+        receipt_no = row.receipt_number or f"{receipt_prefix}{row.id}"
+        allocations = row.paymentallocation_set.select_related("invoice").all()
+        alloc_rows = "".join([
+            f"<tr><td>Invoice #{a.invoice.id if a.invoice else '—'}</td><td style='text-align:right'>{currency} {a.amount_allocated:,.2f}</td></tr>"
+            for a in allocations
+        ]) or f"<tr><td>Payment</td><td style='text-align:right'>{currency} {row.amount:,.2f}</td></tr>"
+        html = f"""<!doctype html><html><head><meta charset='UTF-8'>
+<title>Receipt {receipt_no}</title>
+<style>
+  body{{font-family:Arial,sans-serif;max-width:600px;margin:40px auto;color:#222;}}
+  .header{{text-align:center;border-bottom:3px solid #10b981;padding-bottom:16px;margin-bottom:24px;}}
+  .logo{{font-size:24px;font-weight:bold;color:#10b981;margin-bottom:4px;}}
+  .receipt-no{{font-size:14px;color:#666;}}
+  .info-grid{{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:20px 0;}}
+  .info-box{{background:#f9f9f9;padding:12px;border-radius:6px;}}
+  .info-box label{{font-size:11px;color:#666;text-transform:uppercase;}}
+  .info-box p{{margin:4px 0 0;font-weight:bold;}}
+  .stamp{{text-align:center;margin:24px 0;}}
+  .paid-stamp{{display:inline-block;border:4px solid #10b981;color:#10b981;font-size:32px;font-weight:bold;
+    padding:8px 32px;border-radius:8px;transform:rotate(-5deg);letter-spacing:4px;}}
+  table{{width:100%;border-collapse:collapse;margin:16px 0;}}
+  th{{background:#10b981;color:white;padding:8px 12px;text-align:left;}}
+  td{{padding:8px 12px;border-bottom:1px solid #eee;}}
+  .total-row{{font-weight:bold;background:#f0fdf4;}}
+  .footer{{margin-top:32px;text-align:center;font-size:12px;color:#888;border-top:1px solid #eee;padding-top:12px;}}
+  @media print{{body{{margin:20px;}} .no-print{{display:none;}}}}
+</style></head><body>
+<div class='header'>
+  <div class='logo'>{school_name}</div>
+  <div style='font-size:12px;color:#666'>{school_phone} | {school_email}</div>
+  <div class='receipt-no'>OFFICIAL PAYMENT RECEIPT</div>
+</div>
+<div class='info-grid'>
+  <div class='info-box'><label>Student</label><p>{student_name}</p><p style='font-weight:normal;font-size:13px'>Adm: {adm}</p></div>
+  <div class='info-box'><label>Receipt No.</label><p>{receipt_no}</p></div>
+  <div class='info-box'><label>Payment Date</label><p>{row.payment_date or '—'}</p></div>
+  <div class='info-box'><label>Payment Method</label><p>{row.payment_method or '—'}</p></div>
+</div>
+<div class='stamp'><div class='paid-stamp'>PAID</div></div>
+<table><thead><tr><th>Description</th><th style='text-align:right'>Amount ({currency})</th></tr></thead>
+<tbody>{alloc_rows}</tbody>
+<tfoot><tr class='total-row'><td>Total Received</td><td style='text-align:right'>{currency} {row.amount:,.2f}</td></tr></tfoot>
+</table>
+{f"<p style='font-size:13px;color:#555'>Ref: {row.reference_number}</p>" if row.reference_number else ""}
+{f"<p style='font-size:13px;color:#555'>Notes: {row.notes}</p>" if row.notes else ""}
+<div class='no-print' style='text-align:center;margin:20px'>
+  <button onclick='window.print()' style='background:#10b981;color:white;border:none;padding:10px 32px;border-radius:6px;font-size:16px;cursor:pointer'>🖨️ Print / Save as PDF</button>
+</div>
+<div class='footer'>{school_name} &bull; Generated on {timezone.now().strftime('%d %b %Y %H:%M')} &bull; rynatyschool.app</div>
+</body></html>"""
+        return HttpResponse(html, content_type="text/html")
 
 
 class ParentFinancePayView(ParentPortalAccessMixin, APIView):
@@ -596,6 +756,91 @@ class ParentFinanceStatementView(ParentPortalAccessMixin, APIView):
                 "summary": {"billed": billed, "paid": paid, "balance": billed - paid},
             }
         )
+
+
+class ParentFeeStatementDownloadView(ParentPortalAccessMixin, APIView):
+    """Returns a printable HTML fee statement for the selected child."""
+    def get(self, request):
+        child, _ = _pick_child(request)
+        if not child:
+            return _no_linked_child_response()
+        from school.models import InvoiceLineItem, SchoolProfile
+        invoices = Invoice.objects.filter(student=child, is_active=True).order_by("invoice_date", "id")
+        payments = Payment.objects.filter(student=child, is_active=True).order_by("payment_date", "id")
+        billed = invoices.aggregate(v=Sum("total_amount")).get("v") or Decimal("0.00")
+        paid = payments.aggregate(v=Sum("amount")).get("v") or Decimal("0.00")
+        balance = billed - paid
+        profile = SchoolProfile.objects.filter(is_active=True).first()
+        school_name = getattr(profile, "school_name", "RynatySchool SmartCampus")
+        school_phone = getattr(profile, "phone", "+254 700 000 000")
+        school_email = getattr(profile, "email_address", "info@rynatyschool.app")
+        currency = getattr(profile, "currency", "KES")
+        student_name = f"{child.first_name} {child.last_name}"
+        adm = child.admission_number
+        _inv_parts = []
+        for r in invoices:
+            _bg = "#dcfce7" if r.status == "PAID" else "#fef3c7"
+            _inv_parts.append(
+                f"<tr><td>{r.invoice_date or '—'}</td><td>Invoice #{r.id}</td>"
+                f"<td style='text-align:right'>{currency} {r.total_amount:,.2f}</td>"
+                f"<td style='text-align:right'>{currency} {r.amount_paid:,.2f}</td>"
+                f"<td><span style='padding:2px 8px;border-radius:10px;font-size:12px;background:{_bg};'>{r.status}</span></td></tr>"
+            )
+        inv_rows = "".join(_inv_parts) or "<tr><td colspan='5' style='text-align:center;color:#888'>No invoices found.</td></tr>"
+        pmt_rows = "".join([
+            f"<tr><td>{r.payment_date or '—'}</td><td>{r.reference_number or '—'}</td>"
+            f"<td>{r.payment_method or '—'}</td>"
+            f"<td style='text-align:right;color:#166534'>{currency} {r.amount:,.2f}</td></tr>"
+            for r in payments
+        ]) or "<tr><td colspan='4' style='text-align:center;color:#888'>No payments recorded.</td></tr>"
+        bal_color = "#991b1b" if balance > 0 else "#166534"
+        html = f"""<!doctype html><html><head><meta charset='UTF-8'>
+<title>Fee Statement — {student_name}</title>
+<style>
+  body{{font-family:Arial,sans-serif;max-width:760px;margin:40px auto;color:#222;}}
+  .header{{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #10b981;padding-bottom:12px;margin-bottom:24px;}}
+  .logo{{font-size:22px;font-weight:bold;color:#10b981;}}
+  h2{{margin:0;font-size:18px;color:#333;}}
+  .info-grid{{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:20px 0;}}
+  .info-box{{background:#f9f9f9;padding:12px;border-radius:6px;}}
+  .info-box label{{font-size:11px;color:#666;text-transform:uppercase;}}
+  .info-box p{{margin:4px 0 0;font-weight:bold;}}
+  h3{{color:#10b981;border-bottom:2px solid #d1fae5;padding-bottom:6px;margin-top:28px;}}
+  table{{width:100%;border-collapse:collapse;margin:12px 0;}}
+  th{{background:#10b981;color:white;padding:8px 12px;text-align:left;font-size:13px;}}
+  td{{padding:8px 12px;border-bottom:1px solid #eee;font-size:13px;}}
+  .summary-box{{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin:24px 0;}}
+  .sbox{{padding:16px;border-radius:8px;text-align:center;}}
+  .sbox label{{font-size:11px;color:#555;text-transform:uppercase;display:block;margin-bottom:6px;}}
+  .sbox span{{font-size:22px;font-weight:bold;}}
+  .footer{{margin-top:32px;text-align:center;font-size:12px;color:#888;border-top:1px solid #eee;padding-top:12px;}}
+  @media print{{body{{margin:20px;}} .no-print{{display:none;}}}}
+</style></head><body>
+<div class='header'>
+  <div><div class='logo'>{school_name}</div><div style='font-size:12px;color:#666'>{school_phone} | {school_email}</div></div>
+  <h2>STUDENT FEE STATEMENT</h2>
+</div>
+<div class='info-grid'>
+  <div class='info-box'><label>Student</label><p>{student_name}</p></div>
+  <div class='info-box'><label>Admission No.</label><p>{adm}</p></div>
+</div>
+<div class='summary-box'>
+  <div class='sbox' style='background:#fef3c7'><label>Total Billed</label><span style='color:#92400e'>{currency} {billed:,.2f}</span></div>
+  <div class='sbox' style='background:#d1fae5'><label>Total Paid</label><span style='color:#065f46'>{currency} {paid:,.2f}</span></div>
+  <div class='sbox' style='background:{"#fee2e2" if balance>0 else "#d1fae5"}'><label>Outstanding Balance</label><span style='color:{bal_color}'>{currency} {balance:,.2f}</span></div>
+</div>
+<h3>Invoices</h3>
+<table><thead><tr><th>Date</th><th>Description</th><th style='text-align:right'>Amount</th><th style='text-align:right'>Paid</th><th>Status</th></tr></thead>
+<tbody>{inv_rows}</tbody></table>
+<h3>Payments</h3>
+<table><thead><tr><th>Date</th><th>Reference</th><th>Method</th><th style='text-align:right'>Amount</th></tr></thead>
+<tbody>{pmt_rows}</tbody></table>
+<div class='no-print' style='text-align:center;margin:24px'>
+  <button onclick='window.print()' style='background:#10b981;color:white;border:none;padding:10px 32px;border-radius:6px;font-size:16px;cursor:pointer'>🖨️ Print / Save as PDF</button>
+</div>
+<div class='footer'>{school_name} &bull; Generated on {timezone.now().strftime('%d %b %Y %H:%M')} &bull; rynatyschool.app</div>
+</body></html>"""
+        return HttpResponse(html, content_type="text/html")
 
 
 class ParentMessagesView(ParentPortalAccessMixin, APIView):

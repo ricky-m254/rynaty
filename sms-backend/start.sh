@@ -57,6 +57,12 @@ print('yes' if Tenant.objects.filter(schema_name=schema).exists() else 'no')
   echo "[sms] Seeding portal login accounts..."
   python3.11 manage.py seed_portal_accounts --schema_name "$schema" 2>&1 | tail -5 || echo "[sms] Portal accounts skipped"
 
+  echo "[sms] Seeding staff user accounts for all role types..."
+  python3.11 manage.py seed_staff_users --schema_name "$schema" 2>&1 | tail -5 || echo "[sms] Staff users skipped"
+
+  echo "[sms] Seeding supplementary demo data (25+ records per module)..."
+  python3.11 manage.py seed_extra_data --schema_name "$schema" 2>&1 | tail -10 || echo "[sms] Extra data seed skipped"
+
   echo "[sms] Bootstrap complete."
 fi
 

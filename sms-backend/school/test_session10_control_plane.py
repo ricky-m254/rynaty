@@ -120,7 +120,7 @@ class Session10ControlPlaneTests(TenantTestBase):
             is_active=True,
             is_current=True,
         )
-        GradingScheme.objects.create(name="Default CBC", is_active=True, is_default=True)
+        GradingScheme.objects.create(name="Default CBE", is_active=True, is_default=True)
         finance_module = self.ensure_module("FINANCE", "Finance")
         TenantModule.objects.create(module=finance_module, is_enabled=True, sort_order=1)
         InstitutionSecurityPolicy.objects.update_or_create(
