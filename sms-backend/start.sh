@@ -4,10 +4,10 @@ set -euo pipefail
 cd /home/runner/workspace/sms-backend
 
 echo "[sms] Running shared migrations..."
-python3.11 manage.py migrate_schemas --shared --noinput 2>&1 | grep -v "^$" || true
+python3.11 manage.py migrate_schemas --shared --noinput --fake-initial 2>&1 | grep -v "^$" || true
 
 echo "[sms] Running tenant migrations..."
-python3.11 manage.py migrate_schemas --noinput 2>&1 | grep -v "^$" || true
+python3.11 manage.py migrate_schemas --noinput --fake-initial 2>&1 | grep -v "^$" || true
 
 echo "[sms] Collecting static files..."
 python3.11 manage.py collectstatic --noinput 2>/dev/null || true
@@ -55,13 +55,13 @@ print('yes' if Tenant.objects.filter(schema_name=schema).exists() else 'no')
   python3.11 manage.py seed_curriculum_templates --schema="$schema" 2>/dev/null || true
 
   echo "[sms] Seeding portal login accounts..."
-  python3.11 manage.py seed_portal_accounts --schema_name "$schema" 2>&1 | tail -5 || echo "[sms] Portal accounts skipped"
+  python3.11 manage.py seed_portal_accounts --schema_name "$schema" 2>&1 || echo "[sms] Portal accounts skipped"
 
   echo "[sms] Seeding staff user accounts for all role types..."
-  python3.11 manage.py seed_staff_users --schema_name "$schema" 2>&1 | tail -5 || echo "[sms] Staff users skipped"
+  python3.11 manage.py seed_staff_users --schema_name "$schema" 2>&1 || echo "[sms] Staff users skipped"
 
   echo "[sms] Seeding supplementary demo data (25+ records per module)..."
-  python3.11 manage.py seed_extra_data --schema_name "$schema" 2>&1 | tail -10 || echo "[sms] Extra data seed skipped"
+  python3.11 manage.py seed_extra_data --schema_name "$schema" 2>&1 || echo "[sms] Extra data seed skipped"
 
   echo "[sms] Bootstrap complete."
 fi
