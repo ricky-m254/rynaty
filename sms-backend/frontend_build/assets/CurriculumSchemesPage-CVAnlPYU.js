@@ -200,7 +200,7 @@ function ae(){
         e.jsx("h2",{className:"mb-1 text-sm font-semibold text-slate-200",children:"Create Reusable Template"}),
         e.jsx("p",{className:"text-xs text-slate-500 mb-4",children:"Templates are generic schemes (no class/term) you can reuse across classes each term."}),
         e.jsxs("div",{className:"grid gap-3 sm:grid-cols-2",children:[
-          e.jsx("input",{value:newTplName,onChange:t=>setNewTplName(t.target.value),placeholder:"Template name * (e.g. CBC Maths Gr 6 \u2014 12 Weeks)",className:inp+" sm:col-span-2"}),
+          e.jsx("input",{value:newTplName,onChange:t=>setNewTplName(t.target.value),placeholder:"Template name * (e.g. CBE Maths Gr 6 \u2014 12 Weeks)",className:inp+" sm:col-span-2"}),
           e.jsx("textarea",{value:newTplDesc,onChange:t=>setNewTplDesc(t.target.value),placeholder:"Description (learning outcomes, approach\u2026)",rows:2,className:inp+" sm:col-span-2"}),
           e.jsx("input",{value:newTplTitle,onChange:t=>setNewTplTitle(t.target.value),placeholder:"Scheme title *",className:inp}),
           e.jsxs("select",{value:newTplSubj,onChange:t=>setNewTplSubj(t.target.value),className:inp,children:[e.jsx("option",{value:"",children:"Subject *"}),subjects.map(t=>e.jsx("option",{value:t.id,children:t.name},t.id))]})
@@ -208,7 +208,7 @@ function ae(){
         e.jsx("button",{onClick:createTemplate,disabled:creatingTpl||!newTplName.trim()||!newTplTitle.trim()||!newTplSubj,className:btn+" mt-4 bg-emerald-500 text-slate-900",children:creatingTpl?"Creating…":"Create Template"})
       ]}),
       loading?e.jsx("p",{className:"text-sm text-slate-400 px-2",children:"Loading templates…"}):
-      templates.length===0?e.jsx("p",{className:"text-sm text-slate-500 px-2",children:"No templates yet. Create one above or use the 3 seeded CBC starter templates (Mathematics, English, Science)."}):
+      templates.length===0?e.jsx("p",{className:"text-sm text-slate-500 px-2",children:"No templates yet. Create one above or use the 3 seeded CBE starter templates (Mathematics, English, Science)."}):
       e.jsx("div",{className:"space-y-3",children:templates.map(tpl=>e.jsxs("div",{className:"rounded-2xl overflow-hidden",style:gp,children:[
         e.jsxs("div",{className:"p-4",children:[
           e.jsxs("div",{className:"flex items-start justify-between gap-3",children:[

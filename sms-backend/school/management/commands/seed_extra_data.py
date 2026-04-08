@@ -48,10 +48,10 @@ class Command(BaseCommand):
         from school.models import GradeLevel, SchoolClass
 
         GRADE_LEVELS = [
-            ("Form 1", 1, "First year of secondary school"),
-            ("Form 2", 2, "Second year of secondary school"),
-            ("Form 3", 3, "Third year of secondary school"),
-            ("Form 4", 4, "Fourth year — KCSE examination year"),
+            ("Grade 7",  1, "Junior Secondary — first year (CBE)"),
+            ("Grade 8",  2, "Junior Secondary — second year (CBE)"),
+            ("Grade 9",  3, "Junior Secondary — third year (CBE)"),
+            ("Grade 10", 4, "Senior Secondary — first year (CBE)"),
         ]
 
         created = 0
@@ -135,7 +135,7 @@ class Command(BaseCommand):
                     "guardian_phone": f"07{str(10000000 + i * 777777)[:8]}",
                     "guardian_email": f"parent.{last.lower()}{i}@gmail.com",
                     "status": STATUSES[i % len(STATUSES)],
-                    "notes": f"Applying for Form 1 admission, 2026 academic year.",
+                    "notes": f"Applying for Grade 7 admission, 2026 academic year.",
                 },
             )
             if ac:
@@ -717,16 +717,16 @@ class Command(BaseCommand):
             ("Blossoms of the Savannah",       "Henry ole Kulet",     "978-9966-25-042-4", "Literature",      2008),
             ("A Grain of Wheat",               "Ngugi wa Thiong'o",   "978-0-435-90210-6", "Literature",      1967),
             ("Junior Secondary Mathematics 1", "Oxford University Press","978-0-19-089710-0","Textbooks",     2023),
-            ("Chemistry Form 1",               "KIE",                 "978-9966-25-010-3", "Science",         2020),
-            ("Biology Form 2",                 "KIE",                 "978-9966-25-011-0", "Science",         2020),
-            ("Physics Form 3",                 "KIE",                 "978-9966-25-012-7", "Science",         2020),
-            ("History & Government Form 1",    "KIE",                 "978-9966-25-013-4", "Social Sciences", 2020),
-            ("Geography Form 2",               "KIE",                 "978-9966-25-014-1", "Social Sciences", 2020),
-            ("CRE Form 1",                     "KIE",                 "978-9966-25-015-8", "Religious",       2020),
-            ("Business Studies Form 2",        "KIE",                 "978-9966-25-016-5", "Textbooks",       2020),
-            ("Computer Studies Form 1",        "KIE",                 "978-9966-25-017-2", "Science",         2020),
-            ("Agriculture Form 3",             "KIE",                 "978-9966-25-018-9", "Science",         2020),
-            ("Home Science Form 2",            "KIE",                 "978-9966-25-019-6", "Textbooks",       2020),
+            ("Chemistry Grade 7",              "KIE",                 "978-9966-25-010-3", "Science",         2020),
+            ("Biology Grade 8",                "KIE",                 "978-9966-25-011-0", "Science",         2020),
+            ("Physics Grade 9",                "KIE",                 "978-9966-25-012-7", "Science",         2020),
+            ("History & Government Grade 7",   "KIE",                 "978-9966-25-013-4", "Social Sciences", 2020),
+            ("Geography Grade 8",              "KIE",                 "978-9966-25-014-1", "Social Sciences", 2020),
+            ("CRE Grade 7",                    "KIE",                 "978-9966-25-015-8", "Religious",       2020),
+            ("Business Studies Grade 8",       "KIE",                 "978-9966-25-016-5", "Textbooks",       2020),
+            ("Computer Studies Grade 7",       "KIE",                 "978-9966-25-017-2", "Science",         2020),
+            ("Agriculture Grade 9",            "KIE",                 "978-9966-25-018-9", "Science",         2020),
+            ("Home Science Grade 8",           "KIE",                 "978-9966-25-019-6", "Textbooks",       2020),
             ("Longman Dictionary",             "Longman",             "978-1-4082-0299-2", "Reference",       2009),
             ("Oxford English Dictionary",      "Oxford",              "978-0-19-860391-4", "Reference",       2010),
             ("Atlas of Kenya",                 "Survey of Kenya",     "978-9966-25-050-9", "Social Sciences", 2018),

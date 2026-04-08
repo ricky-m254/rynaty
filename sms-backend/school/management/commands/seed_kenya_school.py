@@ -1,6 +1,6 @@
 """
 seed_kenya_school.py
-Comprehensive sample data for a Kenyan 8-4-4 high school (St. Mary's Nairobi High School).
+Comprehensive CBE sample data for a Kenyan secondary school (St. Mary's Nairobi High School).
 Includes: academic structure, 40 students, 12 teachers, fee structures, payments,
 admissions applications, HR leave requests, library acquisitions, maintenance requests,
 communication data, and more — designed to populate all approval workflows.
@@ -97,7 +97,7 @@ SUBJECTS_844 = [
     "Business Studies", "Agriculture", "Computer Studies",
 ]
 
-FORMS = ["Form 1", "Form 2", "Form 3", "Form 4"]
+GRADES = ["Grade 7", "Grade 8", "Grade 9", "Grade 10"]
 STREAMS = ["East", "West", "North", "South"]
 
 FEE_ITEMS = [
@@ -115,7 +115,7 @@ MAINTENANCE_ITEMS = [
     ("Library Roof Leak", "Urgent", "Library Building"),
     ("Computer Lab Projector Fault", "Medium", "Computer Lab"),
     ("Sports Ground Fencing", "Low", "Sports Ground"),
-    ("Classroom 12B Door Replacement", "Medium", "Form 2 Block"),
+    ("Classroom 12B Door Replacement", "Medium", "Grade 8 Block"),
     ("Kitchen Exhaust Fan Repair", "High", "Kitchen"),
     ("Dormitory Bunk Beds Repair", "Medium", "Boarding House"),
     ("School Bus Service", "High", "Garage"),
@@ -319,27 +319,22 @@ class Command(BaseCommand):
         import random
         random.seed(42)
 
-        # 1. KNEC Grading Scheme
+        # 1. CBE Grading Scheme — rename legacy KNEC Standard if it exists
+        GradingScheme.objects.filter(name="KNEC Standard").update(name="CBE Standard")
         scheme, _ = GradingScheme.objects.get_or_create(
-            name="KNEC Standard",
+            name="CBE Standard",
             defaults={"is_default": True, "is_active": True},
         )
-        KNEC_BANDS = [
-            ("A",  75, 100, 12.0, "Excellent"),
-            ("A-", 70,  74, 11.0, "Very Good"),
-            ("B+", 65,  69, 10.0, "Good"),
-            ("B",  60,  64,  9.0, "Good"),
-            ("B-", 55,  59,  8.0, "Above Average"),
-            ("C+", 50,  54,  7.0, "Average"),
-            ("C",  45,  49,  6.0, "Average"),
-            ("C-", 40,  44,  5.0, "Below Average"),
-            ("D+", 35,  39,  4.0, "Below Average"),
-            ("D",  30,  34,  3.0, "Poor"),
-            ("D-", 25,  29,  2.0, "Very Poor"),
-            ("E",   0,  24,  1.0, "Fail"),
+        # Remove legacy KCSE A-E bands so CBE bands can be inserted cleanly
+        GradeBand.objects.filter(scheme=scheme, label__in=["A","A-","B+","B","B-","C+","C","C-","D+","D","D-","E"]).delete()
+        CBE_BANDS = [
+            ("EE", 86, 100, 4.0, "Exceeding Expectations"),
+            ("ME", 61,  85, 3.0, "Meeting Expectations"),
+            ("AE", 41,  60, 2.0, "Approaching Expectations"),
+            ("BE",  0,  40, 1.0, "Below Expectations"),
         ]
         bands = {}
-        for label, mn, mx, pts, rem in KNEC_BANDS:
+        for label, mn, mx, pts, rem in CBE_BANDS:
             b, _ = GradeBand.objects.get_or_create(
                 scheme=scheme, label=label,
                 defaults={"min_score": mn, "max_score": mx, "grade_point": pts, "remark": rem, "is_active": True},
@@ -347,7 +342,7 @@ class Command(BaseCommand):
             bands[label] = b
 
         def score_to_band(score):
-            for label, mn, mx, _, _ in KNEC_BANDS:
+            for label, mn, mx, _, _ in CBE_BANDS:
                 if mn <= score <= mx:
                     return bands.get(label)
             return None
@@ -532,7 +527,7 @@ class Command(BaseCommand):
             )
             depts[name] = d
 
-        # Kenyan 8-4-4 and CBE Senior Secondary subjects
+        # Kenyan CBE Junior and Senior Secondary subjects
         SUBJECT_DATA = [
             # (name, code, dept_key, subject_type, periods_week)
             ("Mathematics",              "MTH", "Mathematics",  "Compulsory", 8),
@@ -628,16 +623,16 @@ class Command(BaseCommand):
             terms.append(t)
 
         classes = {}
-        for form in FORMS:
-            classes[form] = {}
+        for grade in GRADES:
+            classes[grade] = {}
             for stream in STREAMS:
                 cls, _ = SchoolClass.objects.get_or_create(
-                    name=form,
+                    name=grade,
                     stream=stream,
                     academic_year=year,
                     defaults={"is_active": True},
                 )
-                classes[form][stream] = cls
+                classes[grade][stream] = cls
 
         return year, terms, classes
 
@@ -724,13 +719,14 @@ class Command(BaseCommand):
             [(f, l, "F") for f, l in KENYAN_FEMALE_NAMES]
         )
         form_stream_pairs = [
-            (f, s) for f in FORMS for s in STREAMS
+            (g, s) for g in GRADES for s in STREAMS
         ]
 
         for i, (first, last, gender) in enumerate(all_names):
             adm_no = f"STM{2025}{str(i + 1).zfill(3)}"
-            form, stream = form_stream_pairs[i % len(form_stream_pairs)]
-            dob_year = 2025 - (14 + int(form[-1]))
+            grade, stream = form_stream_pairs[i % len(form_stream_pairs)]
+            grade_num = int(grade.split()[-1])
+            dob_year = 2025 - (6 + grade_num)
             s, _ = Student.objects.get_or_create(
                 admission_number=adm_no,
                 defaults={
@@ -752,7 +748,7 @@ class Command(BaseCommand):
                 },
             )
             # Enroll in Term 1
-            cls = classes[form][stream]
+            cls = classes[grade][stream]
             Enrollment.objects.get_or_create(
                 student=s,
                 school_class=cls,
@@ -977,7 +973,7 @@ class Command(BaseCommand):
                     "guardian_name": f"Parent of {first} {last}",
                     "guardian_phone": f"07{random.randint(10000000, 99999999)}",
                     "guardian_email": f"parent.{last.lower()}@gmail.com",
-                    "notes": "Applying for Form 1 admission, 2025 academic year.",
+                    "notes": "Applying for Grade 7 admission, 2025 academic year.",
                 },
             )
 
@@ -1023,7 +1019,7 @@ class Command(BaseCommand):
     def _seed_communication(self, students, admin_user):
         announcements_data = [
             ("Term 1 2025 Opening Day", "School will open on Monday 6th January 2025. All students should report by 8:00 AM."),
-            ("KCSE Mock Examinations Schedule", "Form 4 mock exams begin on 10th February 2025. Timetables available from the Deputy Principal's office."),
+            ("CBE National Assessment Schedule", "Grade 10 end-of-year national assessments begin on 10th February 2025. Timetables available from the Deputy Principal's office."),
             ("Parents' Meeting — Term 1", "All parents are invited to the annual parents' meeting on 15th February 2025 at 9:00 AM."),
             ("Fee Payment Deadline", "All Term 1 fees must be paid by 14th February 2025. Contact the bursar for payment plans."),
             ("Kenya Science Congress Registration", "Students interested in the Kenya Science Congress should submit proposals to the Head of Science by 20th January."),
@@ -1094,35 +1090,35 @@ class Command(BaseCommand):
             )
 
         BOOKS_DATA = [
-            ('KLB Mathematics Form 1', 'Kenya Literature Bureau', 'Mathematics', 'Book', '9789966100', 2022, 8, 'Textbooks'),
-            ('KLB Mathematics Form 2', 'Kenya Literature Bureau', 'Mathematics', 'Book', '9789966101', 2022, 8, 'Textbooks'),
-            ('KLB Mathematics Form 3', 'Kenya Literature Bureau', 'Mathematics', 'Book', '9789966102', 2022, 5, 'Mathematics'),
-            ('KLB Mathematics Form 4', 'Kenya Literature Bureau', 'Mathematics', 'Book', '9789966103', 2023, 5, 'Mathematics'),
-            ('KLB Biology Form 1', 'Kenya Literature Bureau', 'Biology', 'Book', '9789966200', 2022, 8, 'Science'),
-            ('KLB Biology Form 2', 'Kenya Literature Bureau', 'Biology', 'Book', '9789966201', 2022, 8, 'Science'),
-            ('KLB Biology Form 3', 'Kenya Literature Bureau', 'Biology', 'Book', '9789966202', 2023, 6, 'Science'),
-            ('KLB Chemistry Form 2', 'Kenya Literature Bureau', 'Chemistry', 'Book', '9789966300', 2022, 7, 'Science'),
-            ('KLB Chemistry Form 3', 'Kenya Literature Bureau', 'Chemistry', 'Book', '9789966301', 2023, 6, 'Science'),
-            ('KLB Physics Form 2', 'Kenya Literature Bureau', 'Physics', 'Book', '9789966400', 2022, 7, 'Science'),
-            ('KLB Physics Form 3', 'Kenya Literature Bureau', 'Physics', 'Book', '9789966401', 2023, 6, 'Science'),
+            ('KLB Mathematics Grade 7', 'Kenya Literature Bureau', 'Mathematics', 'Book', '9789966100', 2022, 8, 'Textbooks'),
+            ('KLB Mathematics Grade 8', 'Kenya Literature Bureau', 'Mathematics', 'Book', '9789966101', 2022, 8, 'Textbooks'),
+            ('KLB Mathematics Grade 9', 'Kenya Literature Bureau', 'Mathematics', 'Book', '9789966102', 2022, 5, 'Mathematics'),
+            ('KLB Mathematics Grade 10', 'Kenya Literature Bureau', 'Mathematics', 'Book', '9789966103', 2023, 5, 'Mathematics'),
+            ('KLB Biology Grade 7', 'Kenya Literature Bureau', 'Biology', 'Book', '9789966200', 2022, 8, 'Science'),
+            ('KLB Biology Grade 8', 'Kenya Literature Bureau', 'Biology', 'Book', '9789966201', 2022, 8, 'Science'),
+            ('KLB Biology Grade 9', 'Kenya Literature Bureau', 'Biology', 'Book', '9789966202', 2023, 6, 'Science'),
+            ('KLB Chemistry Grade 8', 'Kenya Literature Bureau', 'Chemistry', 'Book', '9789966300', 2022, 7, 'Science'),
+            ('KLB Chemistry Grade 9', 'Kenya Literature Bureau', 'Chemistry', 'Book', '9789966301', 2023, 6, 'Science'),
+            ('KLB Physics Grade 8', 'Kenya Literature Bureau', 'Physics', 'Book', '9789966400', 2022, 7, 'Science'),
+            ('KLB Physics Grade 9', 'Kenya Literature Bureau', 'Physics', 'Book', '9789966401', 2023, 6, 'Science'),
             ('Things Fall Apart', 'Chinua Achebe', 'English', 'Book', '9780385474542', 1958, 4, 'Literature'),
             ('A Grain of Wheat', 'Ngugi wa Thiong\'o', 'English', 'Book', '9780435906856', 1967, 3, 'Literature'),
             ('The River Between', 'Ngugi wa Thiong\'o', 'English', 'Book', '9780435908843', 1965, 3, 'Literature'),
             ('Blossoms of the Savannah', 'Henry R. Ole Kulet', 'English', 'Book', '9789966254313', 2008, 6, 'Literature'),
             ('Weep Not Child', 'Ngugi wa Thiong\'o', 'English', 'Book', '9780435906863', 1964, 4, 'Literature'),
-            ('Kiswahili Sanifu Form 3', 'Oxford University Press', 'Kiswahili', 'Book', '9780195730883', 2021, 6, 'Language'),
-            ('Longman History Form 3', 'Longman Kenya', 'History', 'Book', '9789966451186', 2022, 5, 'Humanities'),
-            ('Oxford Geography Form 3', 'Oxford Kenya', 'Geography', 'Book', '9780195476804', 2022, 5, 'Humanities'),
+            ('Kiswahili Sanifu Grade 9', 'Oxford University Press', 'Kiswahili', 'Book', '9780195730883', 2021, 6, 'Language'),
+            ('Longman History Grade 9', 'Longman Kenya', 'History', 'Book', '9789966451186', 2022, 5, 'Humanities'),
+            ('Oxford Geography Grade 9', 'Oxford Kenya', 'Geography', 'Book', '9780195476804', 2022, 5, 'Humanities'),
             ('Computer Studies Secondary', 'KICD', 'Computer Studies', 'Book', '9789966451001', 2023, 4, 'Technology'),
-            ('Business Studies Form 4', 'Kenya Literature Bureau', 'Business', 'Book', '9789966100789', 2022, 4, 'Textbooks'),
+            ('Business Studies Grade 10', 'Kenya Literature Bureau', 'Business', 'Book', '9789966100789', 2022, 4, 'Textbooks'),
             ('Oral Literature in Africa', 'Ruth Finnegan', 'English', 'Book', '9780198121497', 2012, 2, 'Reference'),
             ('Collins English Dictionary', 'Collins', 'English', 'Book', '9780008309374', 2019, 3, 'Reference'),
             ('Kenya Schools Atlas', 'Macmillan Kenya', 'Geography', 'Book', '9789966190970', 2021, 3, 'Reference'),
-            ('CRE Form 3', 'Longman Kenya', 'CRE', 'Book', '9789966451230', 2022, 4, 'Textbooks'),
-            ('Agriculture Form 2', 'KICD', 'Agriculture', 'Book', '9789966451056', 2021, 4, 'Textbooks'),
-            ('Longman English Form 4', 'Longman Kenya', 'English', 'Book', '9789966451414', 2022, 5, 'Textbooks'),
+            ('CRE Grade 9', 'Longman Kenya', 'CRE', 'Book', '9789966451230', 2022, 4, 'Textbooks'),
+            ('Agriculture Grade 8', 'KICD', 'Agriculture', 'Book', '9789966451056', 2021, 4, 'Textbooks'),
+            ('Longman English Grade 10', 'Longman Kenya', 'English', 'Book', '9789966451414', 2022, 5, 'Textbooks'),
             ('The Golden Drum', 'Various Authors', 'English', 'Book', '9789966251671', 2015, 3, 'Fiction'),
-            ('KLB CRE Form 1', 'Kenya Literature Bureau', 'CRE', 'Book', '9789966100555', 2022, 4, 'Textbooks'),
+            ('KLB CRE Grade 7', 'Kenya Literature Bureau', 'CRE', 'Book', '9789966100555', 2022, 4, 'Textbooks'),
             ('Mathematics Revision Guide', 'Longman Kenya', 'Mathematics', 'Book', '9789966451592', 2023, 5, 'Mathematics'),
         ]
 
@@ -1318,18 +1314,18 @@ class Command(BaseCommand):
             flat_classes = list(classes)
 
         COURSE_DATA = [
-            ('Mathematics Form 3 — Quadratic Equations', 'MTH301', 'Mathematics', 'Quadratic equations, inequalities and graphs for Form 3 students.', 12, 4.8),
-            ('Biology Form 2 — Cell Biology & Genetics', 'BIO201', 'Biology', 'Cell structure, organelles, cell division and basic genetics.', 10, 4.9),
-            ('Chemistry Form 3 — Organic Chemistry', 'CHE301', 'Chemistry', 'Introduction to organic compounds, hydrocarbons and reactions.', 14, 4.7),
-            ('Physics Form 3 — Electromagnetism', 'PHY301', 'Physics', 'Electromagnetic induction, Faraday\'s law and applications.', 11, 4.6),
-            ('English Form 4 — Essay Writing', 'ENG401', 'English', 'Advanced composition, argumentative essays and literary analysis.', 8, 4.5),
-            ('Kiswahili Form 3 — Fasihi', 'KSW301', 'Kiswahili', 'Ushairi, riwaya na tamthilia — uchambuzi wa kina.', 9, 4.4),
-            ('History Form 3 — Nationalism in Africa', 'HIS301', 'History', 'African nationalism, independence movements and post-colonial Africa.', 7, 4.3),
-            ('Geography Form 2 — Climatology', 'GEO201', 'Geography', 'World climate zones, weather patterns and climate change.', 8, 4.5),
-            ('Computer Studies Form 3 — Programming', 'COM301', 'Computer Studies', 'Introduction to Python programming, algorithms and data structures.', 10, 4.8),
-            ('Business Studies Form 4 — Entrepreneurship', 'BST401', 'Business Studies', 'Business planning, financial literacy and entrepreneurial skills.', 6, 4.2),
-            ('Agriculture Form 2 — Crop Production', 'AGR201', 'Agriculture', 'Soil science, crop husbandry and sustainable farming practices.', 7, 4.4),
-            ('Mathematics Form 4 — Matrices & Calculus', 'MTH401', 'Mathematics', 'Matrices, transformations, differentiation and integration.', 14, 4.9),
+            ('Mathematics Grade 9 — Quadratic Equations', 'MTH301', 'Mathematics', 'Quadratic equations, inequalities and graphs for Grade 9 learners.', 12, 4.8),
+            ('Biology Grade 8 — Cell Biology & Genetics', 'BIO201', 'Biology', 'Cell structure, organelles, cell division and basic genetics.', 10, 4.9),
+            ('Chemistry Grade 9 — Organic Chemistry', 'CHE301', 'Chemistry', 'Introduction to organic compounds, hydrocarbons and reactions.', 14, 4.7),
+            ('Physics Grade 9 — Electromagnetism', 'PHY301', 'Physics', 'Electromagnetic induction, Faraday\'s law and applications.', 11, 4.6),
+            ('English Grade 10 — Essay Writing', 'ENG401', 'English', 'Advanced composition, argumentative essays and literary analysis.', 8, 4.5),
+            ('Kiswahili Grade 9 — Fasihi', 'KSW301', 'Kiswahili', 'Ushairi, riwaya na tamthilia — uchambuzi wa kina.', 9, 4.4),
+            ('History Grade 9 — Nationalism in Africa', 'HIS301', 'History', 'African nationalism, independence movements and post-colonial Africa.', 7, 4.3),
+            ('Geography Grade 8 — Climatology', 'GEO201', 'Geography', 'World climate zones, weather patterns and climate change.', 8, 4.5),
+            ('Computer Studies Grade 9 — Programming', 'COM301', 'Computer Studies', 'Introduction to Python programming, algorithms and data structures.', 10, 4.8),
+            ('Business Studies Grade 10 — Entrepreneurship', 'BST401', 'Business Studies', 'Business planning, financial literacy and entrepreneurial skills.', 6, 4.2),
+            ('Agriculture Grade 8 — Crop Production', 'AGR201', 'Agriculture', 'Soil science, crop husbandry and sustainable farming practices.', 7, 4.4),
+            ('Mathematics Grade 10 — Matrices & Calculus', 'MTH401', 'Mathematics', 'Matrices, transformations, differentiation and integration.', 14, 4.9),
         ]
 
         MATERIAL_TYPES = ['PDF', 'Video', 'Note', 'Presentation']
@@ -1600,7 +1596,7 @@ class Command(BaseCommand):
             cats[name] = c
 
         ASSETS_DATA = [
-            ('AST-001', 'Classroom Desk Set (30 units)', 'Furniture', 'Form 2 East', 2022, 45000, 0.75),
+            ('AST-001', 'Classroom Desk Set (30 units)', 'Furniture', 'Grade 8 East', 2022, 45000, 0.75),
             ('AST-002', 'HP ProBook Laptops (15 units)', 'Electronics', 'Computer Lab', 2023, 750000, 0.85),
             ('AST-003', 'Epson Projector', 'Electronics', 'Main Hall', 2022, 85000, 0.70),
             ('AST-004', 'Science Lab Microscopes (10 units)', 'Laboratory', 'Biology Lab', 2021, 250000, 0.65),
@@ -1834,12 +1830,12 @@ class Command(BaseCommand):
 
         VISITORS_DATA = [
             ('James Kamau Njoroge', '12345678', '+254721001001', 'Parent', 'Collecting student report card', 'Principal'),
-            ('Faith Wanjiru Mwangi', '23456789', '+254722002002', 'Parent', 'Parent-teacher meeting', 'Mr. Ochieng (Form 2E)'),
+            ('Faith Wanjiru Mwangi', '23456789', '+254722002002', 'Parent', 'Parent-teacher meeting', 'Mr. Ochieng (Grade 8E)'),
             ('George Omondi Otieno', '34567890', '+254723003003', 'Official', 'Ministry of Education inspection', 'Deputy Principal'),
             ('Electrician — John Doe', '45678901', '+254724004004', 'Contractor', 'Electrical fault repair in Science Block', 'Bursar'),
             ('Mary Achieng Ouma', '56789012', '+254725005005', 'Parent', 'Fee balance discussion', 'Bursar'),
             ('Peter Mwangi Kamau', '67890123', '+254726006006', 'Parent', 'Student welfare concern', 'Counsellor'),
-            ('KNEC Official — Ms. Ruth', '78901234', '+254727007007', 'Official', 'KCSE registration verification', 'Principal'),
+            ('KNEC Official — Ms. Ruth', '78901234', '+254727007007', 'Official', 'CBE National Assessment registration', 'Principal'),
             ('Plumber — David Kariuki', '89012345', '+254728008008', 'Contractor', 'Fix blocked drains in hostel block', 'Maintenance'),
             ('Sarah Njeri Kamau', '90123456', '+254729009009', 'Parent', 'Transport fee enquiry', 'Transport Office'),
             ('Leroy Oduya Ochieng', '01234567', '+254720010010', 'Other', 'Alumni visit — career talk', 'Deputy Principal'),
@@ -2157,13 +2153,12 @@ class Command(BaseCommand):
             )
             sessions.append(s)
 
-        # 2. Grade boundaries (KNEC A–E)
+        # 2. Grade boundaries (CBE EE/ME/AE/BE)
         BOUNDARIES = [
-            ("A",  75, 100, "Excellent"),
-            ("B",  60,  74, "Good"),
-            ("C",  45,  59, "Average"),
-            ("D",  30,  44, "Below Average"),
-            ("E",   0,  29, "Fail"),
+            ("EE", 86, 100, "Exceeding Expectations"),
+            ("ME", 61,  85, "Meeting Expectations"),
+            ("AE", 41,  60, "Approaching Expectations"),
+            ("BE",  0,  40, "Below Expectations"),
         ]
         for session in sessions:
             for grade, mn, mx, remarks in BOUNDARIES:
@@ -2172,7 +2167,7 @@ class Command(BaseCommand):
                     defaults={"min_marks": mn, "max_marks": mx, "remarks": remarks},
                 )
 
-        # 3. ExamPapers for the first (Completed) session – core subjects x Form 1–4 East
+        # 3. ExamPapers for the first (Completed) session – core subjects x Grade 7–10 East
         EXAM_SUBJECTS = ["MTH", "ENG", "KSW", "BIO", "PHY", "CHE", "HIS", "GEO"]
         core_subjects = list(Subject.objects.filter(code__in=EXAM_SUBJECTS, is_active=True))
 
@@ -2315,7 +2310,7 @@ class Command(BaseCommand):
             ),
             (
                 "Alumni Career Fair 2025",
-                "Connect with employers and explore internship opportunities. Open to all alumni and current Form 4 students.",
+                "Connect with employers and explore internship opportunities. Open to all alumni and current Grade 10 learners.",
                 date(2025, 9, 13),
                 "KICC Nairobi – Ground Floor",
                 "Alumni Secretariat",
@@ -2429,7 +2424,7 @@ class Command(BaseCommand):
                 dt_time(16, 0),
             ),
             (
-                "Form 4 Parents' Consultation Day",
+                "Grade 10 Parents' Consultation Day",
                 date(2025, 3, 15),
                 "Principal's Conference Room",
                 acad_term1,
@@ -2921,7 +2916,7 @@ class Command(BaseCommand):
 
         # Learning resources
         RESOURCES = [
-            ("Mathematics Revision Notes – Form 1",    "Link",     "MTH", "https://kenyacurriculumhub.ac.ke/maths-f1"),
+            ("Mathematics Revision Notes – Grade 7",   "Link",     "MTH", "https://kenyacurriculumhub.ac.ke/maths-g7"),
             ("English Grammar Handbook",               "Document", "ENG", "https://kenyacurriculumhub.ac.ke/eng-grammar"),
             ("Biology Diagrams and Notes",             "Document", "BIO", "https://kenyacurriculumhub.ac.ke/bio-diagrams"),
             ("Chemistry Formula Sheet",                "Document", "CHE", "https://kenyacurriculumhub.ac.ke/chem-formulae"),
@@ -4035,8 +4030,8 @@ class Command(BaseCommand):
 
         # AcquisitionRequests
         BOOKS = [
-            ("Advanced Chemistry for Secondary Schools – Form 3", "Kimani Muturi",    "9789966252"),
-            ("Physics Concepts and Applications – Form 4",         "James Wanyoike",   "9789966253"),
+            ("Advanced Chemistry for Secondary Schools – Grade 9", "Kimani Muturi",    "9789966252"),
+            ("Physics Concepts and Applications – Grade 10",        "James Wanyoike",   "9789966253"),
             ("Kenya History & Government – Comprehensive Guide",   "Grace Njeri",      "9789966254"),
         ]
         for title, author, isbn in BOOKS:
