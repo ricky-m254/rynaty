@@ -68,3 +68,6 @@ DJANGO_SECRET_KEY = "_m2h4-xtmu!b&y)x_=-n^)o8&#p0-p&r7146@9mkg3+!v$$9$0"
 [nix]
 channel = "stable-25_05"
 packages = ["freetype", "glibcLocales", "lcms2", "libimagequant", "libjpeg", "libtiff", "libwebp", "libxcrypt", "openjpeg", "tcl", "tk", "zlib"]
+
+[objectStorage]
+defaultBucketID = "replit-objstore-63e8763a-b1c3-42d8-99de-2e500f770903"
