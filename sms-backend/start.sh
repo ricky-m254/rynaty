@@ -63,6 +63,9 @@ print('yes' if Tenant.objects.filter(schema_name=schema).exists() else 'no')
   echo "[sms] Seeding supplementary demo data (25+ records per module)..."
   python3.11 manage.py seed_extra_data --schema_name "$schema" 2>&1 || echo "[sms] Extra data seed skipped"
 
+  echo "[sms] Seeding KICD digital textbooks and Harvard open learning materials..."
+  python3.11 manage.py seed_digital_resources --schema_name "$schema" 2>&1 || echo "[sms] Digital resources seed skipped"
+
   echo "[sms] Bootstrap complete."
 fi
 

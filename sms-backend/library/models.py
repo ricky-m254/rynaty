@@ -39,6 +39,7 @@ class LibraryResource(models.Model):
     classification = models.CharField(max_length=80, blank=True)
     subjects = models.TextField(blank=True)
     description = models.TextField(blank=True)
+    digital_url = models.URLField(max_length=1000, blank=True, help_text="Online access link for digital/open-access resources")
     cover_image = models.ImageField(upload_to="library/resources/covers/", null=True, blank=True)
     category = models.ForeignKey(LibraryCategory, on_delete=models.SET_NULL, null=True, blank=True, related_name="resources")
     total_copies = models.PositiveIntegerField(default=0)
