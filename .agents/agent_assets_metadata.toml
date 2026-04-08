@@ -12,6 +12,132 @@ uri = "file://attached_assets/generated_images/rynatyspace_technologies_logo.png
 type = "image"
 title = "RynatySpace Technologies company logo"
 
+[[generated]]
+id = "X58jpgUWY6Cx9MPYjwAcp"
+uri = "file://artifacts/rynaty-space/public/assets/product-school-mgmt.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "1IhiG2cutyRvouo_CHZBo"
+uri = "file://artifacts/rynaty-space/public/assets/product-library.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "xohuH1wM3EdKZ-SqbJBfl"
+uri = "file://artifacts/rynaty-space/public/assets/product-accounts.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "xcSTv8EWkqDPM1hOkD8K1"
+uri = "file://artifacts/rynaty-space/public/assets/product-device-mgmt.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "4uKjPNRqEcU2VAe6GBo9T"
+uri = "file://artifacts/rynaty-space/public/assets/product-ewallet.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "VL3kMqio-PHtoIXpMwg-p"
+uri = "file://artifacts/rynaty-space/public/assets/hardware-biometric.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "yhniB-lpUkO0zP_owkMg9"
+uri = "file://artifacts/rynaty-space/public/assets/hardware-cctv.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "ToQjGKmAqrw3gGt7Bdgqe"
+uri = "file://artifacts/rynaty-space/public/assets/hardware-rfid.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "Sh85FIKWVIMXEAgAULXnb"
+uri = "file://artifacts/rynaty-space/public/assets/hardware-network.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "LaFgYO-kjWCDP8tKxrH_b"
+uri = "file://artifacts/rynaty-space/public/assets/cloud-saas.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "_2rVvhqT7ISEDHb7YTNLl"
+uri = "file://artifacts/rynaty-space/public/assets/cloud-portals.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "PbJIlr3NQlckWWoDXcs57"
+uri = "file://artifacts/rynaty-space/public/assets/cloud-hosting.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "HgGesqx-1_cl-X3ZKEfWf"
+uri = "file://artifacts/rynaty-space/public/assets/cloud-backup.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "jBwYOy4PrhSTKMmVAMxRq"
+uri = "file://artifacts/rynaty-space/public/assets/service-custom-dev.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "1CqotHeHIisQ56zd03Uui"
+uri = "file://artifacts/rynaty-space/public/assets/service-installation.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "LQSG7h4j03mvtlqYHe85h"
+uri = "file://artifacts/rynaty-space/public/assets/service-training.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "SuWa8SCCbQ_ZLrL_UbpOC"
+uri = "file://artifacts/rynaty-space/public/assets/service-support.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "7JeGUaMFUjDVrT_6zQqJr"
+uri = "file://artifacts/rynaty-space/public/assets/service-consultancy.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "y_B2zNEZAIQWP4yibgh0M"
+uri = "file://artifacts/rynaty-space/public/assets/vision-smart-school.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "dcYZdh4VBGmGh5k27FICQ"
+uri = "file://artifacts/rynaty-space/public/assets/vision-africa.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "AVI6BOWj3aLIJZHFgTPAd"
+uri = "file://artifacts/rynaty-space/public/assets/vision-edtech.png"
+type = "image"
+title = "generated_image"
+
 [[outputs]]
 id = "ev2sdnkvaVeNWAXZ9lxvB"
 uri = "file://attached_assets/generated_images/rynatyschool_management_logo.png"
