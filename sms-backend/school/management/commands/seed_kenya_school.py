@@ -782,23 +782,28 @@ class Command(BaseCommand):
         structs = fee_structs[term1.id]
         total_term1 = sum(fs.amount for fs in structs)
 
-        # Invoice + payment for each student
+        # Invoice + payment for each student (idempotent)
         ref_counter = 9000
         for i, student in enumerate(students):
-            inv = Invoice.objects.create(
+            inv, inv_created = Invoice.objects.get_or_create(
                 student=student,
                 term=term1,
-                due_date=date(2025, 2, 14),
-                total_amount=total_term1,
-                status="CONFIRMED",
+                defaults={
+                    "due_date": date(2025, 2, 14),
+                    "total_amount": total_term1,
+                    "status": "CONFIRMED",
+                },
             )
-            for fs in structs:
-                InvoiceLineItem.objects.create(
-                    invoice=inv,
-                    fee_structure=fs,
-                    description=fs.name.split(" — ")[0],
-                    amount=fs.amount,
-                )
+            if inv_created:
+                for fs in structs:
+                    InvoiceLineItem.objects.get_or_create(
+                        invoice=inv,
+                        fee_structure=fs,
+                        defaults={
+                            "description": fs.name.split(" — ")[0],
+                            "amount": fs.amount,
+                        },
+                    )
 
             # Varying payment amounts: some full, some partial, some none
             if i % 3 == 0:
@@ -820,10 +825,10 @@ class Command(BaseCommand):
                         "reference_number": unique_ref,
                     },
                 )
-                PaymentAllocation.objects.create(
+                PaymentAllocation.objects.get_or_create(
                     payment=pmt,
                     invoice=inv,
-                    amount_allocated=paid_amount,
+                    defaults={"amount_allocated": paid_amount},
                 )
 
         # ── Vote Heads ────────────────────────────────────────────────────────

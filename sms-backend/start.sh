@@ -19,8 +19,9 @@ SERVER_PID=$!
 echo "[sms] Server started (PID: $SERVER_PID)"
 
 if [ "${BOOTSTRAP_DEMO_DATA:-false}" = "true" ]; then
-  echo "[sms] Bootstrapping demo data in background..."
   schema="${DEMO_SCHEMA_NAME:-demo_school}"
+
+  echo "[sms] Checking demo tenant..."
   tenant_exists=$(python3.11 manage.py shell -c "
 import os
 from clients.models import Tenant
@@ -28,21 +29,35 @@ schema = os.environ.get('DEMO_SCHEMA_NAME', 'demo_school')
 print('yes' if Tenant.objects.filter(schema_name=schema).exists() else 'no')
 " 2>/dev/null || echo "error")
 
-  if [ "$tenant_exists" = "yes" ]; then
-    echo "[sms] Demo tenant already exists; skipping bootstrap."
-  else
-    echo "[sms] Bootstrapping demo tenant..."
+  if [ "$tenant_exists" != "yes" ]; then
+    echo "[sms] Creating demo tenant..."
     python3.11 manage.py seed_demo \
       --schema_name "${DEMO_SCHEMA_NAME:-demo_school}" \
       --name "${DEMO_SCHOOL_NAME:-RynatySchool Demo}" \
       --domain "${DEMO_TENANT_DOMAIN:-demo.localhost}" \
       --admin_user "${DEMO_ADMIN_USER:-admin}" \
       --admin_pass "${DEMO_ADMIN_PASS:-admin123}" \
-      --admin_email "${DEMO_ADMIN_EMAIL:-admin@demo.school}" && echo "[sms] Demo seeded OK" || echo "[sms] Demo seed skipped"
-    python3.11 manage.py seed_default_permissions --assign-roles --schema="${DEMO_SCHEMA_NAME:-demo_school}" 2>/dev/null || true
-    python3.11 manage.py seed_modules --all-tenants 2>/dev/null || true
-    echo "[sms] Demo bootstrap complete"
+      --admin_email "${DEMO_ADMIN_EMAIL:-admin@demo.school}" && echo "[sms] Base tenant created" || echo "[sms] Base tenant creation skipped"
+  else
+    echo "[sms] Demo tenant exists — ensuring all seed data is present..."
   fi
+
+  echo "[sms] Seeding modules..."
+  python3.11 manage.py seed_modules --all-tenants 2>/dev/null || true
+
+  echo "[sms] Seeding roles and permissions..."
+  python3.11 manage.py seed_default_permissions --assign-roles --schema="$schema" 2>/dev/null || true
+
+  echo "[sms] Seeding full Kenya school data (idempotent)..."
+  python3.11 manage.py seed_kenya_school --schema_name "$schema" 2>&1 | tail -5 || echo "[sms] Kenya seed skipped"
+
+  echo "[sms] Seeding curriculum templates..."
+  python3.11 manage.py seed_curriculum_templates --schema="$schema" 2>/dev/null || true
+
+  echo "[sms] Seeding portal login accounts..."
+  python3.11 manage.py seed_portal_accounts --schema_name "$schema" 2>&1 | tail -5 || echo "[sms] Portal accounts skipped"
+
+  echo "[sms] Bootstrap complete."
 fi
 
 echo "[sms] Waiting for server process..."

@@ -63,22 +63,36 @@ class Command(BaseCommand):
                         student_updated += 1
 
                 if student_role:
-                    profile, _ = UserProfile.objects.get_or_create(
-                        user=user,
-                        defaults={"role": student_role, "admission_number": adm},
+                    profile = (
+                        UserProfile.objects.filter(user=user).first()
+                        or UserProfile.objects.filter(admission_number=adm).first()
                     )
-                    changed = False
-                    if profile.role != student_role:
-                        profile.role = student_role
-                        changed = True
-                    if profile.admission_number != adm:
-                        profile.admission_number = adm
-                        changed = True
-                    if profile.force_password_change:
-                        profile.force_password_change = False
-                        changed = True
-                    if changed:
-                        profile.save()
+                    if profile is None:
+                        try:
+                            profile = UserProfile.objects.create(
+                                user=user,
+                                role=student_role,
+                                admission_number=adm,
+                                force_password_change=False,
+                            )
+                        except Exception:
+                            profile = UserProfile.objects.filter(admission_number=adm).first()
+                    if profile:
+                        changed = False
+                        if profile.user_id != user.pk:
+                            profile.user = user
+                            changed = True
+                        if profile.role != student_role:
+                            profile.role = student_role
+                            changed = True
+                        if profile.admission_number != adm:
+                            profile.admission_number = adm
+                            changed = True
+                        if profile.force_password_change:
+                            profile.force_password_change = False
+                            changed = True
+                        if changed:
+                            profile.save()
 
             self.stdout.write(
                 self.style.SUCCESS(
