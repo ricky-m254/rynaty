@@ -38,6 +38,7 @@ STAFF_ACCOUNTS = [
     ("hod.science", "hod123",        "Ruth",    "Adhiambo",  "hod.science@stmarys.ac.ke", "HOD"),
     ("store_clerk", "store123",      "Kevin",   "Waweru",    "store@stmarys.ac.ke",       "STORE_CLERK"),
     ("alumnicoord", "alumni123",     "Alice",   "Nyambura",  "alumni@stmarys.ac.ke",      "ALUMNI"),
+    ("teacher1",    "teacher123",    "Agnes",   "Kamau",     "teacher1@stmarys.ac.ke",    "TEACHER"),
     ("teacher2",    "teacher123",    "Beatrice","Njeri",     "teacher2@stmarys.ac.ke",    "TEACHER"),
     ("teacher3",    "teacher123",    "Daniel",  "Otieno",    "teacher3@stmarys.ac.ke",    "TEACHER"),
     ("teacher4",    "teacher123",    "Priscilla","Chebet",   "teacher4@stmarys.ac.ke",    "TEACHER"),

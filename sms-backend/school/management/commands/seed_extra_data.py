@@ -25,6 +25,8 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("[seed_extra_data] Done."))
 
     def _seed_all(self):
+        self._seed_grade_levels()
+        self._seed_admissions_extra()
         self._seed_alumni()
         self._seed_hostel()
         self._seed_sports()
@@ -39,6 +41,123 @@ class Command(BaseCommand):
         self._seed_store()
         self._seed_assets()
         self._seed_hr_extras()
+
+    # ─── GRADE LEVELS ────────────────────────────────────────────────────────
+
+    def _seed_grade_levels(self):
+        from school.models import GradeLevel, SchoolClass
+
+        GRADE_LEVELS = [
+            ("Form 1", 1, "First year of secondary school"),
+            ("Form 2", 2, "Second year of secondary school"),
+            ("Form 3", 3, "Third year of secondary school"),
+            ("Form 4", 4, "Fourth year — KCSE examination year"),
+        ]
+
+        created = 0
+        for name, order, desc in GRADE_LEVELS:
+            gl, c = GradeLevel.objects.get_or_create(
+                name=name,
+                defaults={"order": order, "description": desc, "is_active": True},
+            )
+            if c:
+                created += 1
+            SchoolClass.objects.filter(name=name, grade_level__isnull=True).update(grade_level=gl)
+
+        self.stdout.write(f"  GradeLevels: {created} created (4 total)")
+
+    # ─── ADMISSIONS ──────────────────────────────────────────────────────────
+
+    def _seed_admissions_extra(self):
+        from school.models import AdmissionApplication, AcademicYear, Term
+        from admissions.models import AdmissionApplicationProfile
+
+        year = AcademicYear.objects.order_by("-start_date").first()
+        term = Term.objects.order_by("-start_date").first()
+
+        CANDIDATES = [
+            ("Aisha",    "Wambua",    "F", date(2011, 3, 5)),
+            ("Boniface", "Ochieng",   "M", date(2011, 7, 14)),
+            ("Cynthia",  "Chebet",    "F", date(2011, 1, 22)),
+            ("Dennis",   "Kirui",     "M", date(2011, 11, 3)),
+            ("Esther",   "Mwende",    "F", date(2011, 4, 18)),
+            ("Francis",  "Njuguna",   "M", date(2011, 9, 9)),
+            ("Gladys",   "Adhiambo",  "F", date(2011, 6, 30)),
+            ("Hesbon",   "Kamau",     "M", date(2011, 2, 12)),
+            ("Irene",    "Simiyu",    "F", date(2012, 3, 21)),
+            ("Joel",     "Kipsang",   "M", date(2012, 8, 7)),
+            ("Kellen",   "Wanjiku",   "F", date(2012, 5, 16)),
+            ("Lazarus",  "Otieno",    "M", date(2012, 12, 1)),
+            ("Mercy",    "Ndegwa",    "F", date(2011, 10, 25)),
+            ("Nathan",   "Mbeki",     "M", date(2011, 5, 3)),
+            ("Olivia",   "Cherono",   "F", date(2012, 1, 19)),
+            ("Patrick",  "Waweru",    "M", date(2012, 4, 8)),
+            ("Queen",    "Akinyi",    "F", date(2011, 8, 27)),
+            ("Robert",   "Mutiso",    "M", date(2011, 7, 11)),
+            ("Sharon",   "Ndirangu",  "F", date(2012, 2, 14)),
+            ("Timothy",  "Odhiambo",  "M", date(2012, 6, 5)),
+            ("Ursulah",  "Chepkoech", "F", date(2011, 3, 30)),
+            ("Victor",   "Gacheru",   "M", date(2012, 10, 17)),
+            ("Winnie",   "Anyango",   "F", date(2011, 9, 22)),
+            ("Xavier",   "Mwangi",    "M", date(2012, 7, 6)),
+            ("Yvonne",   "Kiprop",    "F", date(2011, 11, 13)),
+            ("Zacharia", "Kariuki",   "M", date(2012, 8, 2)),
+            ("Beatrice", "Ogola",     "F", date(2011, 4, 4)),
+            ("Collins",  "Keter",     "M", date(2012, 9, 28)),
+            ("Dorothy",  "Maina",     "F", date(2011, 6, 15)),
+            ("Edwin",    "Omuya",     "M", date(2012, 3, 11)),
+        ]
+
+        STATUSES = [
+            "Submitted", "Submitted", "Documents Received", "Documents Received",
+            "Interview Scheduled", "Interview Scheduled", "Assessed", "Admitted",
+            "Admitted", "Enrolled", "Submitted", "Documents Received",
+            "Interview Scheduled", "Assessed", "Admitted", "Enrolled",
+            "Submitted", "Documents Received", "Assessed", "Admitted",
+            "Submitted", "Interview Scheduled", "Admitted", "Enrolled",
+            "Submitted", "Documents Received", "Interview Scheduled", "Assessed",
+            "Admitted", "Enrolled",
+        ]
+
+        app_created = 0
+        profile_created = 0
+        for i, (first, last, gender, dob) in enumerate(CANDIDATES):
+            app_num = f"APP2026{str(i + 1).zfill(3)}"
+            app, ac = AdmissionApplication.objects.get_or_create(
+                application_number=app_num,
+                defaults={
+                    "student_first_name": first,
+                    "student_last_name": last,
+                    "student_gender": gender,
+                    "student_dob": dob,
+                    "application_date": date(2025, 10, 1) + timedelta(days=i * 3),
+                    "guardian_name": f"Parent of {first} {last}",
+                    "guardian_phone": f"07{str(10000000 + i * 777777)[:8]}",
+                    "guardian_email": f"parent.{last.lower()}{i}@gmail.com",
+                    "status": STATUSES[i % len(STATUSES)],
+                    "notes": f"Applying for Form 1 admission, 2026 academic year.",
+                },
+            )
+            if ac:
+                app_created += 1
+
+            _, pc = AdmissionApplicationProfile.objects.get_or_create(
+                application=app,
+                defaults={
+                    "academic_year": year,
+                    "term": term,
+                    "is_shortlisted": STATUSES[i % len(STATUSES)] in ("Assessed", "Admitted", "Enrolled"),
+                    "emergency_contact_name": f"Guardian of {first}",
+                    "emergency_contact_phone": f"07{str(20000000 + i * 888888)[:8]}",
+                    "languages": "English, Swahili",
+                    "special_needs": "",
+                    "medical_notes": "",
+                },
+            )
+            if pc:
+                profile_created += 1
+
+        self.stdout.write(f"  Admissions: {app_created} applications, {profile_created} profiles created")
 
     # ─── ALUMNI ──────────────────────────────────────────────────────────────
 
