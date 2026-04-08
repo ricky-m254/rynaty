@@ -97,6 +97,7 @@ def _no_linked_child_or_enrollment_response():
 
 
 def _library_member_ids_for_child(child):
+    from django.db.models import Q as _Q
     if not child:
         return []
     candidates = {
@@ -104,7 +105,13 @@ def _library_member_ids_for_child(child):
         f"LIB-{child.id}",
         f"LIB-{child.id:03d}",
     }
-    return [value for value in candidates if value]
+    return list(
+        LibraryMember.objects.filter(
+            _Q(student=child) | _Q(member_id__in=[v for v in candidates if v]),
+            member_type="Student",
+            is_active=True,
+        ).values_list("id", flat=True).distinct()
+    )
 
 
 def _kpis(child):
@@ -262,15 +269,22 @@ class ParentReportCardsView(ParentPortalAccessMixin, APIView):
             return _no_linked_child_response()
         from school.models import ReportCard
 
+        _GRADE_MAP = {
+            "A": "EE", "A-": "EE", "A+": "EE",
+            "B+": "ME", "B": "ME", "B-": "ME",
+            "C+": "AE", "C": "AE", "C-": "AE",
+            "D+": "BE", "D": "BE", "D-": "BE", "E": "BE",
+        }
+
         rows = ReportCard.objects.filter(student=child, is_active=True).select_related("term", "academic_year").order_by("-created_at")
         return Response(
             [
                 {
                     "id": r.id,
-                    "academic_year": r.academic_year.name,
-                    "term": r.term.name,
+                    "academic_year": r.academic_year.name if r.academic_year_id else "—",
+                    "term": r.term.name if r.term_id else "—",
                     "status": r.status,
-                    "overall_grade": r.overall_grade,
+                    "overall_grade": _GRADE_MAP.get(r.overall_grade or "", r.overall_grade or ""),
                     "download_url": f"/api/parent-portal/academics/report-cards/{r.id}/download/",
                 }
                 for r in rows
@@ -959,9 +973,11 @@ class ParentCalendarView(ParentPortalAccessMixin, APIView):
 class ParentAssignmentsView(ParentPortalAccessMixin, APIView):
     def get(self, request):
         child, _ = _pick_child(request)
+        if not child:
+            return _no_linked_child_response()
         enrollment = _active_enrollment(child)
-        if not child or not enrollment:
-            return _no_linked_child_or_enrollment_response()
+        if not enrollment:
+            return Response([])
         rows = Assignment.objects.filter(class_section=enrollment.school_class, is_active=True).select_related("subject").order_by("-due_date")
         submission_map = {s.assignment_id: s for s in AssignmentSubmission.objects.filter(student=child, is_active=True)}
         return Response(
@@ -1014,9 +1030,7 @@ class ParentLibraryBorrowingsView(ParentPortalAccessMixin, APIView):
         if not child:
             return _no_linked_child_response()
         member_ids = _library_member_ids_for_child(child)
-        member_lookup = set(
-            LibraryMember.objects.filter(member_type="Student", member_id__in=member_ids, is_active=True).values_list("id", flat=True)
-        )
+        member_lookup = set(member_ids)
         if not member_lookup:
             return Response([])
         rows = (
@@ -1051,9 +1065,7 @@ class ParentLibraryHistoryView(ParentPortalAccessMixin, APIView):
         if not child:
             return _no_linked_child_response()
         member_ids = _library_member_ids_for_child(child)
-        member_lookup = set(
-            LibraryMember.objects.filter(member_type="Student", member_id__in=member_ids, is_active=True).values_list("id", flat=True)
-        )
+        member_lookup = set(member_ids)
         if not member_lookup:
             return Response([])
         rows = (

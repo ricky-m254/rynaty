@@ -82,15 +82,30 @@ academics, admissions, alumni, assets, cafeteria, clockin, communication, curric
 | Students | admission number | (student portal) |
 | Parents | guardian-derived | parent123 |
 
+## Portal Fixes (completed)
+- **Student E-Learning**: `StudentELearningView` now includes open courses (`school_class=None`) — previously only matched class-specific content. Now returns 88+ materials.
+- **Student Report Cards**: `StudentReportCardsView` maps old KNEC grades to CBE bands (B- → ME, C+ → AE, etc.) and is null-safe for term/academic_year.
+- **Parent Assignments**: `ParentAssignmentsView` returns `[]` instead of 404 when no active enrollment found.
+- **Parent Report Cards**: `ParentReportCardsView` also maps grades to CBE bands with null-safety.
+- **Parent Library Lookup**: `_library_member_ids_for_child()` now uses `student` FK (OneToOne) + member_id fallback to correctly find `LibraryMember` records.
+- **Assignments seeded**: 320 assignments across 32 classes (10 per class from 10 templates), 100 submissions for first 20 students.
+- **School Profile / Logo**: `SchoolProfile` created with `logo = 'school_logos/rynaty-logo.png'`, `primary_color = '#10b981'`, `secondary_color = '#0d1117'`. Logo served at `/media/school_logos/rynaty-logo.png`. Seed command `_seed_school_profile()` ensures this is idempotent.
+- **Logo file**: `sms-backend/media/school_logos/rynaty-logo.png` (copied from `attached_assets/`).
+
 ## Important Files
 - `sms-backend/start.sh` — full bootstrap pipeline
-- `sms-backend/school/management/commands/seed_kenya_school.py` — main seed (4000+ lines)
+- `sms-backend/school/management/commands/seed_kenya_school.py` — main seed (4400+ lines)
 - `sms-backend/school/management/commands/seed_digital_resources.py` — KICD + Harvard resources
 - `sms-backend/curriculum/management/commands/seed_curriculum_templates.py` — 20 CBE schemes
 - `sms-backend/library/models.py` — includes `digital_url` field (migration 0004)
+- `sms-backend/parent_portal/student_portal_views.py` — student portal views (elearning, report cards, assignments)
+- `sms-backend/parent_portal/views.py` — parent portal views (report cards, assignments, library)
+- `sms-backend/media/school_logos/rynaty-logo.png` — Rynaty logo (served at /media/)
 
 ## Notes
 - f-strings: no backslashes inside expressions (Python 3.11)
 - Migrations: always `--fake-initial` to avoid conflicts with existing tables
 - All seed commands are fully idempotent (safe to re-run)
 - Frontend JS minified files updated: KCSE/CBC → CBE throughout
+- `_library_member_ids_for_child()` returns LibraryMember PKs (integer), not string member_ids
+- Tenant domain: `demo.localhost` (local), public schema at `localhost`

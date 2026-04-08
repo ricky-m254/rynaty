@@ -311,6 +311,12 @@ class Command(BaseCommand):
         self.stdout.write("  Seeding examination setter assignments…")
         self._seed_exam_setter_assignments(admin)
 
+        self.stdout.write("  Seeding school profile (logo + branding)…")
+        self._seed_school_profile()
+
+        self.stdout.write("  Seeding assignments + submissions…")
+        self._seed_assignments(students, admin)
+
         self.stdout.write("  Activating all modules for this tenant (TenantModule)…")
         self._seed_tenant_modules()
 
@@ -4355,6 +4361,69 @@ class Command(BaseCommand):
                 )
 
         self.stdout.write(f"    → Exam Setter Assignments: {ExamSetterAssignment.objects.count()} seeded")
+
+    # ── Assignments + Submissions ─────────────────────────────────────────────
+    def _seed_assignments(self, students, admin_user):
+        import random
+        from datetime import datetime, timedelta, timezone as tz
+        from school.models import SchoolClass, Subject, Assignment, AssignmentSubmission
+
+        random.seed(99)
+        now = datetime.now(tz=tz.utc)
+        subjects = list(Subject.objects.all()[:10])
+        classes = list(SchoolClass.objects.all())
+        TEMPLATES = [
+            ('Mathematics Problem Set 1', 'Solve 20 quadratic equations using CBE methodology.', 'Published', now - timedelta(days=14)),
+            ('Essay: Environmental Conservation', 'Write a 500-word essay on environmental conservation in Kenya.', 'Graded', now - timedelta(days=10)),
+            ('Science Lab Report: Photosynthesis', 'Document the photosynthesis experiment conducted in the lab.', 'Published', now + timedelta(days=3)),
+            ('Geography Map Exercise', 'Draw and label major geographical features of East Africa.', 'Graded', now - timedelta(days=7)),
+            ('History Research: Colonial Kenya', 'Research and summarize the impact of colonialism on Kenya.', 'Published', now + timedelta(days=5)),
+            ('English Comprehension Exercise', 'Read and answer comprehension questions from Unit 4.', 'Closed', now - timedelta(days=2)),
+            ('Biology: Cell Structures Diagram', 'Draw and label plant and animal cell structures.', 'Graded', now - timedelta(days=5)),
+            ('Chemistry: Periodic Table Quiz Prep', 'Memorize elements 1-20 and their properties for next lesson.', 'Published', now + timedelta(days=7)),
+            ('Physics: Forces and Motion Problems', 'Complete 15 problems on Newton laws of motion.', 'Graded', now - timedelta(days=9)),
+            ('Computer Studies: Python Basics', 'Write a program that calculates BMI for 5 students.', 'Published', now + timedelta(days=10)),
+        ]
+        a_created = 0
+        for cls in classes:
+            for i, (title, desc, status, due_date) in enumerate(TEMPLATES):
+                subj = subjects[i % len(subjects)]
+                _, was_created = Assignment.objects.get_or_create(
+                    title=title, class_section=cls, subject=subj,
+                    defaults={'description': desc, 'status': status, 'due_date': due_date,
+                              'teacher': admin_user, 'is_active': True, 'max_score': 100},
+                )
+                if was_created:
+                    a_created += 1
+        s_created = 0
+        for student in students[:20]:
+            from school.models import Enrollment
+            enrollment = Enrollment.objects.filter(student=student, is_active=True, status='Active').first()
+            if not enrollment:
+                continue
+            for asgn in Assignment.objects.filter(class_section=enrollment.school_class, status__in=['Graded', 'Closed'], is_active=True):
+                _, was_created = AssignmentSubmission.objects.get_or_create(
+                    assignment=asgn, student=student,
+                    defaults={'notes': 'Submitted via portal.', 'is_late': False,
+                              'score': random.randint(65, 98), 'feedback': 'Good work! Keep applying CBE competency standards.',
+                              'is_active': True},
+                )
+                if was_created:
+                    s_created += 1
+        self.stdout.write(f'    → Assignments: {a_created} created, Submissions: {s_created} created')
+
+    # ── School Profile (Logo + Branding) ─────────────────────────────────────
+    def _seed_school_profile(self):
+        from school.models import SchoolProfile
+        profile, created = SchoolProfile.objects.get_or_create(is_active=True, defaults={
+            'school_name': 'RynatySchool SmartCampus',
+            'primary_color': '#10b981',
+            'secondary_color': '#0d1117',
+        })
+        profile.logo = 'school_logos/rynaty-logo.png'
+        profile.save(update_fields=['logo'])
+        action = 'Created' if created else 'Updated'
+        self.stdout.write(f'    → {action} SchoolProfile with logo: {profile.logo}')
 
     # ── TenantModule Activations ──────────────────────────────────────────────
     def _seed_tenant_modules(self):

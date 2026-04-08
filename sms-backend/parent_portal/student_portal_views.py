@@ -243,14 +243,23 @@ class StudentReportCardsView(StudentPortalAccessMixin, APIView):
 
         from school.models import ReportCard
 
+        _GRADE_MAP = {
+            "A": "EE", "A-": "EE", "A+": "EE",
+            "B+": "ME", "B": "ME", "B-": "ME",
+            "C+": "AE", "C": "AE", "C-": "AE",
+            "D+": "BE", "D": "BE", "D-": "BE", "E": "BE",
+        }
+
         cards = []
         for r in ReportCard.objects.filter(student=student, is_active=True).select_related("term", "academic_year").order_by("-created_at"):
+            raw_grade = r.overall_grade or ""
+            cbe_grade = _GRADE_MAP.get(raw_grade, raw_grade)
             cards.append({
                 "id": r.id,
-                "academic_year": r.academic_year.name,
-                "term": r.term.name,
+                "academic_year": r.academic_year.name if r.academic_year_id else "—",
+                "term": r.term.name if r.term_id else "—",
                 "status": r.status,
-                "overall_grade": r.overall_grade,
+                "overall_grade": cbe_grade,
             })
 
         return Response({"report_cards": cards})
@@ -406,22 +415,25 @@ class StudentLibraryView(StudentPortalAccessMixin, APIView):
 
 class StudentELearningView(StudentPortalAccessMixin, APIView):
     def get(self, request):
+        from django.db.models import Q as _Q
         student = _student_from_request(request.user)
         if not student:
             return Response({"materials": []})
 
         enrollment = _active_enrollment_for_student(student)
-        if not enrollment or not enrollment.school_class_id:
-            return Response({"materials": []})
+
+        class_filter = _Q(course__school_class__isnull=True)
+        if enrollment and enrollment.school_class_id:
+            class_filter |= _Q(course__school_class_id=enrollment.school_class_id)
 
         rows = (
             CourseMaterial.objects.filter(
+                class_filter,
                 is_active=True,
                 course__is_published=True,
-                course__school_class_id=enrollment.school_class_id,
             )
             .select_related("course", "course__subject", "course__school_class")
-            .order_by("-created_at", "sequence")[:200]
+            .order_by("-created_at", "sequence")[:300]
         )
 
         return Response({
