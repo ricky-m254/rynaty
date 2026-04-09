@@ -16,7 +16,11 @@ def _serve_react_app(request, path=""):
     frontend_dir = settings.BASE_DIR / "frontend_build"
     index_path = frontend_dir / "index.html"
     if index_path.exists():
-        return FileResponse(open(index_path, "rb"), content_type="text/html")
+        response = FileResponse(open(index_path, "rb"), content_type="text/html")
+        response["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response["Pragma"] = "no-cache"
+        response["Expires"] = "0"
+        return response
     return JsonResponse({"status": "ok", "detail": "API running — frontend not built yet"})
 
 

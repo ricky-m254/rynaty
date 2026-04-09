@@ -104,7 +104,11 @@ def _serve_react_app(request, path=""):
     """Serve the React SPA for all non-API public routes."""
     index_path = settings.BASE_DIR / "frontend_build" / "index.html"
     if index_path.exists():
-        return FileResponse(open(index_path, "rb"), content_type="text/html")
+        response = FileResponse(open(index_path, "rb"), content_type="text/html")
+        response["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response["Pragma"] = "no-cache"
+        response["Expires"] = "0"
+        return response
     return HttpResponse(
         b"<h1>SMS Platform</h1><p>App is starting up...</p>",
         content_type="text/html",

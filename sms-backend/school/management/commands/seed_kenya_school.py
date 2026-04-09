@@ -817,16 +817,18 @@ class Command(BaseCommand):
 
             if paid_amount > 0:
                 ref_counter += 1
-                unique_ref = f"RCPT-KE{ref_counter}-{uuid.uuid4().hex[:6].upper()}"
-                pmt, _ = Payment.objects.get_or_create(
-                    student=student,
-                    notes=f"Term 1 2025 payment — {student.admission_number}",
-                    defaults={
-                        "amount": paid_amount,
-                        "payment_method": random.choice(["Cash", "M-Pesa", "Bank Transfer", "Cheque"]),
-                        "reference_number": unique_ref,
-                    },
-                )
+                payment_notes = f"Term 1 2025 payment — {student.admission_number}"
+                pmt = Payment.objects.filter(student=student, notes=payment_notes).first()
+                if pmt is None:
+                    unique_ref = f"RCPT-KE{ref_counter}-{uuid.uuid4().hex[:6].upper()}"
+                    pmt = Payment.objects.create(
+                        student=student,
+                        amount=paid_amount,
+                        payment_method=random.choice(["Cash", "M-Pesa", "Bank Transfer", "Cheque"]),
+                        reference_number=unique_ref,
+                        notes=payment_notes,
+                        is_active=True,
+                    )
                 PaymentAllocation.objects.get_or_create(
                     payment=pmt,
                     invoice=inv,

@@ -170,13 +170,12 @@ class Command(BaseCommand):
                         user.save()
 
                 if parent_role:
-                    require_password_change = created or user.check_password("parent123")
                     profile, _ = UserProfile.objects.get_or_create(
                         user=user,
                         defaults={
                             "role": parent_role,
                             "phone": guardian.phone or "",
-                            "force_password_change": require_password_change,
+                            "force_password_change": False,
                         },
                     )
                     changed = False
@@ -186,8 +185,10 @@ class Command(BaseCommand):
                     if guardian.phone and not profile.phone:
                         profile.phone = guardian.phone
                         changed = True
-                    if require_password_change and not profile.force_password_change:
-                        profile.force_password_change = True
+                    # Always clear the force-password-change flag so parents
+                    # are never locked out of the portal on demo/production restarts.
+                    if profile.force_password_change:
+                        profile.force_password_change = False
                         changed = True
                     if changed:
                         profile.save()
