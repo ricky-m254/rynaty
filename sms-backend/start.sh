@@ -42,6 +42,51 @@ print('yes' if Tenant.objects.filter(schema_name=schema).exists() else 'no')
     echo "[sms] Demo tenant exists — ensuring all seed data is present..."
   fi
 
+  # Register any runtime/production domains with the demo tenant so that
+  # tenant middleware correctly routes requests in deployed environments.
+  echo "[sms] Registering runtime domains with demo tenant..."
+  python3.11 manage.py shell -c "
+import os
+from clients.models import Tenant, Domain
+
+schema = os.environ.get('DEMO_SCHEMA_NAME', 'demo_school')
+try:
+    tenant = Tenant.objects.get(schema_name=schema)
+except Tenant.DoesNotExist:
+    print('  [domains] Tenant not found, skipping')
+    exit()
+
+# Collect all candidate domains
+candidates = set()
+candidates.add(os.environ.get('DEMO_TENANT_DOMAIN', 'demo.localhost'))
+
+replit_domains = os.environ.get('REPLIT_DOMAINS', '')
+for d in replit_domains.split(','):
+    d = d.strip()
+    if d:
+        candidates.add(d)
+
+extra = os.environ.get('EXTRA_TENANT_DOMAINS', '')
+for d in extra.split(','):
+    d = d.strip()
+    if d:
+        candidates.add(d)
+
+added = []
+for domain_name in candidates:
+    _, created = Domain.objects.get_or_create(
+        domain=domain_name,
+        defaults={'tenant': tenant, 'is_primary': False},
+    )
+    if created:
+        added.append(domain_name)
+
+if added:
+    print('  [domains] Registered: ' + ', '.join(added))
+else:
+    print('  [domains] All domains already registered (' + str(Domain.objects.filter(tenant=tenant).count()) + ' total)')
+" 2>/dev/null || echo "[sms] Domain registration skipped"
+
   echo "[sms] Seeding modules..."
   python3.11 manage.py seed_modules --all-tenants 2>/dev/null || true
 
