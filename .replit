@@ -65,6 +65,9 @@ PYTHONPATH = "/home/runner/workspace/sms-backend"
 WEB_CONCURRENCY = "2"
 DJANGO_SECRET_KEY = "_m2h4-xtmu!b&y)x_=-n^)o8&#p0-p&r7146@9mkg3+!v$$9$0"
 
+[userenv.production]
+EXTRA_TENANT_DOMAINS = "rynatyschool.app"
+
 [nix]
 channel = "stable-25_05"
 packages = ["freetype", "glibcLocales", "lcms2", "libimagequant", "libjpeg", "libtiff", "libwebp", "libxcrypt", "openjpeg", "tcl", "tk", "zlib"]

@@ -126,6 +126,15 @@ for _d in _replit_domains.split(","):
 if RENDER_EXTERNAL_HOST and RENDER_EXTERNAL_HOST not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOST)
 
+# Also allow any custom/production domains listed in EXTRA_TENANT_DOMAINS so
+# that a single env-var registers the hostname in both the tenant Domain table
+# (handled by start.sh) and Django's ALLOWED_HOSTS check.
+_extra_domains = os.environ.get("EXTRA_TENANT_DOMAINS", "")
+for _d in _extra_domains.split(","):
+    _d = _d.strip()
+    if _d and _d not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(_d)
+
 if not ALLOWED_HOSTS:
     raise ImproperlyConfigured("DJANGO_ALLOWED_HOSTS must be configured.")
 
@@ -399,6 +408,16 @@ for _d in _replit_domains.split(","):
 if RENDER_EXTERNAL_HOST:
     for _scheme in (("https://", "http://") if DEBUG else ("https://",)):
         _origin = f"{_scheme}{RENDER_EXTERNAL_HOST}"
+        if _origin not in CORS_ALLOWED_ORIGINS:
+            CORS_ALLOWED_ORIGINS.append(_origin)
+        if _origin not in CSRF_TRUSTED_ORIGINS:
+            CSRF_TRUSTED_ORIGINS.append(_origin)
+
+# Also trust any custom/production domains from EXTRA_TENANT_DOMAINS
+for _d in _extra_domains.split(","):
+    _d = _d.strip()
+    if _d:
+        _origin = f"https://{_d}"
         if _origin not in CORS_ALLOWED_ORIGINS:
             CORS_ALLOWED_ORIGINS.append(_origin)
         if _origin not in CSRF_TRUSTED_ORIGINS:
