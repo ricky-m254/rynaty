@@ -349,7 +349,7 @@ class StudentLibraryView(StudentPortalAccessMixin, APIView):
             return Response(empty_payload)
 
         member_ids = _student_library_member_ids(student)
-        today = timezone.localdate()
+        today = timezone.now().date()
         due_soon_end = today + timedelta(days=3)
 
         resources = (

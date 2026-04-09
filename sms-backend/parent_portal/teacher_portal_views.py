@@ -245,7 +245,7 @@ class TeacherPortalDashboardView(TeacherPortalAccessMixin, APIView):
         classes = _serialize_classes(class_rows)
         announcements = Announcement.objects.filter(is_active=True).order_by("-publish_at", "-id")[:4]
 
-        today = timezone.localdate()
+        today = timezone.now().date()
         rosters = _teacher_rosters([row.id for row in class_rows])
         all_student_ids = {
             student["id"]
@@ -307,7 +307,7 @@ class TeacherPortalClassesView(TeacherPortalAccessMixin, APIView):
 class TeacherPortalAttendanceView(TeacherPortalAccessMixin, APIView):
     def get(self, request):
         requested_class_id = request.query_params.get("class_id")
-        date_value = request.query_params.get("date") or str(timezone.localdate())
+        date_value = request.query_params.get("date") or str(timezone.now().date())
         class_rows, selected_class = _selected_class_or_default(request.user, requested_class_id)
         classes = _serialize_classes(class_rows)
 
