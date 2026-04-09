@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import timedelta, datetime as _datetime, date as _date
 from decimal import Decimal
 import uuid
 
@@ -147,7 +147,15 @@ class ParentDashboardView(ParentPortalAccessMixin, APIView):
             activity.append({"type": "Grade", "message": f"{row.assessment.subject.name}: {row.raw_score}", "date": row.entered_at})
         for row in AttendanceRecord.objects.filter(student=child).order_by("-date")[:5]:
             activity.append({"type": "Attendance", "message": row.status, "date": row.date})
-        activity = sorted(activity, key=lambda item: item["date"], reverse=True)[:10]
+        def _to_dt(d):
+            if isinstance(d, _datetime):
+                return d if d.tzinfo else timezone.make_aware(d)
+            if isinstance(d, _date):
+                return timezone.make_aware(_datetime(d.year, d.month, d.day))
+            return d
+        activity = sorted(activity, key=lambda item: _to_dt(item["date"]), reverse=True)[:10]
+        for item in activity:
+            item["date"] = str(item["date"])[:10]
         return Response(
             {
                 "children": [{"id": c.id, "name": f"{c.first_name} {c.last_name}".strip(), "admission_number": c.admission_number} for c in children],
