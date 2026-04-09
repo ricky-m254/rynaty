@@ -145,6 +145,7 @@ from .views import (
     CurrentUserView,
     SchoolClassListView,
     ModuleSeedView,
+    BulkReportCardPrintView,
 )
 
 # ==========================================
@@ -274,6 +275,7 @@ urlpatterns = [
     path('medical/visits/export/csv/', MedicalClinicVisitsCsvExportView.as_view(), name='medical_clinic_visits_csv'),
     path('medical/visits/export/pdf/', MedicalClinicVisitsPdfExportView.as_view(), name='medical_clinic_visits_pdf'),
     path('academics/current/', AcademicsCurrentContextView.as_view(), name='academics_current'),
+    path('academics/report-cards/bulk-print/', BulkReportCardPrintView.as_view(), name='report_card_bulk_print'),
     path('finance/optional-charges/by-class/', FinanceBulkOptionalChargeByClassView.as_view(), name='optional_charge_by_class'),
     path('academics/summary/', AcademicsSummaryView.as_view(), name='academics_summary'),
     path('hr/summary/', HrSummaryView.as_view(), name='hr_summary'),

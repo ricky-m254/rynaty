@@ -8675,3 +8675,340 @@ class GeneralSettingsView(APIView):
                 setattr(profile, field, request.data[field])
         profile.save(update_fields=self._GENERAL_FIELDS + ['updated_at'])
         return Response({'detail': 'General settings updated.'})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# BULK REPORT CARD PRINT  (GET /api/academics/report-cards/bulk-print/)
+# ─────────────────────────────────────────────────────────────────────────────
+class BulkReportCardPrintView(APIView):
+    """
+    Bulk-print all report cards for a class/term as a single printable HTML page.
+
+    GET without params  → selection form (class + term dropdowns)
+    GET ?class_id=X&term_id=Y[&status=Approved][&academic_year_id=Z]
+        → printable HTML; one student per page-break section
+    """
+    permission_classes = [permissions.IsAuthenticated, HasModuleAccess]
+    module_key = "ACADEMICS"
+
+    # CBE grade-band colours
+    _BAND_COLOUR = {"EE": "#166534", "ME": "#1e40af", "AE": "#92400e", "BE": "#991b1b"}
+    _GRADE_MAP = {
+        "A": "EE", "A+": "EE", "A-": "EE",
+        "B+": "ME", "B": "ME", "B-": "ME",
+        "C+": "AE", "C": "AE", "C-": "AE",
+        "D+": "BE", "D": "BE", "D-": "BE", "E": "BE",
+    }
+
+    def get(self, request):
+        class_id = request.query_params.get("class_id", "").strip()
+        term_id  = request.query_params.get("term_id", "").strip()
+        status_f = request.query_params.get("status", "").strip()
+
+        if not class_id or not term_id:
+            return HttpResponse(self._form_html(request), content_type="text/html")
+        return HttpResponse(
+            self._print_html(request, int(class_id), int(term_id), status_f),
+            content_type="text/html",
+        )
+
+    # ── selection form ────────────────────────────────────────────────────────
+    def _form_html(self, request):
+        from academics.models import SchoolClass as _SC, Term as _Term
+        classes = _SC.objects.all().order_by("name")
+        terms   = _Term.objects.select_related("academic_year").order_by("-id")
+        cls_opts = "\n".join(
+            f"<option value='{c.id}'>{getattr(c, 'display_name', c.name)}</option>"
+            for c in classes
+        )
+        term_opts = "\n".join(
+            f"<option value='{t.id}'>{t.name} &bull; {t.academic_year.name}</option>"
+            for t in terms
+        )
+        base = request.build_absolute_uri(request.path)
+        return f"""<!doctype html><html lang='en'><head>
+<meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>Bulk Report Card Print — RynatySchool SmartCampus</title>
+<style>
+  *{{box-sizing:border-box;margin:0;padding:0}}
+  body{{font-family:Arial,sans-serif;background:#f1f5f9;min-height:100vh;display:flex;align-items:center;justify-content:center}}
+  .card{{background:#fff;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.10);padding:40px;max-width:480px;width:100%}}
+  .logo{{color:#10b981;font-size:22px;font-weight:bold;margin-bottom:4px}}
+  .subtitle{{color:#64748b;font-size:13px;margin-bottom:28px}}
+  h2{{font-size:18px;font-weight:700;color:#1e293b;margin-bottom:20px}}
+  label{{display:block;font-size:12px;font-weight:600;color:#475569;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;margin-top:16px}}
+  select{{width:100%;padding:10px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;color:#1e293b;background:#f8fafc;appearance:none}}
+  select:focus{{outline:none;border-color:#10b981;box-shadow:0 0 0 2px rgba(16,185,129,.2)}}
+  .btn{{display:block;width:100%;margin-top:28px;padding:12px;background:#10b981;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;text-align:center;text-decoration:none}}
+  .btn:hover{{background:#059669}}
+  .tip{{margin-top:16px;font-size:12px;color:#94a3b8;text-align:center}}
+</style></head>
+<body><div class='card'>
+  <div class='logo'>RynatySchool SmartCampus</div>
+  <div class='subtitle'>Competency-Based Education (CBE) System</div>
+  <h2>Bulk Report Card Print</h2>
+  <form method='GET' action='{base}'>
+    <label for='cls'>Class / Stream</label>
+    <select id='cls' name='class_id' required>
+      <option value='' disabled selected>— Select class —</option>
+      {cls_opts}
+    </select>
+    <label for='trm'>Term</label>
+    <select id='trm' name='term_id' required>
+      <option value='' disabled selected>— Select term —</option>
+      {term_opts}
+    </select>
+    <label for='sts'>Filter by Status (optional)</label>
+    <select id='sts' name='status'>
+      <option value=''>All Statuses</option>
+      <option value='Draft'>Draft</option>
+      <option value='Submitted'>Submitted</option>
+      <option value='Approved'>Approved</option>
+      <option value='Published'>Published</option>
+      <option value='Distributed'>Distributed</option>
+    </select>
+    <button type='submit' class='btn'>Generate Printable Report Cards</button>
+  </form>
+  <p class='tip'>Each student's report card will appear on a separate printed page.</p>
+</div></body></html>"""
+
+    # ── bulk print page ───────────────────────────────────────────────────────
+    def _print_html(self, request, class_id: int, term_id: int, status_f: str) -> str:
+        from school.models import (
+            ReportCard, TermResult, SchoolProfile, SchoolClass,
+            Student, AttendanceRecord,
+        )
+        from academics.models import Term as _Term
+
+        cls  = SchoolClass.objects.filter(id=class_id).first()
+        term = _Term.objects.select_related("academic_year").filter(id=term_id).first()
+        if not cls or not term:
+            return "<h2 style='padding:40px'>Invalid class or term selected.</h2>"
+
+        profile     = SchoolProfile.objects.filter(is_active=True).first()
+        school_name = getattr(profile, "school_name", "RynatySchool SmartCampus")
+        school_phone = getattr(profile, "phone", "+254 700 000 000")
+        school_email = getattr(profile, "email_address", "info@rynatyschool.app")
+        cls_name    = getattr(cls, "display_name", None) or cls.name
+        term_name   = term.name
+        year_name   = term.academic_year.name if term.academic_year else "—"
+        generated   = timezone.now().strftime("%d %b %Y %H:%M")
+
+        qs = ReportCard.objects.filter(
+            class_section_id=class_id, term_id=term_id, is_active=True,
+        ).select_related("student")
+        if status_f:
+            qs = qs.filter(status=status_f)
+        cards = list(qs.order_by("class_rank", "student__last_name", "student__first_name"))
+
+        if not cards:
+            return f"""<div style='font-family:Arial;padding:60px;text-align:center'>
+              <h2>No report cards found</h2>
+              <p style='color:#666;margin-top:12px'>
+                Class: <b>{cls_name}</b> &bull; Term: <b>{term_name}</b>
+                {f' &bull; Status: <b>{status_f}</b>' if status_f else ''}
+              </p>
+              <a href='javascript:history.back()' style='color:#10b981'>← Back to selection</a>
+            </div>"""
+
+        # Pre-fetch all TermResults for this class+term in one query
+        all_results = TermResult.objects.filter(
+            class_section_id=class_id, term_id=term_id, is_active=True,
+        ).select_related("subject", "grade_band").order_by("subject__name")
+        results_map: dict[int, list] = {}
+        for r in all_results:
+            results_map.setdefault(r.student_id, []).append(r)
+
+        # Pre-fetch attendance counts
+        att_qs = AttendanceRecord.objects.filter(
+            student__in=[c.student_id for c in cards],
+        ).values("student_id", "status")
+        att_map: dict[int, dict] = {}
+        for row in att_qs:
+            sid = row["student_id"]
+            att_map.setdefault(sid, {"Present": 0, "Absent": 0, "Late": 0})
+            att_map[sid][row["status"]] = att_map[sid].get(row["status"], 0) + 1
+
+        cards_html = ""
+        for i, card in enumerate(cards):
+            student  = card.student
+            name     = f"{student.first_name} {student.last_name}"
+            adm      = student.admission_number
+            grade_lv = cls_name
+            rank_txt = f"{card.class_rank}" if card.class_rank else "—"
+            total_stu = len(cards)
+            att      = att_map.get(student.id, {})
+            days_p   = card.attendance_days or att.get("Present", 0)
+            days_a   = att.get("Absent", 0)
+            days_l   = att.get("Late", 0)
+            remarks_t  = card.teacher_remarks or "—"
+            remarks_p  = card.principal_remarks or "—"
+
+            raw_grade  = card.overall_grade or ""
+            cbe_grade  = self._GRADE_MAP.get(raw_grade, raw_grade) or "—"
+            g_colour   = self._BAND_COLOUR.get(cbe_grade, "#475569")
+            g_desc = {"EE": "Exceeding Expectations", "ME": "Meeting Expectations",
+                      "AE": "Approaching Expectations", "BE": "Below Expectations"}.get(cbe_grade, "")
+
+            # Subject rows from TermResult
+            rows = results_map.get(student.id, [])
+            subj_rows = ""
+            for r in rows:
+                band = r.grade_band.label if r.grade_band else self._GRADE_MAP.get(str(r.total_score), "AE")
+                bcolour = self._BAND_COLOUR.get(band, "#475569")
+                score   = float(r.total_score)
+                remark  = r.grade_band.remark if r.grade_band else ""
+                subj_rows += (
+                    f"<tr>"
+                    f"<td>{r.subject.name}</td>"
+                    f"<td style='text-align:center'>{score:.1f}</td>"
+                    f"<td style='text-align:center'>"
+                    f"  <span style='background:{bcolour};color:#fff;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:bold'>{band}</span>"
+                    f"</td>"
+                    f"<td style='color:#64748b;font-size:12px'>{remark}</td>"
+                    f"</tr>"
+                )
+            if not subj_rows:
+                subj_rows = "<tr><td colspan='4' style='text-align:center;color:#888;padding:20px'>No subject results recorded for this term.</td></tr>"
+
+            is_last = (i == len(cards) - 1)
+            page_cls = "" if is_last else " page-break"
+
+            cards_html += f"""
+<section class='report-page{page_cls}'>
+  <div class='rc-header'>
+    <div>
+      <div class='rc-school'>{school_name}</div>
+      <div class='rc-contact'>{school_phone} &bull; {school_email}</div>
+      <div class='rc-title'>STUDENT ACADEMIC REPORT CARD</div>
+      <div class='rc-period'>{year_name} &bull; {term_name}</div>
+    </div>
+    <div class='rc-badge' style='border-color:{g_colour};color:{g_colour}'>{cbe_grade}</div>
+  </div>
+
+  <div class='info-grid'>
+    <div class='ib'><span class='il'>Student Name</span><strong>{name}</strong></div>
+    <div class='ib'><span class='il'>Admission No.</span><strong>{adm}</strong></div>
+    <div class='ib'><span class='il'>Class</span><strong>{cls_name}</strong></div>
+    <div class='ib'><span class='il'>Class Rank</span><strong>{rank_txt} of {total_stu}</strong></div>
+    <div class='ib'><span class='il'>Days Present</span><strong>{days_p}</strong></div>
+    <div class='ib'><span class='il'>Days Absent</span><strong>{days_a}</strong></div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Subject</th>
+        <th style='text-align:center;width:90px'>Score</th>
+        <th style='text-align:center;width:90px'>CBE Band</th>
+        <th>Competency Remark</th>
+      </tr>
+    </thead>
+    <tbody>{subj_rows}</tbody>
+  </table>
+
+  <div class='summary-row'>
+    <div class='summary-box'>
+      <div class='sum-label'>Overall CBE Performance</div>
+      <div class='sum-grade' style='color:{g_colour}'>{cbe_grade}</div>
+      <div class='sum-desc'>{g_desc}</div>
+    </div>
+    <div class='remarks-grid'>
+      <div class='remark-box'>
+        <div class='remark-label'>Class Teacher's Remarks</div>
+        <div class='remark-text'>{remarks_t}</div>
+        <div class='sig-line'>Signature: _________________</div>
+      </div>
+      <div class='remark-box'>
+        <div class='remark-label'>Principal's Remarks</div>
+        <div class='remark-text'>{remarks_p}</div>
+        <div class='sig-line'>Signature: _________________</div>
+      </div>
+    </div>
+  </div>
+
+  <div class='rc-footer'>
+    {school_name} &bull; Generated {generated} &bull; rynatyschool.app
+    &bull; Student {i + 1} of {len(cards)}
+  </div>
+</section>"""
+
+        back_url = request.build_absolute_uri(request.path)
+        status_badge = f" &bull; Status: <b>{status_f}</b>" if status_f else ""
+        return f"""<!doctype html><html lang='en'><head>
+<meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>Report Cards — {cls_name} {term_name}</title>
+<style>
+  *{{box-sizing:border-box;margin:0;padding:0}}
+  body{{font-family:Arial,sans-serif;background:#f1f5f9;color:#1e293b}}
+
+  /* ─── print controls (hidden when printing) ─── */
+  .print-bar{{background:#1e293b;color:#fff;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}}
+  .print-bar h1{{font-size:15px;font-weight:600}}
+  .print-bar .meta{{font-size:12px;color:#94a3b8;margin-top:2px}}
+  .print-actions{{display:flex;gap:10px}}
+  .btn-print{{background:#10b981;color:#fff;border:none;padding:9px 20px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer}}
+  .btn-back{{background:transparent;color:#94a3b8;border:1px solid #475569;padding:9px 16px;border-radius:6px;font-size:13px;cursor:pointer;text-decoration:none}}
+
+  /* ─── report page ─── */
+  .report-page{{background:#fff;max-width:760px;margin:20px auto;padding:32px;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,.08)}}
+  .page-break{{page-break-after:always}}
+
+  /* ─── header ─── */
+  .rc-header{{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #10b981;padding-bottom:16px;margin-bottom:20px}}
+  .rc-school{{font-size:20px;font-weight:bold;color:#10b981}}
+  .rc-contact{{font-size:12px;color:#64748b;margin-top:3px}}
+  .rc-title{{font-size:16px;font-weight:bold;margin-top:8px;color:#1e293b}}
+  .rc-period{{font-size:13px;color:#64748b;margin-top:2px}}
+  .rc-badge{{border:3px solid;border-radius:50%;width:64px;height:64px;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:900;flex-shrink:0}}
+
+  /* ─── info grid ─── */
+  .info-grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px}}
+  .ib{{background:#f8fafc;border-radius:6px;padding:10px 12px}}
+  .il{{display:block;font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px}}
+  .ib strong{{font-size:13px;color:#1e293b}}
+
+  /* ─── subject table ─── */
+  table{{width:100%;border-collapse:collapse;margin-bottom:20px}}
+  th{{background:#10b981;color:#fff;padding:10px 12px;text-align:left;font-size:13px}}
+  td{{padding:9px 12px;border-bottom:1px solid #f1f5f9;font-size:13px}}
+  tr:last-child td{{border-bottom:none}}
+
+  /* ─── summary ─── */
+  .summary-row{{display:flex;gap:16px;margin-bottom:20px}}
+  .summary-box{{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:16px 20px;min-width:140px;text-align:center;flex-shrink:0}}
+  .sum-label{{font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.05em}}
+  .sum-grade{{font-size:42px;font-weight:900;margin:4px 0}}
+  .sum-desc{{font-size:11px;font-weight:600}}
+  .remarks-grid{{display:grid;grid-template-columns:1fr 1fr;gap:12px;flex:1}}
+  .remark-box{{background:#f8fafc;border-radius:6px;padding:12px}}
+  .remark-label{{font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;font-weight:600}}
+  .remark-text{{font-size:13px;color:#1e293b;min-height:40px;margin-bottom:8px}}
+  .sig-line{{font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:6px}}
+
+  /* ─── footer ─── */
+  .rc-footer{{text-align:center;font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:12px;margin-top:8px}}
+
+  /* ─── print media ─── */
+  @media print{{
+    body{{background:#fff}}
+    .print-bar{{display:none!important}}
+    .report-page{{margin:0;padding:20px;box-shadow:none;border-radius:0;max-width:none}}
+    .page-break{{page-break-after:always!important}}
+  }}
+</style></head>
+<body>
+<div class='print-bar no-print'>
+  <div>
+    <div class='meta'>
+      {cls_name} &bull; {term_name} &bull; {year_name}{status_badge}
+      &bull; <b>{len(cards)}</b> student{'s' if len(cards) != 1 else ''}
+    </div>
+  </div>
+  <div class='print-actions'>
+    <a href='{back_url}' class='btn-back'>&#8592; Change Selection</a>
+    <button class='btn-print' onclick='window.print()'>&#128438; Print / Save PDF</button>
+  </div>
+</div>
+{cards_html}
+</body></html>"""
