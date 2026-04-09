@@ -753,12 +753,20 @@ class Command(BaseCommand):
                     "email": f"parent.{last.lower()}@gmail.com",
                 },
             )
-            # Enroll in Term 1
+            # Enroll in Term 1 — deactivate any stale enrollments for a
+            # different class in the same term so we never have two active
+            # enrollments for the same student.
             cls = classes[grade][stream]
+            Enrollment.objects.filter(
+                student=s,
+                term=terms[0],
+                is_active=True,
+            ).exclude(school_class=cls).update(is_active=False, status="Transferred")
             Enrollment.objects.get_or_create(
                 student=s,
                 school_class=cls,
                 term=terms[0],
+                defaults={"is_active": True, "status": "Active"},
             )
             students.append(s)
 
@@ -1798,7 +1806,12 @@ class Command(BaseCommand):
         ROOMS = ['Room 1A', 'Room 1B', 'Room 2A', 'Room 2B', 'Room 3A', 'Room 3B', 'Lab 1', 'Lab 2']
 
         created = 0
-        all_classes = list(SchoolClass.objects.filter(is_active=True)[:4])
+        # Prefer CBE Grade 7-10 classes; fall back to any 4 active classes.
+        all_classes = list(
+            SchoolClass.objects.filter(is_active=True, name__startswith="Grade").order_by("id")[:4]
+        )
+        if not all_classes:
+            all_classes = list(SchoolClass.objects.filter(is_active=True).order_by("id")[:4])
         for day in range(1, 6):
             for cls_idx, school_class in enumerate(all_classes):
                 for period_num, start, end in PERIODS:

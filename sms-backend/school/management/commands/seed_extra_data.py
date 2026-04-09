@@ -865,7 +865,9 @@ class Command(BaseCommand):
             return
 
         teachers = list(User.objects.filter(userprofile__role__name="TEACHER")[:8])
-        classes = list(SchoolClass.objects.all()[:5])
+        classes = list(SchoolClass.objects.filter(name__startswith="Grade").order_by("id")[:5])
+        if not classes:
+            classes = list(SchoolClass.objects.all()[:5])
         subjects = list(Subject.objects.all()[:8])
 
         if not (teachers and classes and subjects):

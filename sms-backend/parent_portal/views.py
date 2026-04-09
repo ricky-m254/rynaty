@@ -234,22 +234,27 @@ class ParentAcademicsAssessmentsView(ParentPortalAccessMixin, APIView):
         child, _ = _pick_child(request)
         if not child:
             return _no_linked_child_response()
-        rows = AssessmentGrade.objects.filter(student=child, is_active=True).select_related("assessment", "assessment__subject", "grade_band").order_by("-assessment__date")
-        return Response(
-            [
-                {
-                    "id": r.id,
-                    "assessment": r.assessment.name,
-                    "subject": r.assessment.subject.name,
-                    "category": r.assessment.category,
-                    "date": r.assessment.date,
-                    "raw_score": r.raw_score,
-                    "percentage": r.percentage,
-                    "grade": getattr(r.grade_band, "label", ""),
-                }
-                for r in rows[:300]
-            ]
-        )
+        rows = AssessmentGrade.objects.filter(
+            student=child,
+            is_active=True,
+            grade_band__isnull=False,
+        ).select_related("assessment", "assessment__subject", "grade_band").order_by("-assessment__date")
+        result = []
+        for r in rows[:300]:
+            grade_label = getattr(r.grade_band, "label", "") or ""
+            if not grade_label:
+                continue
+            result.append({
+                "id": r.id,
+                "assessment": r.assessment.name,
+                "subject": r.assessment.subject.name,
+                "category": r.assessment.category,
+                "date": r.assessment.date,
+                "raw_score": r.raw_score,
+                "percentage": r.percentage,
+                "grade": grade_label,
+            })
+        return Response(result)
 
 
 class ParentAcademicsAnalysisView(ParentPortalAccessMixin, APIView):
@@ -277,20 +282,23 @@ class ParentReportCardsView(ParentPortalAccessMixin, APIView):
             "D+": "BE", "D": "BE", "D-": "BE", "E": "BE",
         }
 
-        rows = ReportCard.objects.filter(student=child, is_active=True).select_related("term", "academic_year").order_by("-created_at")
-        return Response(
-            [
-                {
-                    "id": r.id,
-                    "academic_year": r.academic_year.name if r.academic_year_id else "—",
-                    "term": r.term.name if r.term_id else "—",
-                    "status": r.status,
-                    "overall_grade": _GRADE_MAP.get(r.overall_grade or "", r.overall_grade or ""),
-                    "download_url": f"/api/parent-portal/academics/report-cards/{r.id}/download/",
-                }
-                for r in rows
-            ]
-        )
+        rows = ReportCard.objects.filter(student=child, is_active=True).select_related("term", "academic_year").order_by("-id")
+        seen_terms = set()
+        cards = []
+        for r in rows:
+            dedup_key = (r.term_id, r.academic_year_id)
+            if dedup_key in seen_terms:
+                continue
+            seen_terms.add(dedup_key)
+            cards.append({
+                "id": r.id,
+                "academic_year": r.academic_year.name if r.academic_year_id else "—",
+                "term": r.term.name if r.term_id else "—",
+                "status": r.status,
+                "overall_grade": _GRADE_MAP.get(r.overall_grade or "", r.overall_grade or ""),
+                "download_url": f"/api/parent-portal/academics/report-cards/{r.id}/download/",
+            })
+        return Response(cards)
 
 
 class ParentReportCardDownloadView(ParentPortalAccessMixin, APIView):

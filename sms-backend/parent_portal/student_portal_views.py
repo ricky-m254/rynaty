@@ -218,18 +218,25 @@ class StudentAcademicsGradesView(StudentPortalAccessMixin, APIView):
 
         grades = []
         for g in (
-            AssessmentGrade.objects.filter(student=student, is_active=True)
+            AssessmentGrade.objects.filter(
+                student=student,
+                is_active=True,
+                grade_band__isnull=False,
+            )
             .select_related("assessment", "assessment__subject", "grade_band")
             .order_by("-assessment__date")[:300]
         ):
+            grade_label = getattr(g.grade_band, "label", "") or ""
+            if not grade_label:
+                continue
             grades.append({
                 "subject": g.assessment.subject.name,
                 "assessment": g.assessment.name,
                 "score": g.raw_score,
                 "max_score": g.assessment.max_marks if hasattr(g.assessment, "max_marks") else None,
-                "grade": getattr(g.grade_band, "label", ""),
+                "grade": grade_label,
                 "date": str(g.assessment.date) if g.assessment.date else None,
-                "remarks": g.remarks if hasattr(g, "remarks") else None,
+                "remarks": g.remarks if hasattr(g, "remarks") else "",
             })
 
         return Response({"grades": grades})
@@ -251,7 +258,12 @@ class StudentReportCardsView(StudentPortalAccessMixin, APIView):
         }
 
         cards = []
-        for r in ReportCard.objects.filter(student=student, is_active=True).select_related("term", "academic_year").order_by("-created_at"):
+        seen_terms = set()
+        for r in ReportCard.objects.filter(student=student, is_active=True).select_related("term", "academic_year").order_by("-id"):
+            dedup_key = (r.term_id, r.academic_year_id)
+            if dedup_key in seen_terms:
+                continue
+            seen_terms.add(dedup_key)
             raw_grade = r.overall_grade or ""
             cbe_grade = _GRADE_MAP.get(raw_grade, raw_grade)
             cards.append({
@@ -502,22 +514,24 @@ class MyInvoicesView(StudentPortalAccessMixin, APIView):
             return Response([])
 
         rows = Invoice.objects.filter(student=student, is_active=True).order_by("-invoice_date", "-id")
-        return Response([
-            {
+        result = []
+        for r in rows[:100]:
+            balance = float(r.balance_due)
+            paid = float(r.total_amount) - balance
+            result.append({
                 "id": r.id,
-                "invoice_number": getattr(r, "invoice_number", f"INV-{r.id}"),
+                "invoice_number": getattr(r, "invoice_number", f"INV-{r.id:06d}"),
                 "description": getattr(r, "description", ""),
-                "amount": r.total_amount,
-                "amount_paid": r.amount_paid if hasattr(r, "amount_paid") else 0,
-                "balance": r.balance if hasattr(r, "balance") else r.total_amount,
+                "amount": float(r.total_amount),
+                "amount_paid": paid,
+                "balance": balance,
                 "status": r.status,
                 "invoice_date": r.invoice_date,
                 "due_date": getattr(r, "due_date", None),
                 "term": r.term.name if hasattr(r, "term") and r.term else None,
                 "academic_year": r.academic_year.name if hasattr(r, "academic_year") and r.academic_year else None,
-            }
-            for r in rows[:100]
-        ])
+            })
+        return Response(result)
 
 
 class MyPaymentsView(StudentPortalAccessMixin, APIView):
