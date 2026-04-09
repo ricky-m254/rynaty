@@ -71,7 +71,10 @@ def _pick_child(request):
     child_id = request.query_params.get("child_id") or request.data.get("child_id")
     if child_id:
         child = children.filter(id=child_id).first()
-        return child, children
+        if child:
+            return child, children
+        # child_id supplied but not matched (e.g. stale frontend cache) — fall back
+        return children.first(), children
     return children.first(), children
 
 

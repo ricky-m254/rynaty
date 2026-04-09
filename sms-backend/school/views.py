@@ -8587,17 +8587,31 @@ class MpesaStkCallbackView(APIView):
                     if parsed["mpesa_receipt"] and not Payment.objects.filter(
                         reference_number=parsed["mpesa_receipt"]
                     ).exists():
-                        Payment.objects.create(
+                        payment = FinanceService.record_payment(
                             student=tx.student,
-                            invoice=tx.invoice,
                             amount=parsed["amount"] or tx.amount,
                             payment_method="M-Pesa",
-                            payment_date=tz.now().date(),
                             reference_number=parsed["mpesa_receipt"],
-                            received_by=None,
                             notes=f"M-Pesa STK Push | {parsed['phone']} | {parsed['transaction_date']}",
-                            is_active=True,
                         )
+                        # Allocate against the specific invoice if known, otherwise auto-allocate
+                        try:
+                            if tx.invoice_id and tx.student:
+                                invoice = Invoice.objects.filter(
+                                    id=tx.invoice_id, student=tx.student, is_active=True
+                                ).exclude(status="VOID").first()
+                                if invoice and invoice.balance_due > 0:
+                                    alloc_amt = min(payment.amount, invoice.balance_due)
+                                    FinanceService.allocate_payment(payment, invoice, alloc_amt)
+                                else:
+                                    FinanceService.auto_allocate_payment(payment)
+                            elif tx.student:
+                                FinanceService.auto_allocate_payment(payment)
+                        except Exception as alloc_exc:
+                            log.warning(
+                                "MPesa callback: payment %s created but allocation failed: %s",
+                                payment.id, alloc_exc,
+                            )
                 else:
                     tx.status = "FAILED"
                     tx.payload.update({
