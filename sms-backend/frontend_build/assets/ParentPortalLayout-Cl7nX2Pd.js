@@ -17,7 +17,7 @@ function Layout(){
           const stored=sessionStorage.getItem("pp_child_id");
           const found=stored?d.children.find(k=>String(k.id)===String(stored)):null;
           setSel(found||d.selected_child);
-          if(!stored)setCid(String(d.selected_child.id));
+          if(!found){setCid(String(d.selected_child.id));sessionStorage.setItem("pp_child_id",String(d.selected_child.id));}
         }
       }
     }).catch(()=>{});
@@ -29,7 +29,7 @@ function Layout(){
     sessionStorage.setItem("pp_child_id",String(id));
   };
   const lk=base=>cid?base+"?child_id="+cid:base;
-  const initial=(un??"P")[0].toUpperCase();
+  const initial=((un||"P")[0]||"P").toUpperCase();
   return e.jsxs("div",{className:"min-h-screen flex flex-col md:flex-row",style:{background:"#070b12"},children:[
     e.jsxs("aside",{className:"fixed inset-0 z-40 md:static md:block md:w-[220px] md:flex-shrink-0 transition-transform "+(open?"translate-x-0":"-translate-x-full md:translate-x-0"),style:{background:"linear-gradient(180deg,#0a1a12 0%,#07110d 100%)",borderRight:"1px solid rgba(255,255,255,0.07)"},children:[
       e.jsxs("div",{className:"flex items-center justify-between px-4 py-4 border-b border-white/[0.07]",children:[
