@@ -39,13 +39,6 @@ from .serializers import ParentProfileSerializer, ParentStudentLinkSerializer
 class ParentPortalAccessMixin:
     permission_classes = [permissions.IsAuthenticated, HasModuleAccess]
     module_key = "PARENTS"
-    allow_force_password_change = False
-
-    def initial(self, request, *args, **kwargs):
-        super().initial(request, *args, **kwargs)
-        profile = getattr(request.user, "userprofile", None)
-        if getattr(profile, "force_password_change", False) and not self.allow_force_password_change:
-            raise PermissionDenied("Password change is required before accessing the parent portal.")
 
 
 def _children_for_parent(user):
@@ -1100,8 +1093,6 @@ class ParentLibraryHistoryView(ParentPortalAccessMixin, APIView):
 
 
 class ParentProfileView(ParentPortalAccessMixin, APIView):
-    allow_force_password_change = True
-
     def get(self, request):
         return Response(ParentProfileSerializer(request.user).data)
 
@@ -1113,8 +1104,6 @@ class ParentProfileView(ParentPortalAccessMixin, APIView):
 
 
 class ParentChangePasswordView(ParentPortalAccessMixin, APIView):
-    allow_force_password_change = True
-
     def post(self, request):
         current_password = request.data.get("current_password") or ""
         new_password = request.data.get("new_password") or ""

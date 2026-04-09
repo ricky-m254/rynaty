@@ -787,16 +787,16 @@ class Command(BaseCommand):
         # Invoice + payment for each student (idempotent)
         ref_counter = 9000
         for i, student in enumerate(students):
-            inv, inv_created = Invoice.objects.get_or_create(
-                student=student,
-                term=term1,
-                defaults={
-                    "due_date": date(2025, 2, 14),
-                    "total_amount": total_term1,
-                    "status": "CONFIRMED",
-                },
-            )
+            inv = Invoice.objects.filter(student=student, term=term1).first()
+            inv_created = inv is None
             if inv_created:
+                inv = Invoice.objects.create(
+                    student=student,
+                    term=term1,
+                    due_date=date(2025, 2, 14),
+                    total_amount=total_term1,
+                    status="CONFIRMED",
+                )
                 for fs in structs:
                     InvoiceLineItem.objects.get_or_create(
                         invoice=inv,

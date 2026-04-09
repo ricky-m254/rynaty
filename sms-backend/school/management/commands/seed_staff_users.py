@@ -64,6 +64,7 @@ class Command(BaseCommand):
         with schema_context(schema):
             from django.contrib.auth import get_user_model
             from school.models import Role, UserProfile
+            from school.role_scope import materialize_role_module_baseline
 
             User = get_user_model()
             created = 0
@@ -112,6 +113,12 @@ class Command(BaseCommand):
                     if profile.role_id != role.id:
                         profile.role = role
                         profile.save(update_fields=["role"])
+
+                # Ensure every staff member has the module assignments for their role.
+                try:
+                    materialize_role_module_baseline(user, role_name)
+                except Exception as e:
+                    self.stdout.write(self.style.WARNING(f"  Module assignment failed for {username}: {e}"))
 
             self.stdout.write(
                 self.style.SUCCESS(
