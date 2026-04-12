@@ -30,9 +30,9 @@ class Command(BaseCommand):
         parser.add_argument("--schema_name", type=str, default="demo_school", help="Tenant schema name")
         parser.add_argument("--name", type=str, default="Demo School", help="Tenant display name")
         parser.add_argument("--domain", type=str, default="demo.localhost", help="Tenant domain")
-        parser.add_argument("--admin_user", type=str, default="admin", help="Tenant admin username")
-        parser.add_argument("--admin_pass", type=str, default="admin123", help="Tenant admin password")
-        parser.add_argument("--admin_email", type=str, default="admin@demo.localhost", help="Tenant admin email")
+        parser.add_argument("--admin_user", type=str, default="Riqs#.", help="Tenant admin username")
+        parser.add_argument("--admin_pass", type=str, default="Ointment.54.#", help="Tenant admin password")
+        parser.add_argument("--admin_email", type=str, default="emurithi593@gmail.com", help="Tenant admin email")
 
     def handle(self, *args, **options):
         schema_name = options["schema_name"]

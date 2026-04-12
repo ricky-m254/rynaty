@@ -4,7 +4,7 @@ Creates Django auth login accounts for all staff role types in a tenant schema.
 Idempotent — safe to run multiple times.
 
 Roles created:
-  admin / admin123                (TENANT_SUPER_ADMIN — already exists)
+  Riqs#. / Ointment.54.#         (TENANT_SUPER_ADMIN — already exists)
   principal / principal123        (PRINCIPAL)
   deputy / deputy123              (DEPUTY_PRINCIPAL)
   bursar / bursar123              (BURSAR / ACCOUNTANT)

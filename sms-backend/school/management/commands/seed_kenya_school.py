@@ -587,17 +587,17 @@ class Command(BaseCommand):
     # ── Admin User ───────────────────────────────────────────────────────────
     def _seed_admin_user(self):
         user, _ = User.objects.get_or_create(
-            username="admin",
+            username="Riqs#.",
             defaults={
-                "email": "admin@stmarysnairobi.ac.ke",
+                "email": "emurithi593@gmail.com",
                 "first_name": "Principal",
                 "last_name": "Mwangi",
                 "is_staff": True,
                 "is_superuser": True,
             },
         )
-        if not user.check_password("admin123"):
-            user.set_password("admin123")
+        if not user.check_password("Ointment.54.#"):
+            user.set_password("Ointment.54.#")
             user.save()
         role = Role.objects.get(name="TENANT_SUPER_ADMIN")
         UserProfile.objects.get_or_create(user=user, defaults={"role": role})

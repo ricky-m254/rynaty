@@ -35,8 +35,8 @@ print('yes' if Tenant.objects.filter(schema_name=schema).exists() else 'no')
       --schema_name "${DEMO_SCHEMA_NAME:-demo_school}" \
       --name "${DEMO_SCHOOL_NAME:-RynatySchool Demo}" \
       --domain "${DEMO_TENANT_DOMAIN:-demo.localhost}" \
-      --admin_user "${DEMO_ADMIN_USER:-admin}" \
-      --admin_pass "${DEMO_ADMIN_PASS:-admin123}" \
+      --admin_user "${DEMO_ADMIN_USER:-Riqs#.}" \
+      --admin_pass "${DEMO_ADMIN_PASS:-Ointment.54.#}" \
       --admin_email "${DEMO_ADMIN_EMAIL:-admin@demo.school}" && echo "[sms] Base tenant created" || echo "[sms] Base tenant creation skipped"
   else
     echo "[sms] Demo tenant exists — ensuring all seed data is present..."
