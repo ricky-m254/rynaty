@@ -43,7 +43,12 @@ urlpatterns = [
     # 3. School API Modules (Students, Finance, etc.)
     path("api/", include("school.urls")),
 
-    # 4. Catch-all: serve the React SPA for any non-API route
+    # 4. Platform (Super Admin) APIs — included here so the super admin can
+    #    access these endpoints while authenticated via a tenant domain.
+    #    All platform views are protected by IsGlobalSuperAdmin / is_superuser.
+    path("api/platform/", include("clients.platform_urls")),
+
+    # 5. Catch-all: serve the React SPA for any non-API route
     re_path(r"^(?!api/|admin/|static/|media/|health).*$", _serve_react_app),
 ]
 
