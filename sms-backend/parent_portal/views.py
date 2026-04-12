@@ -942,33 +942,66 @@ class ParentNotificationPreferencesView(ParentPortalAccessMixin, APIView):
 
 
 class ParentTimetableView(ParentPortalAccessMixin, APIView):
+    """Returns the weekly timetable (schedule) for the child's class."""
     def get(self, request):
-        child, _ = _pick_child(request)
-        enrollment = _active_enrollment(child)
-        if not child or not enrollment:
-            return _no_linked_child_or_enrollment_response()
-        rows = AssessmentGrade.objects.filter(student=child, is_active=True).select_related("assessment", "assessment__subject").order_by("-assessment__date")
-        return Response([{"assessment": r.assessment.name, "subject": r.assessment.subject.name, "date": r.assessment.date, "category": r.assessment.category} for r in rows[:100]])
-
-
-class ParentTimetableExportView(ParentPortalAccessMixin, APIView):
-    def get(self, request):
+        from timetable.models import TimetableSlot
         child, _ = _pick_child(request)
         enrollment = _active_enrollment(child)
         if not child or not enrollment:
             return _no_linked_child_or_enrollment_response()
         rows = (
-            AssessmentGrade.objects.filter(student=child, is_active=True)
-            .select_related("assessment", "assessment__subject")
-            .order_by("-assessment__date")[:200]
+            TimetableSlot.objects.filter(
+                school_class=enrollment.school_class,
+                is_active=True,
+            )
+            .select_related("subject", "teacher")
+            .order_by("day_of_week", "period_number")
         )
-        payload = ["assessment,subject,date,category"]
+        DAY_NAMES = {1: "Monday", 2: "Tuesday", 3: "Wednesday", 4: "Thursday", 5: "Friday"}
+        return Response([
+            {
+                "id": r.id,
+                "day_of_week": r.day_of_week,
+                "day_name": DAY_NAMES.get(r.day_of_week, str(r.day_of_week)),
+                "period_number": r.period_number,
+                "start_time": r.start_time,
+                "end_time": r.end_time,
+                "subject": r.subject.name if r.subject else None,
+                "teacher": f"{r.teacher.first_name} {r.teacher.last_name}".strip() if r.teacher else None,
+                "room": r.room,
+            }
+            for r in rows[:200]
+        ])
+
+
+# Alias — frontend calls academics/schedule/ for the weekly timetable
+ParentScheduleView = ParentTimetableView
+
+
+class ParentTimetableExportView(ParentPortalAccessMixin, APIView):
+    def get(self, request):
+        from timetable.models import TimetableSlot
+        child, _ = _pick_child(request)
+        enrollment = _active_enrollment(child)
+        if not child or not enrollment:
+            return _no_linked_child_or_enrollment_response()
+        rows = (
+            TimetableSlot.objects.filter(
+                school_class=enrollment.school_class,
+                is_active=True,
+            )
+            .select_related("subject", "teacher")
+            .order_by("day_of_week", "period_number")[:200]
+        )
+        DAY_NAMES = {1: "Monday", 2: "Tuesday", 3: "Wednesday", 4: "Thursday", 5: "Friday"}
+        payload = ["day,period,start_time,end_time,subject,teacher,room"]
         payload.extend(
-            f"{r.assessment.name},{r.assessment.subject.name},{r.assessment.date},{r.assessment.category}"
+            f"{DAY_NAMES.get(r.day_of_week,'')},{r.period_number},{r.start_time},{r.end_time},"
+            f"{r.subject.name if r.subject else ''},{(r.teacher.get_full_name() if r.teacher else '')},{r.room}"
             for r in rows
         )
         response = HttpResponse("\n".join(payload), content_type="text/csv")
-        response["Content-Disposition"] = f'attachment; filename="timetable_{child.id}.csv"'
+        response["Content-Disposition"] = f'attachment; filename="schedule_{child.id}.csv"'
         return response
 
 
@@ -1203,6 +1236,127 @@ class ParentHealthView(APIView):
             "clinic_visits": clinic_visits,
             "children": [{"id": c.id, "name": f"{c.first_name} {c.last_name}".strip()} for c in children],
         })
+
+
+class ParentAttendanceRecentView(ParentPortalAccessMixin, APIView):
+    """Returns the 30 most recent attendance records for the linked child."""
+    def get(self, request):
+        child, _ = _pick_child(request)
+        if not child:
+            return _no_linked_child_response()
+        rows = AttendanceRecord.objects.filter(student=child).order_by("-date")[:30]
+        return Response([
+            {
+                "id": r.id,
+                "date": r.date,
+                "status": r.status,
+                "notes": r.notes,
+            }
+            for r in rows
+        ])
+
+
+class ParentHealthRecordsView(ParentPortalAccessMixin, APIView):
+    """Health/medical records for linked child (alias of ParentHealthView for /health/records/)."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from school.models import MedicalRecord, ImmunizationRecord, ClinicVisit
+        child, children = _pick_child(request)
+        if not child:
+            return _no_linked_child_response()
+        medical = MedicalRecord.objects.filter(student=child).values(
+            "id", "blood_type", "allergies", "chronic_conditions",
+            "current_medications", "doctor_name", "doctor_phone",
+            "notes", "updated_at",
+        ).first()
+        immunizations = list(ImmunizationRecord.objects.filter(student=child).values(
+            "id", "vaccine_name", "date_administered", "booster_due_date", "created_at",
+        ).order_by("-date_administered")[:20])
+        return Response({
+            "child_id": child.id,
+            "child_name": f"{child.first_name} {child.last_name}".strip(),
+            "medical_record": medical,
+            "immunizations": immunizations,
+        })
+
+
+class ParentHealthVisitsView(ParentPortalAccessMixin, APIView):
+    """Clinic visit history for the linked child."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from school.models import ClinicVisit
+        child, _ = _pick_child(request)
+        if not child:
+            return _no_linked_child_response()
+        visits = list(ClinicVisit.objects.filter(student=child).values(
+            "id", "visit_date", "visit_time", "complaint",
+            "treatment", "severity", "parent_notified", "created_at",
+        ).order_by("-visit_date")[:50])
+        return Response(visits)
+
+
+class ParentConversationsView(ParentPortalAccessMixin, APIView):
+    """Message threads / conversations for the parent."""
+    def get(self, request):
+        rows = Message.objects.filter(
+            Q(recipient_id=request.user.id, recipient_type="PARENT")
+            | Q(recipient_type="STAFF")
+        ).order_by("-sent_at")[:50]
+        return Response([
+            {
+                "id": r.id,
+                "subject": r.subject,
+                "body": r.body,
+                "sent_at": r.sent_at,
+                "status": r.status,
+            }
+            for r in rows
+        ])
+
+    def post(self, request):
+        subject = (request.data.get("subject") or "").strip()
+        body = (request.data.get("body") or "").strip()
+        if not subject or not body:
+            return Response({"error": "subject and body are required"}, status=status.HTTP_400_BAD_REQUEST)
+        row = Message.objects.create(
+            recipient_type="STAFF",
+            recipient_id=0,
+            subject=subject,
+            body=body,
+            status="SENT",
+        )
+        return Response(
+            {"id": row.id, "subject": row.subject, "body": row.body, "sent_at": row.sent_at, "status": row.status},
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class ParentProfileSettingsView(ParentPortalAccessMixin, APIView):
+    """Combined profile settings: notification preferences + profile info."""
+    def get(self, request):
+        prefs = NotificationPreference.objects.filter(user=request.user).order_by("notification_type")
+        return Response({
+            "profile": ParentProfileSerializer(request.user).data,
+            "notification_preferences": [
+                {
+                    "id": p.id,
+                    "notification_type": p.notification_type,
+                    "channel_in_app": p.channel_in_app,
+                    "channel_email": p.channel_email,
+                    "channel_sms": p.channel_sms,
+                    "channel_push": p.channel_push,
+                }
+                for p in prefs
+            ],
+        })
+
+    def patch(self, request):
+        serializer = ParentProfileSerializer(request.user, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
 
 
 class ParentTransportView(APIView):
