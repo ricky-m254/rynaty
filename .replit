@@ -74,3 +74,11 @@ packages = ["freetype", "glibcLocales", "lcms2", "libimagequant", "libjpeg", "li
 
 [objectStorage]
 defaultBucketID = "replit-objstore-63e8763a-b1c3-42d8-99de-2e500f770903"
+
+[[ports]]
+localPort = 8080
+externalPort = 80
+
+[[ports]]
+localPort = 8081
+externalPort = 8081
