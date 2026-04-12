@@ -4852,10 +4852,50 @@ class SmartCampusTokenObtainPairSerializer(TokenObtainPairSerializer):
         data['force_password_change'] = force_password_change
         return data
 
+    def _enrich_platform_admin(self, user, gsa):
+        """Build a login response for a GlobalSuperAdmin who authenticated via public schema."""
+        from rest_framework_simplejwt.tokens import RefreshToken
+        refresh = RefreshToken.for_user(user)
+        refresh['role'] = gsa.role
+        refresh['tenant_id'] = 'public'
+        return {
+            'refresh': str(refresh),
+            'access': str(refresh.access_token),
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'email': user.email,
+                'first_name': user.first_name,
+                'last_name': user.last_name,
+            },
+            'role': gsa.role,
+            'available_roles': [gsa.role],
+            'redirect_to': '/platform',
+            'tenant_id': 'public',
+            'force_password_change': False,
+        }
+
     def validate(self, attrs):
         username = _normalize_login_identifier(attrs.get(self.username_field, ''))
         password = attrs.get('password', '')
         attrs[self.username_field] = username
+
+        # Stage 0: check public schema for GlobalSuperAdmin users
+        try:
+            from django_tenants.utils import schema_context, get_public_schema_name
+            with schema_context(get_public_schema_name()):
+                from django.contrib.auth.models import User as _PublicUser
+                from clients.models import GlobalSuperAdmin
+                pub_user = _PublicUser.objects.filter(
+                    username__iexact=username, is_active=True
+                ).first()
+                if pub_user and pub_user.check_password(password):
+                    gsa = GlobalSuperAdmin.objects.filter(user=pub_user, is_active=True).first()
+                    if gsa:
+                        self.user = pub_user
+                        return self._enrich_platform_admin(pub_user, gsa)
+        except Exception:
+            pass
 
         # Stage 1: normal Django username auth
         try:
