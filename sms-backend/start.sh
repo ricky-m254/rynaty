@@ -111,6 +111,9 @@ else:
   echo "[sms] Seeding KICD digital textbooks and Harvard open learning materials..."
   python3.11 manage.py seed_digital_resources --schema_name "$schema" 2>&1 || echo "[sms] Digital resources seed skipped"
 
+  echo "[sms] Seeding platform super-admin + demo data..."
+  python3.11 manage.py seed_platform_data 2>&1 || echo "[sms] Platform data seed skipped"
+
   echo "[sms] Bootstrap complete."
 fi
 

@@ -19,7 +19,7 @@ from django.db.models.functions import TruncMonth
 from django.http import JsonResponse
 from django.utils import timezone
 from django.utils.text import slugify
-from django_tenants.utils import schema_context
+from django_tenants.utils import schema_context, get_public_schema_name
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
@@ -2089,6 +2089,24 @@ class PlatformAdminUserViewSet(viewsets.GenericViewSet, mixins.ListModelMixin):
     serializer_class = PlatformAdminUserSerializer
     permission_classes = [IsAuthenticated, IsGlobalSuperAdmin]
 
+    def _get_admin_object(self, pk):
+        """Fetch GlobalSuperAdmin by pk from the public schema to avoid cross-schema FK confusion."""
+        with schema_context(get_public_schema_name()):
+            try:
+                return GlobalSuperAdmin.objects.select_related("user").get(pk=pk)
+            except GlobalSuperAdmin.DoesNotExist:
+                from rest_framework.exceptions import NotFound
+                raise NotFound(f"Admin user with id={pk} not found.")
+
+    def list(self, request, *args, **kwargs):
+        # GlobalSuperAdmin.user is an FK to auth_user which lives in the PUBLIC
+        # schema.  Querying under tenant-schema search_path causes the join to
+        # land on the tenant's auth_user instead, returning wrong usernames.
+        with schema_context(get_public_schema_name()):
+            queryset = GlobalSuperAdmin.objects.select_related("user").order_by("user__username")
+            serializer = self.get_serializer(queryset, many=True)
+            return Response(serializer.data)
+
     def create(self, request):
         serializer = PlatformAdminUserCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -2100,59 +2118,70 @@ class PlatformAdminUserViewSet(viewsets.GenericViewSet, mixins.ListModelMixin):
         is_active = data["is_active"]
 
         user_defaults = {"email": email, "is_staff": True, "is_active": True}
-        user, created = User.objects.get_or_create(username=username, defaults=user_defaults)
-        if not created:
-            changed = False
-            if email and user.email != email:
-                user.email = email
-                changed = True
-            if not user.is_staff:
-                user.is_staff = True
-                changed = True
-            if not user.is_active:
-                user.is_active = True
-                changed = True
-            if changed:
-                user.save(update_fields=["email", "is_staff", "is_active"])
 
-        if password:
-            user.set_password(password)
-            user.save(update_fields=["password"])
+        # GlobalSuperAdmin and its auth.User live in the PUBLIC schema.
+        # When this view is accessed via a tenant domain the DB connection is
+        # scoped to the tenant schema, so we must explicitly switch to public
+        # for all User and GlobalSuperAdmin reads/writes to avoid FK violations.
+        with schema_context(get_public_schema_name()):
+            user, created = User.objects.get_or_create(username=username, defaults=user_defaults)
+            if not created:
+                changed = False
+                if email and user.email != email:
+                    user.email = email
+                    changed = True
+                if not user.is_staff:
+                    user.is_staff = True
+                    changed = True
+                if not user.is_active:
+                    user.is_active = True
+                    changed = True
+                if changed:
+                    user.save(update_fields=["email", "is_staff", "is_active"])
 
-        global_admin, _ = GlobalSuperAdmin.objects.get_or_create(user=user)
-        global_admin.role = role
-        global_admin.is_active = is_active
-        global_admin.save(update_fields=["role", "is_active", "updated_at"])
+            if password:
+                user.set_password(password)
+                user.save(update_fields=["password"])
+
+            global_admin, _ = GlobalSuperAdmin.objects.get_or_create(user=user)
+            global_admin.role = role
+            global_admin.is_active = is_active
+            global_admin.save(update_fields=["role", "is_active", "updated_at"])
+            admin_data = PlatformAdminUserSerializer(global_admin).data
+            admin_id = global_admin.id
+
         _platform_audit(
             user=request.user,
             action="GRANT",
             model_name="GlobalSuperAdmin",
-            object_id=global_admin.id,
+            object_id=admin_id,
             details=f"username={username} role={role} active={is_active}",
             request=request,
         )
-        return Response(PlatformAdminUserSerializer(global_admin).data, status=status.HTTP_201_CREATED)
+        return Response(admin_data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["patch"], url_path="update")
     def update_admin(self, request, pk=None):
-        row = self.get_object()
+        row = self._get_admin_object(pk)
         role = request.data.get("role")
         is_active = request.data.get("is_active")
         update_fields = []
-        if role is not None:
-            role_value = str(role).strip().upper()
-            allowed = {choice[0] for choice in GlobalSuperAdmin.ROLE_CHOICES}
-            if role_value not in allowed:
-                return Response({"detail": "Invalid role value."}, status=status.HTTP_400_BAD_REQUEST)
-            row.role = role_value
-            update_fields.append("role")
-        if is_active is not None:
-            row.is_active = bool(is_active)
-            update_fields.append("is_active")
-        if not update_fields:
-            return Response({"detail": "No changes supplied."}, status=status.HTTP_400_BAD_REQUEST)
-        update_fields.append("updated_at")
-        row.save(update_fields=update_fields)
+        with schema_context(get_public_schema_name()):
+            if role is not None:
+                role_value = str(role).strip().upper()
+                allowed = {choice[0] for choice in GlobalSuperAdmin.ROLE_CHOICES}
+                if role_value not in allowed:
+                    return Response({"detail": "Invalid role value."}, status=status.HTTP_400_BAD_REQUEST)
+                row.role = role_value
+                update_fields.append("role")
+            if is_active is not None:
+                row.is_active = bool(is_active)
+                update_fields.append("is_active")
+            if not update_fields:
+                return Response({"detail": "No changes supplied."}, status=status.HTTP_400_BAD_REQUEST)
+            update_fields.append("updated_at")
+            row.save(update_fields=update_fields)
+            serialized = PlatformAdminUserSerializer(row).data
         _platform_audit(
             user=request.user,
             action="UPDATE",
@@ -2161,52 +2190,58 @@ class PlatformAdminUserViewSet(viewsets.GenericViewSet, mixins.ListModelMixin):
             details=f"role={row.role} active={row.is_active}",
             request=request,
         )
-        return Response(PlatformAdminUserSerializer(row).data, status=status.HTTP_200_OK)
+        return Response(serialized, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["post"], url_path="revoke")
     def revoke(self, request, pk=None):
-        row = self.get_object()
-        if row.user_id == request.user.id:
-            return Response({"detail": "You cannot revoke your own active super admin access."}, status=status.HTTP_400_BAD_REQUEST)
-        row.is_active = False
-        row.save(update_fields=["is_active", "updated_at"])
+        row = self._get_admin_object(pk)
+        with schema_context(get_public_schema_name()):
+            if row.user_id == request.user.id:
+                return Response({"detail": "You cannot revoke your own active super admin access."}, status=status.HTTP_400_BAD_REQUEST)
+            row.is_active = False
+            row.save(update_fields=["is_active", "updated_at"])
+            username = row.user.username
+            serialized = PlatformAdminUserSerializer(row).data
         _platform_audit(
             user=request.user,
             action="REVOKE",
             model_name="GlobalSuperAdmin",
             object_id=row.id,
-            details=f"username={row.user.username}",
+            details=f"username={username}",
             request=request,
         )
-        return Response(PlatformAdminUserSerializer(row).data, status=status.HTTP_200_OK)
+        return Response(serialized, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["post"], url_path="reset-password")
     def reset_password(self, request, pk=None):
-        row = self.get_object()
+        row = self._get_admin_object(pk)
         serializer = PlatformAdminPasswordResetSerializer(data=request.data or {})
         serializer.is_valid(raise_exception=True)
         password = serializer.validated_data["password"]
 
-        user = row.user
-        user.set_password(password)
-        if not user.is_active:
-            user.is_active = True
-            user.save(update_fields=["password", "is_active"])
-        else:
-            user.save(update_fields=["password"])
+        # Platform admin users live in the public schema — switch context.
+        with schema_context(get_public_schema_name()):
+            user = User.objects.get(pk=row.user_id)
+            user.set_password(password)
+            if not user.is_active:
+                user.is_active = True
+                user.save(update_fields=["password", "is_active"])
+            else:
+                user.save(update_fields=["password"])
+            username = user.username
 
         _platform_audit(
             user=request.user,
             action="RESET_PASSWORD",
             model_name="GlobalSuperAdmin",
             object_id=row.id,
-            details=f"username={user.username}",
+            details=f"username={username}",
             request=request,
         )
         return Response(
             {
                 "id": row.id,
-                "username": user.username,
+                "username": username,
                 "password_reset": True,
             },
             status=status.HTTP_200_OK,
