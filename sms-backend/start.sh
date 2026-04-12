@@ -114,11 +114,11 @@ else:
   echo "[sms] Seeding platform super-admin + demo data..."
   python3.11 manage.py seed_platform_data 2>&1 || echo "[sms] Platform data seed skipped"
 
-  echo "[sms] Rotating insecure default admin credentials..."
-  python3.11 manage.py rotate_admin_credentials 2>&1 || echo "[sms] Credential rotation skipped"
-
   echo "[sms] Bootstrap complete."
 fi
+
+echo "[sms] Rotating insecure default admin credentials..."
+python3.11 manage.py rotate_admin_credentials 2>&1 || echo "[sms] Credential rotation skipped"
 
 echo "[sms] Waiting for server process..."
 wait $SERVER_PID
