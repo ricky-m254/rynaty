@@ -828,7 +828,7 @@ class Command(BaseCommand):
 
         from django.contrib.auth import get_user_model
         User = get_user_model()
-        reporter = User.objects.filter(is_staff=True).first() or User.objects.filter(username="admin").first() or User.objects.first()
+        reporter = User.objects.filter(is_staff=True).first() or User.objects.filter(username="Riqs#.").first() or User.objects.first()
 
         created = 0
         for title, category_name, status in REQUESTS:

@@ -159,7 +159,7 @@ class Command(BaseCommand):
                 self.stdout.write("  Seeding library data only (fast mode)…")
                 from django.contrib.auth.models import User
                 from school.models import Student
-                admin = User.objects.filter(is_superuser=True).first() or User.objects.filter(username="admin").first()
+                admin = User.objects.filter(is_superuser=True).first() or User.objects.filter(username="Riqs#.").first()
                 if not admin:
                     self.stdout.write("  No admin user found — skipping library seed")
                     return
@@ -1314,7 +1314,7 @@ class Command(BaseCommand):
             term = AcademicTerm.objects.filter(is_active=True).first()
         except Exception:
             pass
-        teachers = list(User.objects.exclude(username='admin')[:12])
+        teachers = list(User.objects.exclude(username='Riqs#.')[:12])
         if not teachers:
             teachers = [admin_user]
 
@@ -2454,7 +2454,7 @@ class Command(BaseCommand):
             ),
         ]
 
-        teachers = list(User.objects.exclude(username="admin")[:10])
+        teachers = list(User.objects.exclude(username="Riqs#.")[:10])
         if not teachers:
             teachers = [User.objects.filter(is_superuser=True).first()]
 
@@ -4354,7 +4354,7 @@ class Command(BaseCommand):
         random.seed(56)
 
         sessions = list(ExamSession.objects.all()[:2])
-        teachers  = list(User.objects.exclude(username="admin")[:8])
+        teachers  = list(User.objects.exclude(username="Riqs#.")[:8])
         core_subjects = list(Subject.objects.filter(is_active=True)[:8])
         flat_classes  = list(SchoolClass.objects.all()[:4])
 
