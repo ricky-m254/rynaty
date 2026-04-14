@@ -124,10 +124,18 @@ class TenantContextGuardMiddleware:
             or tenant_schema in {None, public_schema}
             or _header_differs_from_resolved
         ):
-            # Try exact schema name first, then subdomain field, then first domain part.
+            # Try in order:
+            # 1. Exact schema_name match (e.g. "demo_school", "school_olomrynatyschoolapp")
+            # 2. subdomain field match (e.g. "sunrise-academy")
+            # 3. Domain prefix match — e.g. user types "olom"; finds "olom.rynatyschool.app"
+            #    This covers production tenants whose schema_name differs from their slug
+            #    (e.g. schema "school_olomrynatyschoolapp" but domain prefix "olom").
             resolved_tenant = (
                 Tenant.objects.filter(schema_name=header_value).first()
                 or Tenant.objects.filter(subdomain=header_value).first()
+                or Tenant.objects.filter(
+                    domains__domain__startswith=f"{header_value}."
+                ).exclude(schema_name=public_schema).first()
             )
             if resolved_tenant is None:
                 return JsonResponse(

@@ -39,6 +39,18 @@ class Command(BaseCommand):
                 self.stdout.write("  [olom] Could not resolve or create tenant — skipping.")
                 return
 
+            # ── Ensure subdomain slug is set on the tenant ────────────────────
+            # This enables X-Tenant-ID: olom header lookups regardless of
+            # what the schema_name was auto-generated as (e.g. schema could
+            # be 'school_olomrynatyschoolapp' but user types 'olom').
+            if not getattr(tenant, "subdomain", None):
+                try:
+                    tenant.subdomain = "olom"
+                    tenant.save(update_fields=["subdomain"])
+                    self.stdout.write("  [olom] Set subdomain='olom' on tenant")
+                except Exception as e:
+                    self.stdout.write(f"  [olom] Could not set subdomain: {e}")
+
             # ── Ensure olom.rynatyschool.app is registered ────────────────────
             domain_obj, domain_created = Domain.objects.get_or_create(
                 domain=_DOMAIN,
