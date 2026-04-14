@@ -36,8 +36,8 @@ except Tenant.DoesNotExist:
 candidates = set()
 candidates.add(os.environ.get('DEMO_TENANT_DOMAIN', 'demo.localhost'))
 
-# Always register the production domains
-for d in ['rynatyschool.app', 'www.rynatyschool.app', 'olom.rynatyschool.app']:
+# Always register the production domains for the demo school
+for d in ['rynatyschool.app', 'www.rynatyschool.app']:
     candidates.add(d)
 
 replit_domains = os.environ.get('REPLIT_DOMAINS', '')
@@ -66,6 +66,32 @@ if added:
 else:
     print('  [domains] All domains already registered (' + str(Domain.objects.filter(tenant=tenant).count()) + ' total)')
 " 2>/dev/null || echo "[sms] Domain registration skipped"
+
+# Register olom tenant domains (separate tenant — not demo_school)
+echo "[sms] Registering olom tenant domains..."
+python3.11 manage.py shell -c "
+from clients.models import Tenant, Domain
+
+try:
+    tenant = Tenant.objects.get(schema_name='olom')
+except Tenant.DoesNotExist:
+    print('  [olom] Tenant not found, skipping domain registration')
+    exit()
+
+added = []
+for domain_name in ['olom.rynatyschool.app']:
+    _, created = Domain.objects.get_or_create(
+        domain=domain_name,
+        defaults={'tenant': tenant, 'is_primary': True},
+    )
+    if created:
+        added.append(domain_name)
+
+if added:
+    print('  [olom] Registered: ' + ', '.join(added))
+else:
+    print('  [olom] Domains already registered (' + str(Domain.objects.filter(tenant=tenant).count()) + ' total)')
+" 2>/dev/null || echo "[sms] Olom domain registration skipped"
 
 if [ "${BOOTSTRAP_DEMO_DATA:-false}" = "true" ]; then
   schema="${DEMO_SCHEMA_NAME:-demo_school}"
