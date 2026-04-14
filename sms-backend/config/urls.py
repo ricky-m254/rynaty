@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.urls import path, include, re_path
 from django.conf import settings
 from django.conf.urls.static import static
-from django.http import FileResponse, HttpResponseNotFound, JsonResponse
+from django.http import FileResponse, HttpResponseNotFound, JsonResponse, HttpResponseRedirect
 
 # This file handles TENANT ROUTES (School Data)
 # Public Routes are now handled by config/public_urls.py
@@ -24,6 +24,20 @@ def _serve_react_app(request, path=""):
     return JsonResponse({"status": "ok", "detail": "API running — frontend not built yet"})
 
 
+def _guard_platform_route(request, path=""):
+    """
+    Intercept /platform and /platform/* on school (non-public) schemas.
+    The platform admin UI must only be accessible from the platform domain.
+    School admins navigating to /platform on a school subdomain are redirected
+    to /dashboard instead of seeing the platform admin panel.
+    """
+    from django.db import connection as _conn
+    from django_tenants.utils import get_public_schema_name as _public
+    if getattr(_conn, 'schema_name', None) != _public():
+        return HttpResponseRedirect('/dashboard')
+    return _serve_react_app(request, path)
+
+
 def _tenant_info_view(request):
     from config.public_urls import tenant_info_view
     return tenant_info_view(request)
@@ -43,12 +57,16 @@ urlpatterns = [
     # 3. School API Modules (Students, Finance, etc.)
     path("api/", include("school.urls")),
 
-    # 4. Platform (Super Admin) APIs — included here so the super admin can
-    #    access these endpoints while authenticated via a tenant domain.
-    #    All platform views are protected by IsGlobalSuperAdmin / is_superuser.
+    # 4. Platform (Super Admin) APIs — protected by IsGlobalSuperAdmin (schema-aware).
+    #    Even though these URL patterns are registered on tenant schemas, the permission
+    #    class enforces public-schema-only access, so school-schema requests get 403.
     path("api/platform/", include("clients.platform_urls")),
 
-    # 5. Catch-all: serve the React SPA for any non-API route
+    # 5. Platform UI route guard: redirect school-subdomain users away from /platform.
+    #    Must appear BEFORE the catch-all so it fires first.
+    re_path(r"^platform(/.*)?$", _guard_platform_route),
+
+    # 6. Catch-all: serve the React SPA for any remaining non-API route
     re_path(r"^(?!api/|admin/|static/|media/|health).*$", _serve_react_app),
 ]
 
