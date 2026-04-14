@@ -96,6 +96,11 @@ class TenantContextGuardMiddleware:
         public_schema = get_public_schema_name()
         header_name = getattr(settings, "TENANT_HEADER_NAME", "X-Tenant-ID")
         header_value = (request.headers.get(header_name) or "").strip()
+        # Treat "public" as "no tenant preference" — platform admin sessions store
+        # tenant_id='public' in localStorage, but when they visit a registered tenant
+        # domain, domain-based resolution should win rather than triggering a mismatch.
+        if header_value == public_schema:
+            header_value = ""
         host = _host_without_port(request.get_host())
         is_local_dev_host = host in {"localhost", "127.0.0.1"}
 

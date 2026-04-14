@@ -136,7 +136,7 @@ for _d in _extra_domains.split(","):
         ALLOWED_HOSTS.append(_d)
 
 # Hardcoded production domains — always allowed regardless of env vars.
-for _d in ["rynatyschool.app", "www.rynatyschool.app"]:
+for _d in ["rynatyschool.app", "www.rynatyschool.app", "olom.rynatyschool.app"]:
     if _d not in ALLOWED_HOSTS:
         ALLOWED_HOSTS.append(_d)
 
@@ -429,7 +429,7 @@ for _d in _extra_domains.split(","):
             CSRF_TRUSTED_ORIGINS.append(_origin)
 
 # Hardcoded production domains — always trusted for CORS and CSRF.
-for _d in ["rynatyschool.app", "www.rynatyschool.app"]:
+for _d in ["rynatyschool.app", "www.rynatyschool.app", "olom.rynatyschool.app"]:
     _origin = f"https://{_d}"
     if _origin not in CORS_ALLOWED_ORIGINS:
         CORS_ALLOWED_ORIGINS.append(_origin)

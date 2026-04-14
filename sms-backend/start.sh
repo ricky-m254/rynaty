@@ -37,7 +37,7 @@ candidates = set()
 candidates.add(os.environ.get('DEMO_TENANT_DOMAIN', 'demo.localhost'))
 
 # Always register the production domains
-for d in ['rynatyschool.app', 'www.rynatyschool.app']:
+for d in ['rynatyschool.app', 'www.rynatyschool.app', 'olom.rynatyschool.app']:
     candidates.add(d)
 
 replit_domains = os.environ.get('REPLIT_DOMAINS', '')
