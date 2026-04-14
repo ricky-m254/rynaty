@@ -649,6 +649,19 @@ class PlatformTenantViewSet(viewsets.ModelViewSet):
     serializer_class = TenantSerializer
     permission_classes = [IsAuthenticated, IsGlobalSuperAdmin]
 
+    def dispatch(self, request, *args, **kwargs):
+        """
+        Platform tenant operations always run in the public schema.
+        When a request arrives via a tenant domain (e.g. rynatyschool.app → demo_school),
+        the DB connection is set to that tenant's schema, which causes Tenant.save() to fail
+        with "Can't create tenant outside the public schema."  Switching to public here
+        ensures all CRUD operations in this viewset target the correct schema.
+        """
+        from django.db import connection as _db_connection
+        from django_tenants.utils import get_public_schema_name as _public
+        _db_connection.set_schema(_public())
+        return super().dispatch(request, *args, **kwargs)
+
     def create(self, request, *args, **kwargs):
         serializer = TenantProvisionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)

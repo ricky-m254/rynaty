@@ -232,5 +232,30 @@ class TenantContextGuardMiddleware:
         return None
 
 
+class PlatformPublicSchemaMiddleware:
+    """
+    Forces all /api/platform/ requests to run in the public schema.
+
+    When requests arrive via a tenant domain (e.g. rynatyschool.app → demo_school),
+    TenantMainMiddleware sets the DB connection to that tenant's schema.  All platform
+    admin operations (creating tenants, updating subscriptions, etc.) write to
+    public-schema tables, and django-tenants blocks Tenant.save() with:
+      "Can't create tenant outside the public schema."
+
+    This middleware runs after TenantContextGuardMiddleware and ensures the DB
+    connection is always in the public schema for every platform API request.
+    """
+
+    PLATFORM_API_PREFIX = "/api/platform/"
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if request.path.startswith(self.PLATFORM_API_PREFIX):
+            connection.set_schema(get_public_schema_name())
+        return self.get_response(request)
+
+
 # Backward compatibility for existing imports/tests.
 TenantHeaderMiddleware = TenantContextGuardMiddleware
