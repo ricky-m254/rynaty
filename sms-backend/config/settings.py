@@ -538,13 +538,21 @@ PARENT_PORTAL_ALLOW_GUARDIAN_FALLBACK = os.getenv(
 # PLATFORM (SUPER TENANT ADMIN)
 # ==========================================
 _replit_first_domain = _replit_domains.split(",")[0].strip() if _replit_domains else ""
+# Prefer the custom production domain (EXTRA_TENANT_DOMAINS) over the Replit
+# auto-assigned domain so that new tenants get e.g. <name>.rynatyschool.app
+# rather than <name>.some-hash.replit.app.
+# Falls back to the hardcoded production domain as a last resort before the
+# Replit auto-domain, so the env var EXTRA_TENANT_DOMAINS is not strictly required.
+_extra_first_domain = _extra_domains.split(",")[0].strip() if _extra_domains else ""
+_hardcoded_prod_domain = "rynatyschool.app"
+_platform_base_domain_default = (
+    "localhost" if DEBUG and ALLOW_INSECURE_DEFAULTS
+    else (_extra_first_domain or _hardcoded_prod_domain)
+)
 PLATFORM_DEFAULT_BASE_DOMAIN = _env_str(
     "PLATFORM_DEFAULT_BASE_DOMAIN",
-    default=(
-        "localhost" if DEBUG and ALLOW_INSECURE_DEFAULTS
-        else (_replit_first_domain or None)
-    ),
-    required=not (DEBUG and ALLOW_INSECURE_DEFAULTS) and not _replit_first_domain,
+    default=_platform_base_domain_default,
+    required=False,
 )
 PLATFORM_DEFAULT_TRIAL_DAYS = _env_int(
     "PLATFORM_DEFAULT_TRIAL_DAYS",

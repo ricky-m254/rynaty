@@ -67,31 +67,10 @@ else:
     print('  [domains] All domains already registered (' + str(Domain.objects.filter(tenant=tenant).count()) + ' total)')
 " 2>/dev/null || echo "[sms] Domain registration skipped"
 
-# Register olom tenant domains (separate tenant — not demo_school)
-echo "[sms] Registering olom tenant domains..."
-python3.11 manage.py shell -c "
-from clients.models import Tenant, Domain
-
-try:
-    tenant = Tenant.objects.get(schema_name='olom')
-except Tenant.DoesNotExist:
-    print('  [olom] Tenant not found, skipping domain registration')
-    exit()
-
-added = []
-for domain_name in ['olom.rynatyschool.app']:
-    _, created = Domain.objects.get_or_create(
-        domain=domain_name,
-        defaults={'tenant': tenant, 'is_primary': True},
-    )
-    if created:
-        added.append(domain_name)
-
-if added:
-    print('  [olom] Registered: ' + ', '.join(added))
-else:
-    print('  [olom] Domains already registered (' + str(Domain.objects.filter(tenant=tenant).count()) + ' total)')
-" 2>/dev/null || echo "[sms] Olom domain registration skipped"
+# Ensure olom tenant exists and its domain (olom.rynatyschool.app) is registered.
+# Creates the tenant + schema + admin user the first time in production.
+echo "[sms] Ensuring olom tenant exists with correct domain..."
+python3.11 manage.py seed_olom_tenant 2>&1 || echo "[sms] Olom tenant seed skipped"
 
 # Seed platform super-admin IMMEDIATELY after server start and domain registration,
 # before any heavy tenant seeding — so platform login works from the first second.
