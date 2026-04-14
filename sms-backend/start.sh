@@ -6,6 +6,44 @@ cd /home/runner/workspace/sms-backend
 echo "[sms] Running shared migrations..."
 python3.11 manage.py migrate_schemas --shared --noinput --fake-initial 2>&1 | grep -v "^$" || true
 
+echo "[sms] Pre-faking contenttypes 0002 on schemas missing the 'name' column..."
+python3.11 manage.py shell -c "
+from django.db import connection
+from django_tenants.utils import get_public_schema_name
+
+PUBLIC = get_public_schema_name()
+
+# Collect all tenant schema names from the public schema
+connection.set_schema_to_public()
+with connection.cursor() as cur:
+    cur.execute(\"SELECT schema_name FROM clients_tenant WHERE schema_name <> %s\", [PUBLIC])
+    schemas = [r[0] for r in cur.fetchall()]
+
+for schema in schemas:
+    connection.set_schema(schema)
+    with connection.cursor() as cur:
+        # Skip if contenttypes 0002 already recorded as applied
+        cur.execute(
+            \"SELECT 1 FROM django_migrations WHERE app='contenttypes' AND name='0002_remove_content_type_name' LIMIT 1\"
+        )
+        if cur.fetchone():
+            continue
+        # Check if the 'name' column actually exists
+        cur.execute(
+            \"SELECT 1 FROM information_schema.columns WHERE table_schema=%s AND table_name='django_content_type' AND column_name='name' LIMIT 1\",
+            [schema],
+        )
+        col_exists = cur.fetchone()
+        if not col_exists:
+            # Column already absent — fake the migration so migrate_schemas won't crash
+            cur.execute(
+                \"INSERT INTO django_migrations (app, name, applied) VALUES ('contenttypes', '0002_remove_content_type_name', NOW()) ON CONFLICT DO NOTHING\"
+            )
+            print(f'  [contenttypes] Faked 0002 on schema: {schema}')
+connection.set_schema_to_public()
+print('  Done.')
+" 2>&1 | grep -v "^$" || true
+
 echo "[sms] Running tenant migrations..."
 python3.11 manage.py migrate_schemas --noinput --fake-initial 2>&1 | grep -v "^$" || true
 

@@ -200,15 +200,26 @@ class TenantContextGuardMiddleware:
             and getattr(settings, "TENANT_ENFORCE_HEADER_MATCH", True)
             and header_value != tenant_schema
         ):
-            return JsonResponse(
-                {
-                    "detail": "Tenant header does not match resolved tenant context.",
-                    "header_schema": header_value,
-                    "resolved_schema": tenant_schema,
-                    "host": request.get_host(),
-                },
-                status=400,
-            )
+            # Also accept the header if it matches the subdomain field or the
+            # first hostname component of any registered domain for this tenant.
+            # This handles cases where the SPA sends the URL subdomain (e.g. "olom")
+            # but the DB schema name was auto-generated differently (e.g. "school_olomrynatyschoolapp").
+            tenant_subdomain_aliases = {getattr(tenant, "subdomain", None)} | {
+                d.split(".")[0]
+                for d in tenant.domains.values_list("domain", flat=True)
+                if d
+            }
+            tenant_subdomain_aliases.discard(None)
+            if header_value not in tenant_subdomain_aliases:
+                return JsonResponse(
+                    {
+                        "detail": "Tenant header does not match resolved tenant context.",
+                        "header_schema": header_value,
+                        "resolved_schema": tenant_schema,
+                        "host": request.get_host(),
+                    },
+                    status=400,
+                )
 
         if getattr(settings, "TENANT_ENFORCE_HOST_MATCH", True) and not getattr(request, "_tenant_from_header", False) and not getattr(request, "_tenant_from_subdomain", False):
             tenant_domains = {
