@@ -1545,15 +1545,28 @@ class Command(BaseCommand):
             default='demo_school',
             help='Tenant schema name (default: demo_school)',
         )
+        parser.add_argument(
+            '--all-tenants',
+            action='store_true',
+            help='Seed curriculum templates for all non-public tenant schemas',
+        )
 
     def handle(self, *args, **options):
-        from django_tenants.utils import schema_context
+        from django_tenants.utils import schema_context, get_tenant_model
 
-        schema = options['schema']
-        self.stdout.write(f"Seeding CBE curriculum templates into schema '{schema}'...")
+        if options.get('all_tenants'):
+            TenantModel = get_tenant_model()
+            schemas = list(
+                TenantModel.objects.exclude(schema_name='public')
+                                   .values_list('schema_name', flat=True)
+            )
+        else:
+            schemas = [options['schema']]
 
-        with schema_context(schema):
-            self._seed(schema)
+        for schema in schemas:
+            self.stdout.write(f"Seeding CBE curriculum templates into schema '{schema}'...")
+            with schema_context(schema):
+                self._seed(schema)
 
     def _seed(self, schema):
         from school.models import Subject

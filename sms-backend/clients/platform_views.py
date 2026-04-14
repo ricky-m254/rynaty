@@ -604,6 +604,38 @@ def _provision_school_admin(*, tenant: Tenant, username: str, email: str, passwo
     return unique_username
 
 
+def _bootstrap_new_tenant_schema(tenant: Tenant):
+    """
+    Idempotent post-provisioning bootstrap for a freshly created tenant schema.
+    Seeds modules, RBAC permission grants, CBE curriculum templates, and
+    KICD/Harvard e-learning content so the school is ready to use immediately.
+
+    Called right after _provision_school_admin in the create flow.
+    Safe to re-run — every seeding step uses get_or_create / skip-if-exists.
+    """
+    import logging
+    from django.core.management import call_command
+
+    logger = logging.getLogger(__name__)
+    schema = tenant.schema_name
+
+    steps = [
+        # (command, kwargs, description)
+        ("seed_modules", {"schema": schema}, "modules"),
+        ("seed_default_permissions", {"assign_roles": True, "schema": schema}, "RBAC permissions"),
+        ("seed_curriculum_templates", {"schema": schema}, "CBE curriculum templates"),
+        ("seed_digital_resources", {"schema_name": schema}, "KICD/Harvard e-learning"),
+    ]
+
+    for cmd, kwargs, description in steps:
+        try:
+            call_command(cmd, **kwargs, verbosity=0)
+            logger.info("[bootstrap] %s: seeded %s", schema, description)
+        except Exception as exc:
+            # Never block tenant creation — log and continue.
+            logger.warning("[bootstrap] %s: %s seeding failed — %s", schema, description, exc)
+
+
 def _tenant_stats(tenant: Tenant):
     stats = {
         "students_active": 0,
@@ -726,6 +758,10 @@ class PlatformTenantViewSet(viewsets.ModelViewSet):
             email=admin_email,
             password=admin_password,
         )
+
+        # Bootstrap the new schema with modules, RBAC, curriculum templates,
+        # and e-learning content so the school is fully operational immediately.
+        _bootstrap_new_tenant_schema(tenant)
 
         output = TenantSerializer(tenant, context={"request": request}).data
         return Response(

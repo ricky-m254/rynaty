@@ -117,6 +117,11 @@ python3.11 manage.py seed_olom_tenant 2>&1 || echo "[sms] Olom tenant seed skipp
 echo "[sms] Seeding platform super-admin (unconditional, runs before heavy seeding)..."
 python3.11 manage.py seed_platform_data 2>&1 || echo "[sms] Platform data seed skipped"
 
+# ── Structural seeding — runs unconditionally for EVERY tenant ─────────────
+# These commands are fully idempotent (get_or_create / skip-if-exists).
+# They ensure every school has modules, RBAC grants, curriculum templates,
+# and e-learning content regardless of the BOOTSTRAP_DEMO_DATA flag.
+
 if [ "${BOOTSTRAP_DEMO_DATA:-false}" = "true" ]; then
   schema="${DEMO_SCHEMA_NAME:-demo_school}"
 
@@ -140,18 +145,25 @@ print('yes' if Tenant.objects.filter(schema_name=schema).exists() else 'no')
   else
     echo "[sms] Demo tenant exists — ensuring all seed data is present..."
   fi
+fi
 
-  echo "[sms] Seeding modules..."
-  python3.11 manage.py seed_modules --all-tenants 2>/dev/null || true
+echo "[sms] Seeding modules for all tenants..."
+python3.11 manage.py seed_modules --all-tenants 2>&1 | grep -E "^\[|Error|error" || true
 
-  echo "[sms] Seeding roles and permissions..."
-  python3.11 manage.py seed_default_permissions --assign-roles --schema="$schema" 2>/dev/null || true
+echo "[sms] Seeding roles and permissions for all tenants..."
+python3.11 manage.py seed_default_permissions --assign-roles --all-tenants 2>&1 | grep -E "^\[|Error|error" || true
+
+echo "[sms] Seeding curriculum templates for all tenants..."
+python3.11 manage.py seed_curriculum_templates --all-tenants 2>&1 | grep -E "^\[|Seeding|Done|Error" || true
+
+echo "[sms] Seeding KICD digital textbooks and Harvard open learning for all tenants..."
+python3.11 manage.py seed_digital_resources --all-tenants 2>&1 | grep -E "^\[|Error|error" || true
+
+if [ "${BOOTSTRAP_DEMO_DATA:-false}" = "true" ]; then
+  schema="${DEMO_SCHEMA_NAME:-demo_school}"
 
   echo "[sms] Seeding full Kenya school data (idempotent)..."
   python3.11 manage.py seed_kenya_school --schema_name "$schema" 2>&1 | tail -5 || echo "[sms] Kenya seed skipped"
-
-  echo "[sms] Seeding curriculum templates..."
-  python3.11 manage.py seed_curriculum_templates --schema="$schema" 2>/dev/null || true
 
   echo "[sms] Seeding portal login accounts..."
   python3.11 manage.py seed_portal_accounts --schema_name "$schema" 2>&1 || echo "[sms] Portal accounts skipped"
@@ -161,9 +173,6 @@ print('yes' if Tenant.objects.filter(schema_name=schema).exists() else 'no')
 
   echo "[sms] Seeding supplementary demo data (25+ records per module)..."
   python3.11 manage.py seed_extra_data --schema_name "$schema" 2>&1 || echo "[sms] Extra data seed skipped"
-
-  echo "[sms] Seeding KICD digital textbooks and Harvard open learning materials..."
-  python3.11 manage.py seed_digital_resources --schema_name "$schema" 2>&1 || echo "[sms] Digital resources seed skipped"
 
   echo "[sms] Bootstrap complete."
 fi

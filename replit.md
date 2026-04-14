@@ -102,6 +102,16 @@ academics, admissions, alumni, assets, cafeteria, clockin, communication, curric
 - `sms-backend/parent_portal/views.py` — parent portal views (report cards, assignments, library)
 - `sms-backend/media/school_logos/rynaty-logo.png` — Rynaty logo (served at /media/)
 
+## Auth Security Architecture (T004 — completed)
+- **`olom_admin.is_superuser = False`**: School admins seeded via `seed_olom_tenant` explicitly set `is_superuser=False` (prevents Django superuser elevation).
+- **JWT cross-schema guard**: `SmartCampusTokenObtainPairSerializer.validate()` — Stage 0 (GlobalSuperAdmin public-schema check) is SKIPPED when the request arrives on a school subdomain (`_is_public_request=False`). Platform admin credentials submitted to a school login page correctly return "No active account found" instead of a platform admin token.
+- **Platform admin login**: Separate endpoint at `/platform/auth/login/` (`clients/platform_urls.py`) which always operates under the public schema — this is the authoritative path for `GlobalSuperAdmin` users.
+- **`IsGlobalSuperAdmin` guard**: All platform API routes require a `GlobalSuperAdmin` record in the public schema; school JWT tokens carry no such record and are universally rejected from platform routes.
+
+## Multi-Tenant Seeding (T001–T003 — completed)
+- All structural seeds run `--all-tenants` unconditionally on every startup: `seed_modules`, `seed_default_permissions --assign-roles`, `seed_curriculum_templates`, `seed_digital_resources`.
+- New tenants created via the platform API are immediately bootstrapped by `_bootstrap_new_tenant_schema()` in `platform_views.py` (modules, RBAC, curriculum templates, KICD/Harvard e-learning).
+
 ## Notes
 - f-strings: no backslashes inside expressions (Python 3.11)
 - Migrations: always `--fake-initial` to avoid conflicts with existing tables
@@ -109,3 +119,4 @@ academics, admissions, alumni, assets, cafeteria, clockin, communication, curric
 - Frontend JS minified files updated: KCSE/CBC → CBE throughout
 - `_library_member_ids_for_child()` returns LibraryMember PKs (integer), not string member_ids
 - Tenant domain: `demo.localhost` (local), public schema at `localhost`
+- `X-Tenant-ID` header only resolves by exact schema name or registered subdomain alias; short names like `demo` don't resolve to `demo_school` via header (use hostname `demo.rynatyschool.app` instead)

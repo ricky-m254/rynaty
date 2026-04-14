@@ -4880,26 +4880,34 @@ class SmartCampusTokenObtainPairSerializer(TokenObtainPairSerializer):
         password = attrs.get('password', '')
         attrs[self.username_field] = username
 
-        # Stage 0: check public schema for GlobalSuperAdmin users
-        try:
-            from django_tenants.utils import schema_context, get_public_schema_name
-            with schema_context(get_public_schema_name()):
-                from django.contrib.auth.models import User as _PublicUser
-                from clients.models import GlobalSuperAdmin
-                pub_user = _PublicUser.objects.filter(
-                    username__iexact=username, is_active=True
-                ).first()
-                if pub_user and pub_user.check_password(password):
-                    gsa = GlobalSuperAdmin.objects.filter(user=pub_user, is_active=True).first()
-                    if gsa:
-                        self.user = pub_user
-                        return self._enrich_platform_admin(pub_user, gsa)
-        except Exception as _stage0_exc:
-            import logging as _log
-            _log.getLogger(__name__).warning(
-                "Stage 0 (GlobalSuperAdmin check) failed for '%s': %s",
-                username, _stage0_exc, exc_info=True,
-            )
+        from django_tenants.utils import schema_context, get_public_schema_name as _public_schema
+        _current_schema = getattr(connection, 'schema_name', 'public')
+        _is_public_request = _current_schema in {None, _public_schema()}
+
+        # Stage 0: check public schema for GlobalSuperAdmin users.
+        # Guard: only allow platform admin login when the request arrives via the
+        # platform (public) schema. On a school subdomain (e.g. olom.rynatyschool.app)
+        # Stage 0 is skipped so that platform credentials cannot be used to enter
+        # the platform admin panel from a school login page.
+        if _is_public_request:
+            try:
+                with schema_context(_public_schema()):
+                    from django.contrib.auth.models import User as _PublicUser
+                    from clients.models import GlobalSuperAdmin
+                    pub_user = _PublicUser.objects.filter(
+                        username__iexact=username, is_active=True
+                    ).first()
+                    if pub_user and pub_user.check_password(password):
+                        gsa = GlobalSuperAdmin.objects.filter(user=pub_user, is_active=True).first()
+                        if gsa:
+                            self.user = pub_user
+                            return self._enrich_platform_admin(pub_user, gsa)
+            except Exception as _stage0_exc:
+                import logging as _log
+                _log.getLogger(__name__).warning(
+                    "Stage 0 (GlobalSuperAdmin check) failed for '%s': %s",
+                    username, _stage0_exc, exc_info=True,
+                )
 
         # Stage 1: normal Django username auth
         try:

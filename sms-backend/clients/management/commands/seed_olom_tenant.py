@@ -149,11 +149,13 @@ class Command(BaseCommand):
                     "first_name": "Olom",
                     "last_name": "Admin",
                     "is_staff": True,
+                    "is_superuser": False,
                     "is_active": True,
                 },
             )
             admin_user.is_active = True
             admin_user.is_staff = True
+            admin_user.is_superuser = False   # never grant Django superuser to a school admin
             admin_user.set_password(_ADMIN_PASS)
             admin_user.save()
 
