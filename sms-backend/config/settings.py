@@ -135,6 +135,11 @@ for _d in _extra_domains.split(","):
     if _d and _d not in ALLOWED_HOSTS:
         ALLOWED_HOSTS.append(_d)
 
+# Hardcoded production domains — always allowed regardless of env vars.
+for _d in ["rynatyschool.app", "www.rynatyschool.app"]:
+    if _d not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(_d)
+
 if not ALLOWED_HOSTS:
     raise ImproperlyConfigured("DJANGO_ALLOWED_HOSTS must be configured.")
 
@@ -422,6 +427,14 @@ for _d in _extra_domains.split(","):
             CORS_ALLOWED_ORIGINS.append(_origin)
         if _origin not in CSRF_TRUSTED_ORIGINS:
             CSRF_TRUSTED_ORIGINS.append(_origin)
+
+# Hardcoded production domains — always trusted for CORS and CSRF.
+for _d in ["rynatyschool.app", "www.rynatyschool.app"]:
+    _origin = f"https://{_d}"
+    if _origin not in CORS_ALLOWED_ORIGINS:
+        CORS_ALLOWED_ORIGINS.append(_origin)
+    if _origin not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(_origin)
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SESSION_COOKIE_SECURE = not DEBUG
