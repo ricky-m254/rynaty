@@ -4894,8 +4894,12 @@ class SmartCampusTokenObtainPairSerializer(TokenObtainPairSerializer):
                     if gsa:
                         self.user = pub_user
                         return self._enrich_platform_admin(pub_user, gsa)
-        except Exception:
-            pass
+        except Exception as _stage0_exc:
+            import logging as _log
+            _log.getLogger(__name__).warning(
+                "Stage 0 (GlobalSuperAdmin check) failed for '%s': %s",
+                username, _stage0_exc, exc_info=True,
+            )
 
         # Stage 1: normal Django username auth
         try:

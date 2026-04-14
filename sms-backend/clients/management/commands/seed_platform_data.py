@@ -35,6 +35,7 @@ class Command(BaseCommand):
             from django.utils import timezone
 
             # ── 1. Platform super-admin user ────────────────────────────────
+            PLATFORM_ADMIN_PASSWORD = "PlatformAdmin#2025"
             platform_admin, created = User.objects.get_or_create(
                 username="platform_admin",
                 defaults={
@@ -44,15 +45,38 @@ class Command(BaseCommand):
                     "is_active": True,
                 },
             )
+            needs_save = created
             if created:
-                platform_admin.set_password("PlatformAdmin#2025")
-                platform_admin.save()
+                platform_admin.set_password(PLATFORM_ADMIN_PASSWORD)
                 self.stdout.write("  [platform_admin] Created public-schema user")
+            else:
+                # Always enforce: account must be active, is_staff, is_superuser
+                if not platform_admin.is_active:
+                    platform_admin.is_active = True
+                    needs_save = True
+                if not platform_admin.is_staff:
+                    platform_admin.is_staff = True
+                    needs_save = True
+                if not platform_admin.is_superuser:
+                    platform_admin.is_superuser = True
+                    needs_save = True
+                # Enforce correct password — if it was scrambled, restore it
+                if not platform_admin.check_password(PLATFORM_ADMIN_PASSWORD):
+                    platform_admin.set_password(PLATFORM_ADMIN_PASSWORD)
+                    needs_save = True
+                    self.stdout.write("  [platform_admin] Password re-enforced")
+            if needs_save:
+                platform_admin.save()
 
-            GlobalSuperAdmin.objects.get_or_create(
+            gsa, gsa_created = GlobalSuperAdmin.objects.get_or_create(
                 user=platform_admin,
                 defaults={"role": "OWNER", "is_active": True},
             )
+            if not gsa_created and (gsa.role != "OWNER" or not gsa.is_active):
+                gsa.role = "OWNER"
+                gsa.is_active = True
+                gsa.save()
+                self.stdout.write("  [platform_admin] GSA record corrected")
 
             # ── 2. Subscription + invoice for demo tenant ───────────────────
             try:

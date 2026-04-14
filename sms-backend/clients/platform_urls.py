@@ -1,4 +1,6 @@
 from django.urls import include, path
+from django.views.decorators.csrf import csrf_exempt
+from django.http import JsonResponse
 from rest_framework.routers import DefaultRouter
 
 from clients.platform_views import (
@@ -50,6 +52,74 @@ router.register(r"security/incidents", PlatformSecurityIncidentViewSet, basename
 router.register(r"security/compliance-reports", PlatformComplianceReportViewSet, basename="platform-compliance-report")
 router.register(r"domain-requests", PlatformDomainRequestViewSet, basename="platform-domain-request")
 
+@csrf_exempt
+def platform_login_view(request):
+    """
+    Dedicated POST endpoint for GlobalSuperAdmin (platform super-admin) login.
+    Accepts {username, password} and returns JWT tokens + platform role.
+    This endpoint explicitly bypasses tenant context and only accepts GSA users.
+    """
+    if request.method != "POST":
+        return JsonResponse({"detail": "Method not allowed."}, status=405)
+    try:
+        import json as _json
+        body = _json.loads(request.body)
+        username = (body.get("username") or "").strip()
+        password = (body.get("password") or "").strip()
+    except Exception:
+        return JsonResponse({"detail": "Invalid JSON body."}, status=400)
+
+    if not username or not password:
+        return JsonResponse({"detail": "username and password are required."}, status=400)
+
+    try:
+        from django_tenants.utils import schema_context, get_public_schema_name
+        with schema_context(get_public_schema_name()):
+            from django.contrib.auth.models import User
+            from clients.models import GlobalSuperAdmin
+            from rest_framework_simplejwt.tokens import RefreshToken
+
+            user = User.objects.filter(username__iexact=username, is_active=True).first()
+            if not user or not user.check_password(password):
+                return JsonResponse(
+                    {"detail": "No active platform admin account found with those credentials."},
+                    status=401,
+                )
+            gsa = GlobalSuperAdmin.objects.filter(user=user, is_active=True).first()
+            if not gsa:
+                return JsonResponse(
+                    {"detail": "This account does not have platform admin access."},
+                    status=403,
+                )
+
+            refresh = RefreshToken.for_user(user)
+            refresh["role"] = gsa.role
+            refresh["tenant_id"] = "public"
+            access = refresh.access_token
+
+            return JsonResponse({
+                "access": str(access),
+                "refresh": str(refresh),
+                "user": {
+                    "id": user.id,
+                    "username": user.username,
+                    "email": user.email,
+                    "first_name": user.first_name,
+                    "last_name": user.last_name,
+                },
+                "role": gsa.role,
+                "available_roles": [gsa.role],
+                "redirect_to": "/platform",
+                "tenant_id": "public",
+                "force_password_change": False,
+            })
+    except Exception as exc:
+        import logging as _log
+        _log.getLogger(__name__).error("Platform login failed: %s", exc, exc_info=True)
+        return JsonResponse({"detail": "Platform login error. Please try again."}, status=500)
+
+
 urlpatterns = [
+    path("auth/login/", platform_login_view, name="platform-auth-login"),
     path("", include(router.urls)),
 ]

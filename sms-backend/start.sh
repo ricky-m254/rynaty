@@ -93,6 +93,11 @@ else:
     print('  [olom] Domains already registered (' + str(Domain.objects.filter(tenant=tenant).count()) + ' total)')
 " 2>/dev/null || echo "[sms] Olom domain registration skipped"
 
+# Seed platform super-admin IMMEDIATELY after server start and domain registration,
+# before any heavy tenant seeding — so platform login works from the first second.
+echo "[sms] Seeding platform super-admin (unconditional, runs before heavy seeding)..."
+python3.11 manage.py seed_platform_data 2>&1 || echo "[sms] Platform data seed skipped"
+
 if [ "${BOOTSTRAP_DEMO_DATA:-false}" = "true" ]; then
   schema="${DEMO_SCHEMA_NAME:-demo_school}"
 
@@ -140,9 +145,6 @@ print('yes' if Tenant.objects.filter(schema_name=schema).exists() else 'no')
 
   echo "[sms] Seeding KICD digital textbooks and Harvard open learning materials..."
   python3.11 manage.py seed_digital_resources --schema_name "$schema" 2>&1 || echo "[sms] Digital resources seed skipped"
-
-  echo "[sms] Seeding platform super-admin + demo data..."
-  python3.11 manage.py seed_platform_data 2>&1 || echo "[sms] Platform data seed skipped"
 
   echo "[sms] Bootstrap complete."
 fi
