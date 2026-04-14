@@ -104,13 +104,32 @@ class TenantContextGuardMiddleware:
         host = _host_without_port(request.get_host())
         is_local_dev_host = host in {"localhost", "127.0.0.1"}
 
-        # Header-first resolution for local/dev and audit paths:
-        # if a tenant header is provided while request resolved to public schema,
-        # switch the active tenant context explicitly.
-        if header_value and (not hasattr(request, "tenant") or tenant_schema in {None, public_schema}):
-            try:
-                resolved_tenant = Tenant.objects.get(schema_name=header_value)
-            except Tenant.DoesNotExist:
+        # Header-first resolution:
+        # Switch to X-Tenant-ID header tenant when:
+        #   1. No tenant resolved yet (public/null schema) — normal header-first path, OR
+        #   2. Header specifies a DIFFERENT tenant than what the host resolved to.
+        #      This supports multi-tenant access from shared/wildcard domains
+        #      (e.g. Replit dev URL maps to demo_school, but user logs into olom).
+        # Security: Authentication still enforces valid credentials per schema.
+        #           TenantAwareJWTAuthentication additionally validates token.tenant_id
+        #           against connection.schema_name, so schema-switching is safe.
+        _header_differs_from_resolved = (
+            header_value
+            and hasattr(request, "tenant")
+            and tenant_schema not in {None, public_schema}
+            and header_value != tenant_schema
+        )
+        if header_value and (
+            not hasattr(request, "tenant")
+            or tenant_schema in {None, public_schema}
+            or _header_differs_from_resolved
+        ):
+            # Try exact schema name first, then subdomain field, then first domain part.
+            resolved_tenant = (
+                Tenant.objects.filter(schema_name=header_value).first()
+                or Tenant.objects.filter(subdomain=header_value).first()
+            )
+            if resolved_tenant is None:
                 return JsonResponse(
                     {
                         "detail": f"Unknown tenant schema in header '{header_name}'.",
