@@ -47,9 +47,11 @@ for d in replit_domains.split(','):
         candidates.add(d)
 
 extra = os.environ.get('EXTRA_TENANT_DOMAINS', '')
+# Only add root-level domains (no more than one dot) to avoid registering
+# tenant subdomains (e.g. olom.rynatyschool.app) under the demo school.
 for d in extra.split(','):
     d = d.strip()
-    if d:
+    if d and d.count('.') <= 1:
         candidates.add(d)
 
 added = []

@@ -82,13 +82,20 @@ class Command(BaseCommand):
         Find an appropriate tenant to own olom.rynatyschool.app.
         Returns a Tenant instance or None.
         """
-        # 1. Is the domain already registered for any tenant?
+        # 1. Is the domain already registered for a real (non-demo) tenant?
         existing = Domain.objects.filter(domain=_DOMAIN).select_related("tenant").first()
         if existing:
-            self.stdout.write(
-                f"  [olom] Domain already owned by tenant '{existing.tenant.schema_name}'"
-            )
-            return existing.tenant
+            if existing.tenant.schema_name not in (_DEMO_SCHEMA, get_public_schema_name()):
+                self.stdout.write(
+                    f"  [olom] Domain already owned by tenant '{existing.tenant.schema_name}'"
+                )
+                return existing.tenant
+            else:
+                # Domain is wrongly parked on demo_school or public — will reassign
+                self.stdout.write(
+                    f"  [olom] Domain wrongly assigned to '{existing.tenant.schema_name}' "
+                    f"— will reassign to correct tenant"
+                )
 
         # 2. Does the 'olom' schema tenant record exist?
         olom_tenant = Tenant.objects.filter(schema_name=_SCHEMA).first()
