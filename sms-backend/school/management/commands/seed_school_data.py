@@ -8,10 +8,13 @@ Usage:
     python manage.py seed_school_data --all-tenants
     python manage.py seed_school_data --schema_name demo_school
 """
+import re
 from datetime import date
 
 from django.core.management.base import BaseCommand
 from django_tenants.utils import schema_context, get_public_schema_name
+
+_STUDENT_USERNAME_RE = re.compile(r"^stm\d|^adm[-_]?\d", re.IGNORECASE)
 
 
 CBC_GRADE_LEVELS = [
@@ -182,12 +185,14 @@ class Command(BaseCommand):
     def _repair_missing_user_profiles(self, tag):
         """
         Detect ALL active users with no UserProfile and create the missing rows
-        using a deterministic role-inference chain:
+        using a deterministic role-inference chain (evaluated in priority order):
 
-          1. stm* / STM* prefix          → STUDENT
-          2. ADM* / adm* prefix           → STUDENT (admission-number-style usernames)
-          3. is_superuser=True            → TENANT_SUPER_ADMIN
-          4. All others (staff fallback)  → ADMIN
+          1. is_superuser=True                          → TENANT_SUPER_ADMIN
+          2. _STUDENT_USERNAME_RE match (stm<digit> or
+             adm<sep?><digit>)                          → STUDENT
+             • matches stm2025001, STM2025001, adm001
+             • does NOT match "admin" / "administrator"
+          3. All others (staff fallback)                → ADMIN
 
         Every active user without a profile will receive one. Callers that seed
         specific users with dedicated roles afterwards will not be affected because
@@ -217,11 +222,10 @@ class Command(BaseCommand):
 
         repaired = 0
         for user in users_without_profile:
-            uname_lower = user.username.lower()
-            if (uname_lower.startswith("stm") or uname_lower.startswith("adm")) and student_role:
-                assigned_role = student_role
-            elif user.is_superuser and super_admin_role:
+            if user.is_superuser and super_admin_role:
                 assigned_role = super_admin_role
+            elif _STUDENT_USERNAME_RE.match(user.username) and student_role:
+                assigned_role = student_role
             else:
                 assigned_role = admin_role
 
