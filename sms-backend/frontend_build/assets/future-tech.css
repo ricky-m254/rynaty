@@ -1238,3 +1238,568 @@ button[class*="w-full"].bg-emerald-500 {
   border-color: rgba(201,168,76,0.25) !important;
   box-shadow: 0 0 20px rgba(201,168,76,0.06) !important;
 }
+
+
+/* ╔═══════════════════════════════════════════════════════════════════════════╗
+   ║  SMARTCAMPUS — FEATHERLIGHT ANIMATION SYSTEM v1.0                        ║
+   ║  "Crystalline Motion" — Every surface breathes, every touch responds.    ║
+   ║  Philosophy: 150–300ms interactions · 400–800ms entrances               ║
+   ║  Nothing moves more than 4px on hover · Everything eases out            ║
+   ╚═══════════════════════════════════════════════════════════════════════════╝ */
+
+/* ─────────────────────────────────────────────
+   ENTRANCE KEYFRAMES
+   ───────────────────────────────────────────── */
+
+/* Feather float-up — main card entrance */
+@keyframes feather-in {
+  0%   { opacity: 0; transform: translateY(14px) scale(0.988); filter: blur(1px); }
+  60%  { opacity: 0.9; transform: translateY(-1px) scale(1.002); filter: blur(0); }
+  100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+}
+
+/* Crystalline slide-in-left — sidebar + table rows */
+@keyframes crystal-slide-left {
+  0%   { opacity: 0; transform: translateX(-10px); }
+  70%  { opacity: 1; transform: translateX(1px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+
+/* Gold shimmer reveal — stat numbers */
+@keyframes gold-reveal {
+  0%   { opacity: 0; transform: scale(0.92); letter-spacing: -0.05em; }
+  100% { opacity: 1; transform: scale(1); letter-spacing: inherit; }
+}
+
+/* Prism pop — badges */
+@keyframes prism-pop {
+  0%   { opacity: 0; transform: scale(0.7); }
+  70%  { transform: scale(1.06); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+/* Section header wipe — titles */
+@keyframes gold-wipe {
+  0%   { opacity: 0; clip-path: inset(0 100% 0 0); }
+  100% { opacity: 1; clip-path: inset(0 0% 0 0); }
+}
+
+/* Table row cascade */
+@keyframes row-cascade {
+  0%   { opacity: 0; transform: translateY(6px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+/* Hero banner entrance */
+@keyframes banner-unfurl {
+  0%   { opacity: 0; transform: scaleY(0.92) translateY(8px); transform-origin: top; }
+  100% { opacity: 1; transform: scaleY(1) translateY(0); }
+}
+
+/* ─────────────────────────────────────────────
+   CONTINUOUS / AMBIENT KEYFRAMES
+   ───────────────────────────────────────────── */
+
+/* Gentle float — KPI cards breathe upward */
+@keyframes gentle-float {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-3px); }
+}
+
+/* Gold border glow breathe */
+@keyframes border-breathe {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(201,168,76,0.12), 0 4px 24px rgba(0,0,0,0.5); }
+  50%       { box-shadow: 0 0 0 1px rgba(201,168,76,0.28), 0 4px 32px rgba(0,0,0,0.55), 0 0 20px rgba(201,168,76,0.07); }
+}
+
+/* Prismatic shimmer — status badges */
+@keyframes prism-shimmer {
+  0%, 100% { filter: brightness(1) saturate(1); }
+  50%       { filter: brightness(1.15) saturate(1.2); }
+}
+
+/* Gold number pulse — stat values */
+@keyframes number-breath {
+  0%, 100% { text-shadow: 0 0 0px transparent; }
+  50%       { text-shadow: 0 0 12px rgba(201,168,76,0.18); }
+}
+
+/* Subtle tilt/shimmer on hero banners */
+@keyframes hero-shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+/* Floating dust motes (decoration only) */
+@keyframes mote-drift {
+  0%   { transform: translate(0px, 0px) scale(1); opacity: 0.4; }
+  25%  { transform: translate(3px, -8px) scale(1.1); opacity: 0.7; }
+  75%  { transform: translate(-2px, -14px) scale(0.9); opacity: 0.5; }
+  100% { transform: translate(0px, -20px) scale(1); opacity: 0; }
+}
+
+/* Magnetic button spring */
+@keyframes button-spring {
+  0%  { transform: translateY(0) scale(1); }
+  40% { transform: translateY(-3px) scale(1.015); }
+  70% { transform: translateY(-1px) scale(1.005); }
+  100%{ transform: translateY(-2px) scale(1.008); }
+}
+
+/* Sidebar nav item feather-slide */
+@keyframes nav-feather {
+  0%   { opacity: 0; transform: translateX(-8px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+
+/* ─────────────────────────────────────────────
+   MAIN CONTENT AREA — Page Enter
+   ───────────────────────────────────────────── */
+
+.col-span-12.md\:col-span-9,
+.col-span-12.lg\:col-span-10 {
+  animation: feather-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both !important;
+}
+
+/* ─────────────────────────────────────────────
+   GLASS PANELS — Entrance + Ambient Float
+   ───────────────────────────────────────────── */
+
+.glass-panel {
+  animation:
+    feather-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) both,
+    border-breathe 6s ease-in-out 1s infinite !important;
+  will-change: transform, box-shadow !important;
+}
+
+/* Cascade stagger for sibling panels */
+.glass-panel:nth-of-type(1) { animation-delay: 0s, 0s !important; }
+.glass-panel:nth-of-type(2) { animation-delay: 0.06s, 0.2s !important; }
+.glass-panel:nth-of-type(3) { animation-delay: 0.12s, 0.4s !important; }
+.glass-panel:nth-of-type(4) { animation-delay: 0.18s, 0.6s !important; }
+.glass-panel:nth-of-type(5) { animation-delay: 0.24s, 0.8s !important; }
+.glass-panel:nth-of-type(6) { animation-delay: 0.30s, 1.0s !important; }
+
+/* ─────────────────────────────────────────────
+   ROUNDED CARDS — Feather Entrance
+   ───────────────────────────────────────────── */
+
+section.rounded-2xl {
+  animation: feather-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) both !important;
+}
+section.rounded-2xl:nth-child(1) { animation-delay: 0.00s !important; }
+section.rounded-2xl:nth-child(2) { animation-delay: 0.07s !important; }
+section.rounded-2xl:nth-child(3) { animation-delay: 0.14s !important; }
+section.rounded-2xl:nth-child(4) { animation-delay: 0.21s !important; }
+section.rounded-2xl:nth-child(5) { animation-delay: 0.28s !important; }
+
+/* Grid cards (stat/KPI) — feather-in + gentle float */
+.grid > .rounded-2xl,
+.grid > div > .rounded-2xl {
+  animation:
+    feather-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both !important;
+  will-change: transform !important;
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+              box-shadow 0.3s ease,
+              border-color 0.3s ease !important;
+}
+
+/* Stagger KPI grid cards */
+.grid > .rounded-2xl:nth-child(1),
+.grid > div:nth-child(1) > .rounded-2xl { animation-delay: 0.02s !important; }
+.grid > .rounded-2xl:nth-child(2),
+.grid > div:nth-child(2) > .rounded-2xl { animation-delay: 0.08s !important; }
+.grid > .rounded-2xl:nth-child(3),
+.grid > div:nth-child(3) > .rounded-2xl { animation-delay: 0.14s !important; }
+.grid > .rounded-2xl:nth-child(4),
+.grid > div:nth-child(4) > .rounded-2xl { animation-delay: 0.20s !important; }
+.grid > .rounded-2xl:nth-child(5),
+.grid > div:nth-child(5) > .rounded-2xl { animation-delay: 0.26s !important; }
+.grid > .rounded-2xl:nth-child(6),
+.grid > div:nth-child(6) > .rounded-2xl { animation-delay: 0.32s !important; }
+
+/* KPI hover — feather lift */
+.grid > .rounded-2xl:hover,
+.grid > div > .rounded-2xl:hover {
+  transform: translateY(-4px) scale(1.012) !important;
+  box-shadow:
+    0 16px 48px rgba(0,0,0,0.6),
+    0 0 24px rgba(201,168,76,0.1),
+    inset 0 1px 0 rgba(201,168,76,0.25) !important;
+  border-color: rgba(201,168,76,0.32) !important;
+}
+
+/* ─────────────────────────────────────────────
+   STAT NUMBERS — Gold Reveal + Breath
+   ───────────────────────────────────────────── */
+
+.text-2xl.font-bold,
+.text-3xl.font-bold,
+.text-2xl.font-semibold,
+.text-3xl.font-semibold {
+  animation:
+    gold-reveal 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.15s both,
+    number-breath 5s ease-in-out 1s infinite !important;
+  display: inline-block !important;
+}
+
+/* ─────────────────────────────────────────────
+   TABLE ROWS — Cascade Entrance
+   ───────────────────────────────────────────── */
+
+tbody tr {
+  animation: row-cascade 0.3s cubic-bezier(0.22, 1, 0.36, 1) both !important;
+  will-change: transform, opacity !important;
+}
+
+/* Row stagger — first 10 rows */
+tbody tr:nth-child(1)  { animation-delay: 0.04s !important; }
+tbody tr:nth-child(2)  { animation-delay: 0.08s !important; }
+tbody tr:nth-child(3)  { animation-delay: 0.12s !important; }
+tbody tr:nth-child(4)  { animation-delay: 0.16s !important; }
+tbody tr:nth-child(5)  { animation-delay: 0.20s !important; }
+tbody tr:nth-child(6)  { animation-delay: 0.24s !important; }
+tbody tr:nth-child(7)  { animation-delay: 0.27s !important; }
+tbody tr:nth-child(8)  { animation-delay: 0.30s !important; }
+tbody tr:nth-child(9)  { animation-delay: 0.33s !important; }
+tbody tr:nth-child(10) { animation-delay: 0.36s !important; }
+tbody tr:nth-child(n+11) { animation-delay: 0.38s !important; }
+
+/* Feather hover on table rows */
+tbody tr:hover {
+  transform: translateX(3px) !important;
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+              background 0.2s ease,
+              box-shadow 0.2s ease !important;
+}
+
+/* ─────────────────────────────────────────────
+   STATUS BADGES — Prism Pop Entrance
+   ───────────────────────────────────────────── */
+
+[class*="rounded-full"][class*="px-2"],
+[class*="rounded-full"][class*="px-3"] {
+  animation:
+    prism-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both,
+    prism-shimmer 4s ease-in-out 0.5s infinite !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  will-change: transform, filter !important;
+}
+
+[class*="rounded-full"][class*="px-2"]:nth-child(1) { animation-delay: 0.10s, 0.5s !important; }
+[class*="rounded-full"][class*="px-2"]:nth-child(2) { animation-delay: 0.14s, 1.0s !important; }
+[class*="rounded-full"][class*="px-2"]:nth-child(3) { animation-delay: 0.18s, 1.5s !important; }
+
+/* Badge hover */
+[class*="rounded-full"][class*="px-2"]:hover,
+[class*="rounded-full"][class*="px-3"]:hover {
+  transform: scale(1.08) !important;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+}
+
+/* ─────────────────────────────────────────────
+   BUTTONS — Featherlight Spring
+   ───────────────────────────────────────────── */
+
+button,
+a[class*="rounded"] {
+  transition:
+    transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 0.25s ease,
+    border-color 0.2s ease,
+    background 0.2s ease,
+    filter 0.2s ease !important;
+  will-change: transform !important;
+}
+
+button:hover:not([disabled]),
+a[class*="rounded"]:hover {
+  transform: translateY(-2px) scale(1.02) !important;
+}
+
+button:active:not([disabled]) {
+  transform: translateY(1px) scale(0.98) !important;
+  transition-duration: 0.08s !important;
+}
+
+/* Primary buttons — extra spring */
+button[class*="bg-emerald-500"]:hover,
+a[class*="bg-emerald-500"]:hover {
+  transform: translateY(-3px) scale(1.025) !important;
+  filter: brightness(1.08) !important;
+}
+button[class*="bg-emerald-500"]:active {
+  transform: translateY(0) scale(0.97) !important;
+}
+
+/* Icon/round buttons — spin-on-hover Easter egg */
+button[class*="rounded-full"]:hover {
+  transform: scale(1.12) rotate(4deg) !important;
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+}
+
+/* ─────────────────────────────────────────────
+   SIDEBAR NAVIGATION — Crystal Slide-In
+   ───────────────────────────────────────────── */
+
+/* Each sidebar nav item enters from the left */
+aside nav a,
+aside a {
+  animation: nav-feather 0.35s cubic-bezier(0.22, 1, 0.36, 1) both !important;
+}
+
+aside nav a:nth-child(1)  { animation-delay: 0.02s !important; }
+aside nav a:nth-child(2)  { animation-delay: 0.06s !important; }
+aside nav a:nth-child(3)  { animation-delay: 0.10s !important; }
+aside nav a:nth-child(4)  { animation-delay: 0.14s !important; }
+aside nav a:nth-child(5)  { animation-delay: 0.18s !important; }
+aside nav a:nth-child(6)  { animation-delay: 0.22s !important; }
+aside nav a:nth-child(7)  { animation-delay: 0.26s !important; }
+aside nav a:nth-child(8)  { animation-delay: 0.30s !important; }
+aside nav a:nth-child(9)  { animation-delay: 0.34s !important; }
+aside nav a:nth-child(10) { animation-delay: 0.38s !important; }
+aside nav a:nth-child(n+11) { animation-delay: 0.40s !important; }
+
+/* Sidebar hover — feather touch */
+aside a:hover {
+  transform: translateX(3px) !important;
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+              background 0.2s ease,
+              border-color 0.2s ease,
+              color 0.2s ease !important;
+}
+
+/* ─────────────────────────────────────────────
+   PAGE HERO / MODULE BANNER
+   ───────────────────────────────────────────── */
+
+/* Hero card/banner entrance */
+[class*="rounded-3xl"] {
+  animation: banner-unfurl 0.5s cubic-bezier(0.22, 1, 0.36, 1) both !important;
+  transition: transform 0.3s ease, box-shadow 0.3s ease !important;
+}
+[class*="rounded-3xl"]:hover {
+  transform: translateY(-2px) !important;
+  box-shadow:
+    0 12px 40px rgba(0,0,0,0.5),
+    0 0 24px rgba(201,168,76,0.08),
+    inset 0 1px 0 rgba(201,168,76,0.15) !important;
+}
+
+/* Module title/subtitle — wipe-in entrance */
+h1[class*="text-2xl"],
+h1[class*="text-3xl"],
+h2[class*="text-xl"],
+h2[class*="text-2xl"] {
+  animation: gold-wipe 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.08s both !important;
+}
+
+/* ─────────────────────────────────────────────
+   INPUTS — Focus Spring
+   ───────────────────────────────────────────── */
+
+input:not([type="checkbox"]):not([type="radio"]):focus,
+select:focus,
+textarea:focus {
+  transform: scale(1.005) !important;
+  transition:
+    transform 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    background 0.2s ease !important;
+}
+
+/* ─────────────────────────────────────────────
+   FEATHER GLASS PANEL HOVER — UPGRADED
+   ───────────────────────────────────────────── */
+
+/* Override earlier glass-panel hover with feather spring */
+.glass-panel:hover {
+  transform: translateY(-2px) !important;
+  transition:
+    transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.3s ease,
+    box-shadow 0.3s ease !important;
+  border-color: rgba(201,168,76,0.3) !important;
+  box-shadow:
+    0 16px 48px rgba(0,0,0,0.6),
+    0 0 28px rgba(201,168,76,0.09),
+    inset 0 1px 0 rgba(201,168,76,0.2),
+    inset 0 0 0 0.5px rgba(201,168,76,0.1) !important;
+}
+
+/* ─────────────────────────────────────────────
+   AVATAR / ICON BOXES — Entrance Micro-bounce
+   ───────────────────────────────────────────── */
+
+[style*="border-radius: 6px"][style*="background: linear-gradient"],
+[style*="border-radius:6px"][style*="background:linear-gradient"],
+[style*="border-radius:50%"][style*="background:linear-gradient"] {
+  animation: prism-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) 0.1s both !important;
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1),
+              box-shadow 0.25s ease !important;
+}
+[style*="border-radius: 6px"][style*="background: linear-gradient"]:hover,
+[style*="border-radius:6px"][style*="background:linear-gradient"]:hover {
+  transform: scale(1.1) rotate(-4deg) !important;
+}
+
+/* ─────────────────────────────────────────────
+   TAB BAR BUTTONS — Feather Press
+   ───────────────────────────────────────────── */
+
+.flex-shrink-0[class*="border-b-2"] {
+  transition:
+    color 0.2s ease,
+    background 0.2s ease,
+    transform 0.2s cubic-bezier(0.22, 1, 0.36, 1) !important;
+}
+.flex-shrink-0[class*="border-b-2"]:hover {
+  transform: translateY(-1px) !important;
+}
+
+/* ─────────────────────────────────────────────
+   RECHARTS — Animated Data Lines
+   ───────────────────────────────────────────── */
+
+.recharts-wrapper {
+  animation: feather-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.2s both !important;
+}
+
+/* ─────────────────────────────────────────────
+   MODULE CONTENT GRID — Orchestrated Cascade
+   ───────────────────────────────────────────── */
+
+/* col-span grid children cascade in */
+.grid.grid-cols-12 > .col-span-12,
+.grid.grid-cols-12 > [class*="col-span"] {
+  animation: feather-in 0.38s cubic-bezier(0.22, 1, 0.36, 1) both !important;
+}
+
+.grid.grid-cols-12 > .col-span-12:nth-child(1),
+.grid.grid-cols-12 > [class*="col-span"]:nth-child(1) { animation-delay: 0.00s !important; }
+.grid.grid-cols-12 > .col-span-12:nth-child(2),
+.grid.grid-cols-12 > [class*="col-span"]:nth-child(2) { animation-delay: 0.05s !important; }
+.grid.grid-cols-12 > .col-span-12:nth-child(3),
+.grid.grid-cols-12 > [class*="col-span"]:nth-child(3) { animation-delay: 0.10s !important; }
+.grid.grid-cols-12 > .col-span-12:nth-child(4),
+.grid.grid-cols-12 > [class*="col-span"]:nth-child(4) { animation-delay: 0.15s !important; }
+.grid.grid-cols-12 > .col-span-12:nth-child(5),
+.grid.grid-cols-12 > [class*="col-span"]:nth-child(5) { animation-delay: 0.20s !important; }
+.grid.grid-cols-12 > .col-span-12:nth-child(6),
+.grid.grid-cols-12 > [class*="col-span"]:nth-child(6) { animation-delay: 0.25s !important; }
+
+/* ─────────────────────────────────────────────
+   GOLD GLOW ACTIVE NAV — Ambient Float
+   ───────────────────────────────────────────── */
+
+/* Active sidebar item — gentle glow pulse */
+.bg-emerald-500\/15 {
+  animation: border-breathe 4s ease-in-out infinite !important;
+}
+
+/* ─────────────────────────────────────────────
+   LOADING STATES — Shimmer Skeleton
+   ───────────────────────────────────────────── */
+
+/* Loading text feels alive */
+@keyframes skeleton-gold {
+  0%   { background-position: -200px 0; }
+  100% { background-position: calc(200px + 100%) 0; }
+}
+
+[class*="animate-pulse"],
+[class*="loading"],
+[class*="skeleton"] {
+  background: linear-gradient(
+    90deg,
+    rgba(201,168,76,0.04) 0px,
+    rgba(201,168,76,0.10) 40px,
+    rgba(201,168,76,0.04) 80px
+  ) !important;
+  background-size: 200px 100% !important;
+  animation: skeleton-gold 1.6s ease-in-out infinite !important;
+}
+
+/* ─────────────────────────────────────────────
+   SMOOTH SCROLL BEHAVIOUR
+   ───────────────────────────────────────────── */
+
+html { scroll-behavior: smooth; }
+
+/* ─────────────────────────────────────────────
+   GOLD SHIMMER ACROSS DIVIDERS
+   ───────────────────────────────────────────── */
+
+@keyframes divider-shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+hr,
+.border-t.border-slate-800,
+.border-t.border-white\/\[0\.07\] {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(201,168,76,0.12) 40%,
+    rgba(232,201,106,0.2) 50%,
+    rgba(201,168,76,0.12) 60%,
+    transparent 100%
+  ) !important;
+  background-size: 200% 1px !important;
+  background-repeat: no-repeat !important;
+  background-position: -200% center !important;
+  height: 1px !important;
+  border: none !important;
+  animation: divider-shimmer 4s ease-in-out 0.5s infinite !important;
+}
+
+/* ─────────────────────────────────────────────
+   FEATHER SCROLL — content flows like silk
+   ───────────────────────────────────────────── */
+
+.overflow-y-auto,
+.overflow-auto,
+main {
+  scroll-behavior: smooth !important;
+}
+
+/* ─────────────────────────────────────────────
+   PAGE TRANSITION — Whole page fade for nav
+   ───────────────────────────────────────────── */
+
+#root {
+  animation: feather-in 0.35s cubic-bezier(0.22, 1, 0.36, 1) both !important;
+}
+
+/* ─────────────────────────────────────────────
+   PERFORMANCE — GPU layers for animated elements
+   ───────────────────────────────────────────── */
+
+.glass-panel,
+.rounded-2xl,
+aside a,
+tbody tr,
+button,
+[class*="rounded-full"][class*="px-2"],
+[class*="rounded-full"][class*="px-3"] {
+  backface-visibility: hidden !important;
+  -webkit-backface-visibility: hidden !important;
+  will-change: transform !important;
+}
+
+/* ─────────────────────────────────────────────
+   REDUCED MOTION — Respect user preferences
+   ───────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
