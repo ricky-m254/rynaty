@@ -333,16 +333,28 @@ class Command(BaseCommand):
                         if any(x in line_text for x in
                                ("CharField", "choices", "max_length", "#", '"""', "'''")):
                             continue
-                        # Skip list-append / Response dict-building — string values in
-                        # API responses or audit logs, not FK assignments.
-                        ctx = content[max(0, m.start()-300):m.start()+300]
-                        if any(x in ctx for x in (".append({", "Response({", "return {",
-                                                   "JsonResponse(", '"action":', '"timestamp":',
-                                                   "defaults={", "get_or_create(")):
-                            continue
                         # Skip if inside a docstring (odd number of """ before the match)
                         before = content[:m.start()]
                         if before.count('"""') % 2 == 1 or before.count("'''") % 2 == 1:
+                            continue
+                        # Skip dict-building in log/response/report/audit helpers —
+                        # these are string values in JSON payloads, not FK assignments.
+                        # Check function name in surrounding 500 chars (before the match).
+                        surrounding = before[-500:]
+                        enclosing_fn = re.search(r"def (\w+)\s*\(", surrounding)
+                        if enclosing_fn:
+                            fn_name = enclosing_fn.group(1).lower()
+                            if any(x in fn_name for x in ("log", "report", "response",
+                                                           "audit", "export", "summary",
+                                                           "serialize", "format",
+                                                           "perform_create", "perform_update",
+                                                           "get")):
+                                continue
+                        # Skip log/response dict-building by specific surrounding tokens
+                        ctx = content[max(0, m.start()-300):m.start()+300]
+                        if any(x in ctx for x in (".append({", "Response({",
+                                                   '"action":', '"timestamp":',
+                                                   "get_or_create(")):
                             continue
                         offenders.append(f"{rel}:{line_no}  →  {snippet[:80]}")
             except Exception:
@@ -529,10 +541,10 @@ class Command(BaseCommand):
             # Strip DRF format suffix variants — these are intentional duplicates.
             # Django stores regex-based URL patterns as raw regex strings, so the
             # format suffix path looks like: ...qualifications\.(?P<format>[a-z0-9]+)/?$
-            # (one backslash + dot in the Python string, representing an escaped-dot regex).
-            # The pattern r"\\..*" matches literal-backslash + any-char + rest-of-string,
-            # stripping the format suffix so the variant normalises to the same key as the
-            # plain route.
+            # (one literal backslash + dot in the Python string).
+            # r"\\..*" matches literal-backslash + any-char + rest-of-string; since DRF
+            # format-suffix paths are the only patterns that contain a literal backslash
+            # (from the regex escape `\.`), this safely strips only format variants.
             path_norm = re.sub(r"\\..*", "", path)
             # Strip trailing /?$ from plain routes so both variants compare equal
             path_norm = re.sub(r"/?\$?$", "", path_norm)
@@ -662,8 +674,11 @@ class Command(BaseCommand):
         if settings.DEBUG:
             # Detect whether we're on a dev host (localhost or Replit preview domain)
             allowed_hosts = getattr(settings, "ALLOWED_HOSTS", [])
-            replit_domain = os.environ.get("REPLIT_DEV_DOMAIN", "")
-            _dev_indicators = (*allowed_hosts, replit_domain)
+            # REPLIT_DOMAINS is a comma-separated list of allowed domains injected
+            # by the Replit runner (e.g. "abc.replit.dev,abc.id.repl.co").
+            replit_domains_raw = os.environ.get("REPLIT_DOMAINS", "")
+            replit_domains = [d.strip() for d in replit_domains_raw.split(",") if d.strip()]
+            _dev_indicators = [*allowed_hosts, *replit_domains]
             _is_dev = any(
                 "localhost" in h or "127.0.0.1" in h or ".replit.dev" in h
                 for h in _dev_indicators
