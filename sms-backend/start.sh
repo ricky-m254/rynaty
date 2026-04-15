@@ -153,6 +153,9 @@ python3.11 manage.py seed_modules --all-tenants 2>&1 | grep -E "^\[|Error|error"
 echo "[sms] Seeding roles and permissions for all tenants..."
 python3.11 manage.py seed_default_permissions --assign-roles --all-tenants 2>&1 | grep -E "^\[|Error|error" || true
 
+echo "[sms] Seeding school profile and academic structure for all tenants..."
+python3.11 manage.py seed_school_data --all-tenants 2>&1 | grep -E "^\[|Error|error" || true
+
 echo "[sms] Seeding curriculum templates for all tenants..."
 python3.11 manage.py seed_curriculum_templates --all-tenants 2>&1 | grep -E "^\[|Seeding|Done|Error" || true
 

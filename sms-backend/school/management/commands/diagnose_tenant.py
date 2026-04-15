@@ -63,8 +63,11 @@ class Command(BaseCommand):
             for i, issue in enumerate(issues, 1):
                 self.stdout.write(f"     {i}. {issue}")
             self.stdout.write("")
-            self.stdout.write("  Run: python manage.py seed_olom_tenant  (if this is the olom tenant)")
-            self.stdout.write("  Or see the diagnose-tenant skill for targeted fixes.")
+            self.stdout.write(f"  Quick fixes:")
+            self.stdout.write(f"    python manage.py seed_school_data --schema_name {schema_name}")
+            self.stdout.write(f"    python manage.py seed_default_permissions --assign-roles --all-tenants")
+            self.stdout.write(f"    python manage.py seed_modules --all-tenants")
+            self.stdout.write(f"  See the diagnose-tenant skill for detailed fixes.")
         else:
             self.stdout.write(f"  {OK} All checks passed — tenant looks healthy.")
 
