@@ -8472,7 +8472,7 @@ class FinanceSettingsView(APIView):
     late_fee_grace_days, late_fee_type, late_fee_value, late_fee_max,
     accepted_payment_methods.
     """
-    permission_classes = [CanManageSystemSettings]
+    permission_classes = [CanManageSystemSettings | IsAccountant]
 
     _FINANCE_FIELDS = [
         'currency', 'tax_percentage', 'receipt_prefix', 'invoice_prefix',

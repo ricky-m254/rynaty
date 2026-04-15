@@ -6,7 +6,9 @@ from .module_focus import is_module_allowed
 from .role_scope import (
     ACADEMIC_SCOPE_PROFILES,
     ADMIN_SCOPE_PROFILES,
+    ALL_ENABLED_MODULES,
     FINANCE_SCOPE_PROFILES,
+    SCOPE_MODULE_BASELINES,
     get_user_role_name,
     get_user_scope_profile,
     user_has_any_scope,
@@ -242,6 +244,14 @@ def request_has_module_access(request, module_keys) -> bool:
     role_name = get_user_role_name(user)
     scope_profile = get_user_scope_profile(user)
     if scope_profile in ADMIN_SCOPE_PROFILES:
+        return True
+
+    # Scope-baseline check: if the user's scope profile grants access to this
+    # module via SCOPE_MODULE_BASELINES, allow without requiring a DB row.
+    scope_modules = SCOPE_MODULE_BASELINES.get(scope_profile)
+    if scope_modules == ALL_ENABLED_MODULES:
+        return True
+    if scope_modules and any(module_key in scope_modules for module_key in normalized_keys):
         return True
 
     allowed_keys = _PORTAL_ROLE_MODULE_KEYS.get(role_name, set())

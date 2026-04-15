@@ -84,6 +84,13 @@ SCOPE_MODULE_BASELINES = {
         "STUDENTS",
         "REPORTING",
         "COMMUNICATION",
+        # Cross-module financial records access
+        "STORE",
+        "DISPENSARY",
+        "LIBRARY",
+        "SPORTS",
+        "CAFETERIA",
+        "ASSETS",
     ),
     SCOPE_ACADEMIC_STAFF: (
         "ACADEMICS",

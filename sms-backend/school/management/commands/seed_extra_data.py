@@ -1117,19 +1117,19 @@ class Command(BaseCommand):
             end_d = start_d + timedelta(days=(i % 10) + 1)
             days = (end_d - start_d).days + 1
             try:
-                _, c = LeaveRequest.objects.get_or_create(
-                    employee=employee,
-                    leave_type=lt,
-                    defaults={
-                        "start_date": start_d,
-                        "end_date": end_d,
-                        "days_requested": days,
-                        "reason": reasons[i % len(reasons)],
-                        "status": ["Approved", "Approved", "Pending", "Rejected"][i % 4],
-                        "approval_stage": "APPROVED",
-                    },
-                )
-                if c:
+                if not LeaveRequest.objects.filter(
+                    employee=employee, leave_type=lt, start_date=start_d
+                ).exists():
+                    LeaveRequest.objects.create(
+                        employee=employee,
+                        leave_type=lt,
+                        start_date=start_d,
+                        end_date=end_d,
+                        days_requested=days,
+                        reason=reasons[i % len(reasons)],
+                        status=["Approved", "Approved", "Pending", "Rejected"][i % 4],
+                        approval_stage="APPROVED",
+                    )
                     lr_created += 1
             except Exception:
                 logger.warning("Caught and logged", exc_info=True)
