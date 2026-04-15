@@ -122,6 +122,119 @@ class LibraryResourceViewSet(LibraryAccessMixin, viewsets.ModelViewSet):
     def search(self, request):
         return Response(self.get_serializer(self.get_queryset()[:100], many=True).data, status=status.HTTP_200_OK)
 
+    @action(detail=False, methods=["post"], url_path="bulk-add")
+    def bulk_add(self, request):
+        """
+        Bulk add multiple library resources (books/periodicals/etc.) in one request.
+
+        Body (JSON):
+        {
+          "resources": [
+            {
+              "title": "Mathematics Grade 8",
+              "authors": "KIE",
+              "resource_type": "Book",          // default "Book"
+              "isbn": "978-9966-123-01-6",
+              "publisher": "KICD",
+              "publication_year": 2024,
+              "edition": "1st",
+              "classification": "510",
+              "subjects": "Mathematics",
+              "category": 3,                    // category ID (optional)
+              "language": "en",
+              "copies": 5,                      // auto-create N physical copies
+              "location": "Section A, Shelf 2", // location for auto-created copies
+              "acquisition_source": "KLB",
+              "price": 850.00                   // per-copy price
+            },
+            ...
+          ]
+        }
+
+        Returns: { created_resources: N, created_copies: M, resources: [...] }
+        """
+        resources_data = request.data.get("resources")
+        if not isinstance(resources_data, list) or not resources_data:
+            return Response(
+                {"error": "Provide a non-empty 'resources' list"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if len(resources_data) > 200:
+            return Response(
+                {"error": "Maximum 200 resources per bulk add request"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        created_resources = []
+        total_copies_created = 0
+        errors = []
+
+        with transaction.atomic():
+            for idx, item in enumerate(resources_data):
+                title = (item.get("title") or "").strip()
+                if not title:
+                    errors.append({"index": idx, "error": "title is required"})
+                    continue
+
+                try:
+                    resource = LibraryResource.objects.create(
+                        title=title,
+                        subtitle=item.get("subtitle", ""),
+                        authors=item.get("authors", ""),
+                        publisher=item.get("publisher", ""),
+                        publication_year=item.get("publication_year") or None,
+                        edition=item.get("edition", ""),
+                        isbn=item.get("isbn", ""),
+                        language=item.get("language", "en"),
+                        classification=item.get("classification", ""),
+                        subjects=item.get("subjects", ""),
+                        description=item.get("description", ""),
+                        digital_url=item.get("digital_url", ""),
+                        resource_type=item.get("resource_type", "Book"),
+                        category_id=item.get("category") or None,
+                        is_active=True,
+                    )
+
+                    # Auto-create physical copies if requested
+                    copy_count = int(item.get("copies") or 0)
+                    if copy_count > 0:
+                        copy_count = min(copy_count, 100)
+                        acc_nums = _next_accession_numbers(copy_count)
+                        location         = item.get("location", "")
+                        condition        = item.get("condition", "Good")
+                        acq_date         = item.get("acquisition_date") or None
+                        acq_source       = item.get("acquisition_source", "")
+                        price            = item.get("price") or None
+
+                        for acc_num in acc_nums:
+                            ResourceCopy.objects.create(
+                                resource=resource,
+                                accession_number=acc_num,
+                                location=location,
+                                condition=condition,
+                                acquisition_date=acq_date,
+                                acquisition_source=acq_source,
+                                price=price,
+                                status="Available",
+                            )
+                        recalc_resource_counts(resource.id)
+                        total_copies_created += copy_count
+
+                    created_resources.append(resource)
+                except Exception as exc:
+                    errors.append({"index": idx, "title": title, "error": str(exc)})
+
+        resp_status = status.HTTP_201_CREATED if created_resources else status.HTTP_400_BAD_REQUEST
+        return Response(
+            {
+                "created_resources": len(created_resources),
+                "created_copies": total_copies_created,
+                "resources": LibraryResourceSerializer(created_resources, many=True).data,
+                "errors": errors,
+            },
+            status=resp_status,
+        )
+
     def perform_destroy(self, instance):
         instance.is_active = False
         instance.save(update_fields=["is_active"])
@@ -135,10 +248,18 @@ class ResourceCopyViewSet(LibraryAccessMixin, viewsets.ModelViewSet):
         qs = super().get_queryset()
         resource = self.request.query_params.get("resource")
         status_value = self.request.query_params.get("status")
+        q = (self.request.query_params.get("q") or "").strip()
         if resource:
             qs = qs.filter(resource_id=resource)
         if status_value:
             qs = qs.filter(status=status_value)
+        if q:
+            qs = qs.filter(
+                Q(accession_number__icontains=q)
+                | Q(barcode__icontains=q)
+                | Q(location__icontains=q)
+                | Q(resource__title__icontains=q)
+            )
         return qs
 
     def perform_create(self, serializer):
@@ -154,6 +275,276 @@ class ResourceCopyViewSet(LibraryAccessMixin, viewsets.ModelViewSet):
         instance.is_active = False
         instance.save(update_fields=["is_active"])
         recalc_resource_counts(resource_id)
+
+    @action(detail=False, methods=["get"], url_path="lookup")
+    def lookup(self, request):
+        """
+        Quick copy lookup for the physical circulation desk.
+        Accepts: ?barcode=XX  or  ?accession=YY
+        Returns copy detail + current borrower if issued.
+        """
+        barcode   = (request.query_params.get("barcode") or "").strip()
+        accession = (request.query_params.get("accession") or "").strip()
+
+        if not barcode and not accession:
+            return Response(
+                {"error": "Provide ?barcode=XX or ?accession=YY"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        qs = ResourceCopy.objects.select_related("resource").filter(is_active=True)
+        if barcode:
+            copy = qs.filter(barcode=barcode).first()
+        else:
+            copy = qs.filter(accession_number=accession).first()
+
+        if not copy:
+            return Response({"error": "Copy not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        data = ResourceCopySerializer(copy).data
+
+        # Attach current borrower if the copy is issued
+        active_txn = (
+            CirculationTransaction.objects.select_related("member", "member__user", "member__student")
+            .filter(copy=copy, transaction_type="Issue", return_date__isnull=True, is_active=True)
+            .first()
+        )
+        if active_txn:
+            member = active_txn.member
+            member_name = ""
+            if member.student:
+                member_name = f"{getattr(member.student, 'full_name', '') or getattr(member.student, 'first_name', '')} {getattr(member.student, 'last_name', '')}".strip()
+            elif member.user:
+                member_name = member.user.get_full_name() or member.user.username
+            data["current_transaction"] = {
+                "id": active_txn.id,
+                "member_id": member.member_id,
+                "member_name": member_name,
+                "issue_date": active_txn.issue_date,
+                "due_date": active_txn.due_date,
+                "overdue": active_txn.due_date < timezone.now().date() if active_txn.due_date else False,
+            }
+        else:
+            data["current_transaction"] = None
+
+        return Response(data, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=["post"], url_path="bulk-add")
+    def bulk_add(self, request):
+        """
+        Bulk add physical copies to an existing resource.
+        Body: {resource, count, location, condition, acquisition_date,
+               acquisition_source, price, barcode_prefix}
+        Creates `count` new copies with auto-generated accession numbers.
+        Returns list of created copies.
+        """
+        resource_id = request.data.get("resource")
+        count = int(request.data.get("count") or 1)
+        if not resource_id:
+            return Response({"error": "resource is required"}, status=status.HTTP_400_BAD_REQUEST)
+        if count < 1 or count > 100:
+            return Response({"error": "count must be between 1 and 100"}, status=status.HTTP_400_BAD_REQUEST)
+
+        resource = LibraryResource.objects.filter(id=resource_id, is_active=True).first()
+        if not resource:
+            return Response({"error": "Resource not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        location          = request.data.get("location", "")
+        condition         = request.data.get("condition", "Good")
+        acquisition_date  = request.data.get("acquisition_date") or None
+        acquisition_source = request.data.get("acquisition_source", "")
+        price             = request.data.get("price") or None
+        notes             = request.data.get("notes", "")
+        barcode_prefix    = (request.data.get("barcode_prefix") or "").strip()
+
+        accession_numbers = _next_accession_numbers(count)
+        created_copies = []
+
+        with transaction.atomic():
+            for i, acc_num in enumerate(accession_numbers):
+                barcode = f"{barcode_prefix}{acc_num}" if barcode_prefix else ""
+                copy = ResourceCopy.objects.create(
+                    resource=resource,
+                    accession_number=acc_num,
+                    barcode=barcode,
+                    location=location,
+                    condition=condition,
+                    acquisition_date=acquisition_date,
+                    acquisition_source=acquisition_source,
+                    price=price,
+                    notes=notes,
+                    status="Available",
+                )
+                created_copies.append(copy)
+            recalc_resource_counts(resource.id)
+
+        return Response(
+            {
+                "created": count,
+                "resource": resource.title,
+                "copies": ResourceCopySerializer(created_copies, many=True).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=["post"], url_path="report-lost")
+    def report_lost(self, request, pk=None):
+        """
+        Report a physical copy as lost.
+        If currently issued, automatically creates a Lost fine for the borrower.
+        Body: {fine_amount (optional — defaults to copy.price), notes}
+        """
+        copy = self.get_object()
+        if copy.status == "Lost":
+            return Response({"error": "Copy is already marked as lost"}, status=status.HTTP_400_BAD_REQUEST)
+
+        notes = (request.data.get("notes") or "").strip()
+        fine_amount = request.data.get("fine_amount")
+
+        with transaction.atomic():
+            # Find active borrow if any
+            active_txn = (
+                CirculationTransaction.objects.select_related("member")
+                .filter(copy=copy, transaction_type="Issue", return_date__isnull=True, is_active=True)
+                .first()
+            )
+
+            old_status = copy.status
+            copy.status = "Lost"
+            copy.notes = f"{copy.notes}\nReported lost by {request.user.username} at {timezone.now().isoformat()}. {notes}".strip()
+            copy.save(update_fields=["status", "notes"])
+            recalc_resource_counts(copy.resource_id)
+
+            fine_record = None
+            if active_txn:
+                # Close the transaction
+                active_txn.return_date = timezone.now()
+                active_txn.transaction_type = "Return"
+                active_txn.condition_at_return = "Lost"
+                active_txn.notes = f"{active_txn.notes or ''}\nBook lost — reported by {request.user.username}".strip()
+                active_txn.returned_to = request.user
+                active_txn.save(update_fields=["return_date", "transaction_type", "condition_at_return", "notes", "returned_to"])
+
+                # Create lost fine
+                amount = Decimal(str(fine_amount)) if fine_amount else (copy.price or Decimal("500.00"))
+                fine_record = FineRecord.objects.create(
+                    member=active_txn.member,
+                    transaction=active_txn,
+                    fine_type="Lost",
+                    amount=amount,
+                    status="Pending",
+                )
+                recompute_member_fines(active_txn.member_id)
+                _create_library_notification(
+                    active_txn.member.user,
+                    "Library fine: lost book",
+                    f"A fine of KES {amount} has been charged for the lost book '{copy.resource.title}' (Acc: {copy.accession_number}).",
+                    created_by=request.user,
+                )
+
+        payload = {
+            "message": f"Copy {copy.accession_number} marked as Lost.",
+            "copy": ResourceCopySerializer(copy).data,
+        }
+        if fine_record:
+            payload["fine"] = {
+                "id": fine_record.id,
+                "member": active_txn.member.member_id,
+                "amount": str(fine_record.amount),
+                "type": "Lost",
+            }
+        return Response(payload, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="report-damaged")
+    def report_damaged(self, request, pk=None):
+        """
+        Report a physical copy as damaged (on return or in-shelf discovery).
+        Optionally creates a Damage fine for the last/current borrower.
+        Body: {condition (Fair|Poor), fine_amount, charge_borrower (bool), notes}
+        """
+        copy = self.get_object()
+        condition   = request.data.get("condition", "Poor")
+        notes       = (request.data.get("notes") or "").strip()
+        fine_amount = request.data.get("fine_amount")
+        charge      = str(request.data.get("charge_borrower", "false")).lower() in ("1", "true")
+
+        with transaction.atomic():
+            copy.condition = condition
+            copy.status = "Damaged"
+            copy.notes = f"{copy.notes}\nDamage reported by {request.user.username} at {timezone.now().isoformat()}. {notes}".strip()
+            copy.save(update_fields=["status", "condition", "notes"])
+            recalc_resource_counts(copy.resource_id)
+
+            fine_record = None
+            if charge and fine_amount:
+                # Find current or most recent borrower
+                txn = (
+                    CirculationTransaction.objects.select_related("member")
+                    .filter(copy=copy, transaction_type__in=["Issue", "Return"], is_active=True)
+                    .order_by("-id")
+                    .first()
+                )
+                if txn:
+                    amount = Decimal(str(fine_amount))
+                    fine_record = FineRecord.objects.create(
+                        member=txn.member,
+                        transaction=txn,
+                        fine_type="Damage",
+                        amount=amount,
+                        status="Pending",
+                    )
+                    recompute_member_fines(txn.member_id)
+                    _create_library_notification(
+                        txn.member.user,
+                        "Library fine: damaged book",
+                        f"A damage fine of KES {amount} has been charged for '{copy.resource.title}' (Acc: {copy.accession_number}).",
+                        created_by=request.user,
+                    )
+
+        payload = {
+            "message": f"Copy {copy.accession_number} marked as Damaged (condition: {condition}).",
+            "copy": ResourceCopySerializer(copy).data,
+        }
+        if fine_record:
+            payload["fine"] = {
+                "id": fine_record.id,
+                "member": txn.member.member_id,
+                "amount": str(fine_record.amount),
+                "type": "Damage",
+            }
+        return Response(payload, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="send-to-repair")
+    def send_to_repair(self, request, pk=None):
+        """Mark a Damaged copy as sent to repair."""
+        copy = self.get_object()
+        if copy.status not in ("Damaged", "Available"):
+            return Response(
+                {"error": f"Cannot send to repair from status '{copy.status}'"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        copy.status = "Repair"
+        copy.notes = f"{copy.notes}\nSent for repair by {request.user.username} at {timezone.now().isoformat()}".strip()
+        copy.save(update_fields=["status", "notes"])
+        recalc_resource_counts(copy.resource_id)
+        return Response(ResourceCopySerializer(copy).data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="return-from-repair")
+    def return_from_repair(self, request, pk=None):
+        """Mark a copy in Repair as back and available."""
+        copy = self.get_object()
+        if copy.status != "Repair":
+            return Response(
+                {"error": "Copy is not in repair status"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        condition = request.data.get("condition", "Good")
+        copy.status = "Available"
+        copy.condition = condition
+        copy.notes = f"{copy.notes}\nReturned from repair by {request.user.username} at {timezone.now().isoformat()}".strip()
+        copy.save(update_fields=["status", "condition", "notes"])
+        recalc_resource_counts(copy.resource_id)
+        return Response(ResourceCopySerializer(copy).data, status=status.HTTP_200_OK)
 
 
 class LibraryMemberViewSet(LibraryAccessMixin, viewsets.ModelViewSet):
@@ -632,14 +1023,61 @@ def _pick_rule(member: LibraryMember, resource: LibraryResource) -> CirculationR
     ).first()
 
 
+def _next_accession_numbers(count: int) -> list:
+    """
+    Generate N unique accession numbers for new physical copies.
+    Format: ACC-{YYYY}-{seq:05d}
+    Thread-safe: checks the DB after each candidate.
+    """
+    from django.utils import timezone as _tz
+    year = _tz.now().year
+    base = ResourceCopy.objects.count()
+    existing = set(ResourceCopy.objects.values_list("accession_number", flat=True))
+    results = []
+    seq = base + 1
+    while len(results) < count:
+        candidate = f"ACC-{year}-{seq:05d}"
+        if candidate not in existing:
+            results.append(candidate)
+            existing.add(candidate)
+        seq += 1
+    return results
+
+
+def _resolve_copy(data: dict):
+    """
+    Resolve a physical copy from request data.
+    Accepts: copy (ID), barcode, or accession_number (in that priority).
+    Returns ResourceCopy or None.
+    """
+    copy_id     = data.get("copy")
+    barcode     = (data.get("barcode") or "").strip()
+    accession   = (data.get("accession_number") or "").strip()
+
+    qs = ResourceCopy.objects.select_related("resource").filter(is_active=True)
+    if copy_id:
+        return qs.filter(id=copy_id).first()
+    if barcode:
+        return qs.filter(barcode=barcode).first()
+    if accession:
+        return qs.filter(accession_number=accession).first()
+    return None
+
+
 class IssueResourceView(LibraryAccessMixin, APIView):
     def post(self, request):
         member_id = request.data.get("member")
-        copy_id = request.data.get("copy")
-        if not member_id or not copy_id:
-            return Response({"error": "member and copy are required"}, status=status.HTTP_400_BAD_REQUEST)
+        # Support lookup by copy ID, barcode, or accession_number
+        copy_id     = request.data.get("copy")
+        barcode     = request.data.get("barcode")
+        accession   = request.data.get("accession_number")
+        if not member_id or not (copy_id or barcode or accession):
+            return Response(
+                {"error": "member and one of: copy (ID), barcode, or accession_number are required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         member = LibraryMember.objects.filter(id=member_id, is_active=True).first()
-        copy = ResourceCopy.objects.select_related("resource").filter(id=copy_id, is_active=True).first()
+        copy = _resolve_copy(request.data)
         if not member or not copy:
             return Response({"error": "member/copy not found"}, status=status.HTTP_404_NOT_FOUND)
         if member.status != "Active":
@@ -677,13 +1115,29 @@ class IssueResourceView(LibraryAccessMixin, APIView):
 class ReturnResourceView(LibraryAccessMixin, APIView):
     def post(self, request):
         transaction_id = request.data.get("transaction")
-        if not transaction_id:
-            return Response({"error": "transaction is required"}, status=status.HTTP_400_BAD_REQUEST)
-        row = (
-            CirculationTransaction.objects.select_related("copy", "member", "copy__resource")
-            .filter(id=transaction_id, transaction_type="Issue", return_date__isnull=True, is_active=True)
-            .first()
+        # Also support lookup by copy barcode or accession_number for physical desk
+        barcode     = (request.data.get("barcode") or "").strip()
+        accession   = (request.data.get("accession_number") or "").strip()
+
+        qs = (
+            CirculationTransaction.objects
+            .select_related("copy", "member", "copy__resource")
+            .filter(transaction_type="Issue", return_date__isnull=True, is_active=True)
         )
+
+        if transaction_id:
+            row = qs.filter(id=transaction_id).first()
+        elif barcode:
+            copy = ResourceCopy.objects.filter(barcode=barcode, is_active=True).first()
+            row = qs.filter(copy=copy).first() if copy else None
+        elif accession:
+            copy = ResourceCopy.objects.filter(accession_number=accession, is_active=True).first()
+            row = qs.filter(copy=copy).first() if copy else None
+        else:
+            return Response(
+                {"error": "one of: transaction (ID), barcode, or accession_number is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         if not row:
             return Response({"error": "active issue transaction not found"}, status=status.HTTP_404_NOT_FOUND)
         now = timezone.now()
@@ -807,6 +1261,93 @@ class CirculationOverdueView(LibraryAccessMixin, APIView):
             is_active=True,
         ).order_by("due_date", "-id")
         return Response(CirculationTransactionSerializer(rows, many=True).data, status=status.HTTP_200_OK)
+
+
+class CirculationBulkRemindView(LibraryAccessMixin, APIView):
+    """
+    POST /api/library/circulation/overdue/remind-all/
+    Send overdue reminders to ALL current overdue borrowers in one action.
+    Returns a summary of successes and failures.
+    """
+
+    def post(self, request):
+        today = timezone.now().date()
+        overdue_rows = (
+            CirculationTransaction.objects
+            .select_related("copy", "copy__resource", "member", "member__user", "member__student")
+            .filter(
+                transaction_type="Issue",
+                return_date__isnull=True,
+                due_date__lt=today,
+                is_active=True,
+            )
+            .order_by("due_date", "id")
+        )
+
+        results = {"sent": 0, "skipped": 0, "failed": 0, "details": []}
+
+        for row in overdue_rows:
+            member_user    = row.member.user
+            member_student = getattr(row.member, "student", None)
+            recipient_email = (
+                getattr(member_user, "email", "")
+                or getattr(member_student, "email", "")
+                or ""
+            ).strip()
+            recipient_phone = (getattr(member_student, "phone", "") or "").strip()
+            overdue_days = (today - row.due_date).days
+            title   = "Library overdue reminder"
+            message = (
+                f"'{row.copy.resource.title}' was due on {row.due_date.isoformat()} "
+                f"and is now {overdue_days} day(s) overdue. "
+                f"Please return it immediately to avoid increased fines."
+            )
+
+            channels: list = []
+            if member_user:
+                try:
+                    _create_library_notification(member_user, title, message, created_by=request.user)
+                    channels.append("notification")
+                except Exception:
+                    pass
+            if recipient_email:
+                try:
+                    email_result = send_email_placeholder(subject=title.title(), body=message, recipients=[recipient_email])
+                    if email_result.status == "Sent":
+                        channels.append("email")
+                except Exception:
+                    pass
+            if recipient_phone:
+                try:
+                    sms_result = send_sms_placeholder(recipient_phone, message, channel="SMS")
+                    if sms_result.status == "Sent":
+                        channels.append("sms")
+                except Exception:
+                    pass
+
+            if channels:
+                # Append reminder note to transaction
+                note = f"Bulk reminder sent by {request.user.username} at {timezone.now().isoformat()} via {', '.join(channels)}"
+                row.notes = f"{(row.notes or '').strip()}\n{note}".strip()
+                try:
+                    row.save(update_fields=["notes"])
+                except Exception:
+                    pass
+                results["sent"] += 1
+                results["details"].append({
+                    "transaction": row.id,
+                    "member": row.member.member_id,
+                    "book": row.copy.resource.title,
+                    "overdue_days": overdue_days,
+                    "channels": channels,
+                })
+            elif not member_user and not recipient_email and not recipient_phone:
+                results["skipped"] += 1
+            else:
+                results["failed"] += 1
+
+        results["total_overdue"] = len(overdue_rows)
+        return Response(results, status=status.HTTP_200_OK)
 
 
 class CirculationReminderView(LibraryAccessMixin, APIView):

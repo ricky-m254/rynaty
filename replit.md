@@ -112,6 +112,23 @@ academics, admissions, alumni, assets, cafeteria, clockin, communication, curric
 - All structural seeds run `--all-tenants` unconditionally on every startup: `seed_modules`, `seed_default_permissions --assign-roles`, `seed_curriculum_templates`, `seed_digital_resources`.
 - New tenants created via the platform API are immediately bootstrapped by `_bootstrap_new_tenant_schema()` in `platform_views.py` (modules, RBAC, curriculum templates, KICD/Harvard e-learning).
 
+## Library Enhancements (completed)
+**Bulk Add Books**: `POST /api/library/resources/bulk-add/` — Create up to 200 books/resources in one request with optional auto-generated copies. Each entry specifies title, authors, ISBN, publisher, resource_type, and `copies` count.
+
+**Bulk Add Copies**: `POST /api/library/copies/bulk-add/` — Add multiple physical copies to an existing resource. Auto-generates unique accession numbers (format: `ACC-{YYYY}-{seq:05d}`).
+
+**Copy Lookup for Desk**: `GET /api/library/copies/lookup/?accession=YY` or `?barcode=XX` — Physical circulation desk lookup: returns copy + current borrower info.
+
+**Report Lost**: `POST /api/library/copies/{id}/report-lost/` — Marks copy as Lost, closes open borrow transaction, creates Lost fine for borrower.
+
+**Report Damaged**: `POST /api/library/copies/{id}/report-damaged/` — Marks copy as Damaged, optionally creates Damage fine for borrower.
+
+**Send/Return from Repair**: `POST /api/library/copies/{id}/send-to-repair/` and `return-from-repair/` — Repair lifecycle.
+
+**Bulk Overdue Reminders**: `POST /api/library/circulation/overdue/remind-all/` — Send reminders to all overdue borrowers at once (notification + email + SMS).
+
+**Barcode/Accession Support in Issue/Return**: `circulation/issue/` now accepts `barcode` or `accession_number` in addition to copy ID. `circulation/return/` accepts `barcode` or `accession_number` in addition to transaction ID.
+
 ## Super Admin Platform Layer (T006 — completed)
 Files: `clients/platform_views.py` (3400+ lines), `clients/platform_urls.py`, `clients/models.py`, `clients/platform_email.py`, `clients/exceptions.py`, `clients/management/commands/check_trial_expiry.py`
 

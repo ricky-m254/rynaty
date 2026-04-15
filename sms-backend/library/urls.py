@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 
 from .views import (
     AcquisitionRequestViewSet,
+    CirculationBulkRemindView,
     CirculationMemberBorrowingsView,
     CirculationOverdueView,
     CirculationReminderView,
@@ -43,6 +44,7 @@ urlpatterns = [
     path("circulation/renew/", RenewResourceView.as_view(), name="library_renew"),
     path("circulation/transactions/", CirculationTransactionsView.as_view(), name="library_transactions"),
     path("circulation/overdue/", CirculationOverdueView.as_view(), name="library_overdue"),
+    path("circulation/overdue/remind-all/", CirculationBulkRemindView.as_view(), name="library_bulk_remind"),
     path("circulation/<int:transaction_id>/send_reminder/", CirculationReminderView.as_view(), name="library_send_reminder"),
     path("circulation/member/<int:member_id>/", CirculationMemberBorrowingsView.as_view(), name="library_member_borrowings"),
     path("circulation/rules/", CirculationRuleView.as_view(), name="library_rules"),
