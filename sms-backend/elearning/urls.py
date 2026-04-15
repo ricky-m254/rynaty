@@ -1,12 +1,12 @@
 from django.urls import path, include
-from rest_framework.routers import DefaultRouter
+from rest_framework.routers import SimpleRouter
 from .views import (
     CourseViewSet, CourseMaterialViewSet, OnlineQuizViewSet,
     QuizQuestionViewSet, QuizAttemptViewSet, VirtualSessionViewSet,
     ELearningDashboardView
 )
 
-router = DefaultRouter()
+router = SimpleRouter()
 router.register('courses', CourseViewSet)
 router.register('materials', CourseMaterialViewSet)
 router.register('quizzes', OnlineQuizViewSet)

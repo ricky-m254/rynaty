@@ -1,5 +1,5 @@
 from django.urls import path
-from rest_framework.routers import DefaultRouter
+from rest_framework.routers import SimpleRouter
 
 from finance.presentation.views import (
     BulkFeeAssignByClassView,
@@ -61,7 +61,7 @@ from finance.presentation.viewsets import (
 )
 
 
-router = DefaultRouter()
+router = SimpleRouter()
 router.register("fees", FeeStructureViewSet, basename="feestructure")
 router.register("fee-assignments", FeeAssignmentViewSet, basename="feeassignment")
 router.register("optional-charges", OptionalChargeViewSet, basename="optional-charge")

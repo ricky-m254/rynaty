@@ -1,7 +1,7 @@
 from django.urls import include, path
 from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse
-from rest_framework.routers import DefaultRouter
+from rest_framework.routers import SimpleRouter
 
 from clients.platform_views import (
     PlatformBackupJobViewSet,
@@ -28,7 +28,7 @@ from clients.platform_views import (
     PlatformTenantViewSet,
 )
 
-router = DefaultRouter()
+router = SimpleRouter()
 router.register(r"tenants", PlatformTenantViewSet, basename="platform-tenant")
 router.register(r"plans", PlatformSubscriptionPlanViewSet, basename="platform-plan")
 router.register(r"subscriptions", PlatformTenantSubscriptionViewSet, basename="platform-subscription")

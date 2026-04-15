@@ -1,12 +1,12 @@
 from django.urls import path, include
-from rest_framework.routers import DefaultRouter
+from rest_framework.routers import SimpleRouter
 from .views import (
     VehicleViewSet, RouteViewSet, RouteStopViewSet,
     StudentTransportViewSet, TransportIncidentViewSet,
     TransportDashboardView, TransportSeedView,
 )
 
-router = DefaultRouter()
+router = SimpleRouter()
 router.register('vehicles', VehicleViewSet)
 router.register('routes', RouteViewSet)
 router.register('stops', RouteStopViewSet)

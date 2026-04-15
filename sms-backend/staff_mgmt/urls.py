@@ -1,5 +1,5 @@
 from django.urls import path, include
-from rest_framework.routers import DefaultRouter
+from rest_framework.routers import SimpleRouter
 
 from .views import (
     StaffMemberViewSet,
@@ -23,7 +23,7 @@ from .views import (
     StaffAttendanceReportView,
 )
 
-router = DefaultRouter()
+router = SimpleRouter()
 router.register(r"qualifications", StaffQualificationViewSet, basename="staff_qualification")
 router.register(r"emergency-contacts", StaffEmergencyContactViewSet, basename="staff_emergency_contact")
 router.register(r"departments", StaffDepartmentViewSet, basename="staff_department")

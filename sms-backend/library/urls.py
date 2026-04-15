@@ -1,5 +1,5 @@
 from django.urls import include, path
-from rest_framework.routers import DefaultRouter
+from rest_framework.routers import SimpleRouter
 
 from .views import (
     AcquisitionRequestViewSet,
@@ -27,7 +27,7 @@ from .views import (
     ReturnResourceView,
 )
 
-router = DefaultRouter()
+router = SimpleRouter()
 router.register(r"resources", LibraryResourceViewSet, basename="library_resources")
 router.register(r"copies", ResourceCopyViewSet, basename="library_copies")
 router.register(r"categories", LibraryCategoryViewSet, basename="library_categories")

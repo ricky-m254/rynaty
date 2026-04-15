@@ -1,12 +1,12 @@
 from django.urls import path, include
-from rest_framework.routers import DefaultRouter
+from rest_framework.routers import SimpleRouter
 from .views import (
     ExamSessionViewSet, ExamPaperViewSet, ExamSeatAllocationViewSet,
     ExamResultViewSet, ExamGradeBoundaryViewSet, ExamResultAnalyticsView,
     ExamPaperUploadViewSet, ExamSetterAssignmentViewSet,
 )
 
-router = DefaultRouter()
+router = SimpleRouter()
 router.register('sessions', ExamSessionViewSet)
 router.register('papers', ExamPaperViewSet)
 router.register('seat-allocations', ExamSeatAllocationViewSet)

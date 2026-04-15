@@ -1,8 +1,8 @@
 from django.urls import path, include
-from rest_framework.routers import DefaultRouter
+from rest_framework.routers import SimpleRouter
 from .views import MealPlanViewSet, WeeklyMenuViewSet, StudentMealEnrollmentViewSet, MealTransactionViewSet, CafeteriaWalletTransactionViewSet, CafeteriaDashboardView
 
-router = DefaultRouter()
+router = SimpleRouter()
 router.register('meal-plans', MealPlanViewSet)
 router.register('menus', WeeklyMenuViewSet)
 router.register('enrollments', StudentMealEnrollmentViewSet)

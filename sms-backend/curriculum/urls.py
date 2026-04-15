@@ -1,8 +1,8 @@
 from django.urls import path, include
-from rest_framework.routers import DefaultRouter
+from rest_framework.routers import SimpleRouter
 from .views import SchemeOfWorkViewSet, SchemeTopicViewSet, LessonPlanViewSet, LearningResourceViewSet, CurriculumDashboardView
 
-router = DefaultRouter()
+router = SimpleRouter()
 router.register('schemes', SchemeOfWorkViewSet)
 router.register('topics', SchemeTopicViewSet)
 router.register('lessons', LessonPlanViewSet)

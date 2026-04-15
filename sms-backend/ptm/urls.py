@@ -1,5 +1,5 @@
 from django.urls import path, include
-from rest_framework.routers import DefaultRouter
+from rest_framework.routers import SimpleRouter
 from .views import (
     PTMSessionViewSet,
     PTMSlotViewSet,
@@ -8,7 +8,7 @@ from .views import (
     MyPTMSlotsView,
 )
 
-router = DefaultRouter()
+router = SimpleRouter()
 router.register('sessions', PTMSessionViewSet)
 router.register('slots', PTMSlotViewSet)
 router.register('bookings', PTMBookingViewSet)

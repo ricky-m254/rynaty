@@ -1,5 +1,5 @@
 from django.urls import path, include
-from rest_framework.routers import DefaultRouter
+from rest_framework.routers import SimpleRouter
 from .views import (
     TimetableSlotViewSet,
     StaffDutySlotViewSet,
@@ -10,7 +10,7 @@ from .views import (
     TodayCoverageView
 )
 
-router = DefaultRouter()
+router = SimpleRouter()
 router.register(r'slots', TimetableSlotViewSet)
 router.register(r'duty-slots', StaffDutySlotViewSet)
 router.register(r'change-requests', TimetableChangeRequestViewSet)

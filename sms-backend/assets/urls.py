@@ -1,5 +1,5 @@
 from django.urls import path, include
-from rest_framework.routers import DefaultRouter
+from rest_framework.routers import SimpleRouter
 from .views import (
     AssetCategoryViewSet,
     AssetViewSet,
@@ -13,7 +13,7 @@ from .views import (
     AssetsDashboardView,
 )
 
-router = DefaultRouter()
+router = SimpleRouter()
 router.register(r'categories', AssetCategoryViewSet, basename='asset-category')
 router.register(r'assignments', AssetAssignmentViewSet, basename='asset-assignment')
 router.register(r'maintenance', AssetMaintenanceRecordViewSet, basename='asset-maintenance')

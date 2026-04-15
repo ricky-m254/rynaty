@@ -1,5 +1,5 @@
 from django.urls import path, include
-from rest_framework.routers import DefaultRouter
+from rest_framework.routers import SimpleRouter
 from .views import (
     BiometricDeviceViewSet,
     SchoolShiftViewSet,
@@ -20,14 +20,14 @@ from .views import (
     AttendanceCaptureLogViewSet,
 )
 
-router = DefaultRouter()
+router = SimpleRouter()
 router.register(r'devices',       BiometricDeviceViewSet)
 router.register(r'registry',      PersonRegistryViewSet)
 router.register(r'shifts',        SchoolShiftViewSet)
 router.register(r'events',        ClockEventViewSet)
 router.register(r'capture-logs',  AttendanceCaptureLogViewSet, basename='capture-log')
 
-smartpss_router = DefaultRouter()
+smartpss_router = SimpleRouter()
 smartpss_router.register(r'sources', SmartPSSSourceViewSet, basename='smartpss-source')
 smartpss_router.register(r'logs',    SmartPSSImportLogViewSet, basename='smartpss-log')
 

@@ -1,5 +1,5 @@
 from django.urls import include, path
-from rest_framework.routers import DefaultRouter
+from rest_framework.routers import SimpleRouter
 
 from .views import (
     AcademicYearViewSet,
@@ -34,7 +34,7 @@ from .views import (
     ClassesRefView,
 )
 
-router = DefaultRouter()
+router = SimpleRouter()
 router.register("years", AcademicYearViewSet, basename="academics_years")
 router.register("terms", TermViewSet, basename="academics_terms")
 router.register("grade-levels", GradeLevelViewSet, basename="academics_grade_levels")

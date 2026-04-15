@@ -1,8 +1,8 @@
 from django.urls import path, include
-from rest_framework.routers import DefaultRouter
+from rest_framework.routers import SimpleRouter
 from .views import MaintenanceCategoryViewSet, MaintenanceRequestViewSet, MaintenanceChecklistViewSet, MaintenanceDashboardView
 
-router = DefaultRouter()
+router = SimpleRouter()
 router.register('categories', MaintenanceCategoryViewSet)
 router.register('requests', MaintenanceRequestViewSet)
 router.register('checklist', MaintenanceChecklistViewSet)

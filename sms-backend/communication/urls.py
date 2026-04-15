@@ -1,5 +1,5 @@
 from django.urls import include, path
-from rest_framework.routers import DefaultRouter
+from rest_framework.routers import SimpleRouter
 
 from .views import (
     AnnouncementViewSet,
@@ -29,7 +29,7 @@ from .views import (
     SmsWebhookView,
 )
 
-router = DefaultRouter()
+router = SimpleRouter()
 router.register(r"conversations", ConversationViewSet, basename="communication_conversations")
 router.register(r"legacy-messages", LegacyMessageViewSet, basename="communication_legacy_messages")
 router.register(r"messages", CommunicationMessageViewSet, basename="communication_messages")

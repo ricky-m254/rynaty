@@ -1,5 +1,5 @@
 from django.urls import path, include
-from rest_framework.routers import DefaultRouter
+from rest_framework.routers import SimpleRouter
 from .views import (
     AlumniProfileViewSet,
     AlumniEventViewSet,
@@ -9,7 +9,7 @@ from .views import (
     AlumniDashboardView,
 )
 
-router = DefaultRouter()
+router = SimpleRouter()
 router.register('profiles', AlumniProfileViewSet)
 router.register('events', AlumniEventViewSet)
 router.register('attendees', AlumniEventAttendeeViewSet)

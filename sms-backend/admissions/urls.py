@@ -1,5 +1,5 @@
 from django.urls import include, path
-from rest_framework.routers import DefaultRouter
+from rest_framework.routers import SimpleRouter
 
 from .views import (
     AdmissionApplicationProfileViewSet,
@@ -17,7 +17,7 @@ from .views import (
     ShortlistedApplicationsView,
 )
 
-router = DefaultRouter()
+router = SimpleRouter()
 router.register(r"applications", AdmissionApplicationViewSet, basename="admissions_applications")
 router.register(r"inquiries", AdmissionInquiryViewSet, basename="admissions_inquiries")
 router.register(r"application-profiles", AdmissionApplicationProfileViewSet, basename="admissions_application_profiles")

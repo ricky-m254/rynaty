@@ -1,5 +1,5 @@
 ﻿from django.urls import path, include
-from rest_framework.routers import DefaultRouter
+from rest_framework.routers import SimpleRouter
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework_simplejwt.views import TokenRefreshView
@@ -151,7 +151,7 @@ from .views import (
 # ==========================================
 # URL ROUTER (TENANT DATA)
 # ==========================================
-router = DefaultRouter()
+router = SimpleRouter()
 
 # Shared / cross-module
 router.register(r'school/departments', DepartmentViewSet, basename='department')
