@@ -181,13 +181,17 @@ class Command(BaseCommand):
 
     def _repair_missing_user_profiles(self, tag):
         """
-        Detect ALL active users with no UserProfile and repair those whose role
-        can be inferred from their username prefix or account flags:
+        Detect ALL active users with no UserProfile and create the missing rows
+        using a deterministic role-inference chain:
 
-          - stm* / STM* → STUDENT
-          - ADM* / adm* → STUDENT  (admission-number-style student usernames)
-          - is_superuser=True → TENANT_SUPER_ADMIN
-          - All others → logged as warnings for manual review
+          1. stm* / STM* prefix          → STUDENT
+          2. ADM* / adm* prefix           → STUDENT (admission-number-style usernames)
+          3. is_superuser=True            → TENANT_SUPER_ADMIN
+          4. All others (staff fallback)  → ADMIN
+
+        Every active user without a profile will receive one. Callers that seed
+        specific users with dedicated roles afterwards will not be affected because
+        get_or_create is used (existing rows are never overwritten).
 
         Fully idempotent — safe to run multiple times.
         """
@@ -206,30 +210,37 @@ class Command(BaseCommand):
             self.stdout.write(f"{tag}   UserProfile repair: all users have profiles")
             return
 
-        student_role = Role.objects.filter(name="STUDENT").first()
-        super_admin_role = Role.objects.filter(name="TENANT_SUPER_ADMIN").first()
+        role_cache = {r.name: r for r in Role.objects.all()}
+        student_role = role_cache.get("STUDENT")
+        super_admin_role = role_cache.get("TENANT_SUPER_ADMIN")
+        admin_role = role_cache.get("ADMIN")
 
         repaired = 0
-        skipped = []
         for user in users_without_profile:
             uname_lower = user.username.lower()
             if (uname_lower.startswith("stm") or uname_lower.startswith("adm")) and student_role:
-                UserProfile.objects.get_or_create(user=user, defaults={"role": student_role})
-                repaired += 1
+                assigned_role = student_role
             elif user.is_superuser and super_admin_role:
-                UserProfile.objects.get_or_create(user=user, defaults={"role": super_admin_role})
-                repaired += 1
+                assigned_role = super_admin_role
             else:
-                skipped.append(user.username)
+                assigned_role = admin_role
+
+            if assigned_role:
+                _, created = UserProfile.objects.get_or_create(
+                    user=user, defaults={"role": assigned_role}
+                )
+                if created:
+                    repaired += 1
+            else:
+                self.stdout.write(
+                    f"{tag}   UserProfile repair WARNING: no roles found — "
+                    "run seed_roles first."
+                )
+                break
 
         if repaired:
             self.stdout.write(
                 f"{tag}   UserProfile repair: {repaired} profile(s) auto-created"
             )
-        if skipped:
-            self.stdout.write(
-                f"{tag}   UserProfile repair WARNING: {len(skipped)} user(s) need manual "
-                "role assignment — "
-                + ", ".join(skipped[:10])
-                + ("..." if len(skipped) > 10 else "")
-            )
+        else:
+            self.stdout.write(f"{tag}   UserProfile repair: all users have profiles")
