@@ -4879,9 +4879,57 @@ class SmartCampusTokenObtainPairSerializer(TokenObtainPairSerializer):
             'force_password_change': False,
         }
 
+    # Roles that belong only to portal tabs, not the staff tab.
+    _PARENT_PORTAL_ROLES = {"PARENT"}
+    _STUDENT_PORTAL_ROLES = {"STUDENT"}
+    _PORTAL_ONLY_ROLES = _PARENT_PORTAL_ROLES | _STUDENT_PORTAL_ROLES | {"ALUMNI"}
+
+    def _validate_portal_access(self, portal_type: str) -> None:
+        """
+        Enforce that the user's role matches the login tab they used.
+        - staff tab  : PARENT, STUDENT and ALUMNI accounts are rejected.
+        - parent tab : only PARENT role is allowed.
+        - student tab: only STUDENT role is allowed.
+        Raises ValidationError with a clear, user-friendly message on mismatch.
+        """
+        try:
+            role_name = (
+                self.user.userprofile.role.name
+                if hasattr(self.user, 'userprofile') and self.user.userprofile and self.user.userprofile.role
+                else None
+            )
+        except Exception:
+            role_name = None
+
+        portal = (portal_type or 'staff').strip().lower()
+
+        if portal == 'parent':
+            if role_name not in self._PARENT_PORTAL_ROLES:
+                raise ValidationError({
+                    'detail': 'This tab is for Parent / Guardian accounts only. '
+                              'Please use the Staff / Admin tab to log in.',
+                    'portal_mismatch': True,
+                })
+        elif portal == 'student':
+            if role_name not in self._STUDENT_PORTAL_ROLES:
+                raise ValidationError({
+                    'detail': 'This tab is for Student accounts only. '
+                              'Please use the Staff / Admin tab to log in.',
+                    'portal_mismatch': True,
+                })
+        else:
+            # staff tab — block portal-only accounts
+            if role_name in self._PORTAL_ONLY_ROLES:
+                tab_label = 'Parent / Guardian' if role_name in self._PARENT_PORTAL_ROLES else 'Student'
+                raise ValidationError({
+                    'detail': f'Please use the {tab_label} tab to log in.',
+                    'portal_mismatch': True,
+                })
+
     def validate(self, attrs):
         username = _normalize_login_identifier(attrs.get(self.username_field, ''))
         password = attrs.get('password', '')
+        portal_type = (self.initial_data.get('portal_type') or 'staff').strip().lower()
         attrs[self.username_field] = username
 
         from django_tenants.utils import schema_context, get_public_schema_name as _public_schema
@@ -4916,7 +4964,10 @@ class SmartCampusTokenObtainPairSerializer(TokenObtainPairSerializer):
         # Stage 1: normal Django username auth
         try:
             data = super().validate(attrs)
+            self._validate_portal_access(portal_type)
             return self._enrich(data, login_method='username')
+        except ValidationError:
+            raise
         except Exception:
             logger.warning("Caught and logged", exc_info=True)
 
@@ -4931,6 +4982,7 @@ class SmartCampusTokenObtainPairSerializer(TokenObtainPairSerializer):
             if user is not None:
                 attrs[self.username_field] = resolved_user.username
                 data = super().validate(attrs)
+                self._validate_portal_access(portal_type)
                 return self._enrich(data, login_method=login_method)
 
         # Stage 3: student-only UserProfile admission bridge
@@ -4953,6 +5005,7 @@ class SmartCampusTokenObtainPairSerializer(TokenObtainPairSerializer):
             if user is not None:
                 attrs[self.username_field] = student_profile.user.username
                 data = super().validate(attrs)
+                self._validate_portal_access(portal_type)
                 return self._enrich(data, login_method='student_admission_number_bridge')
 
         # Stage 4: Student admission number to username fallback
@@ -4967,6 +5020,7 @@ class SmartCampusTokenObtainPairSerializer(TokenObtainPairSerializer):
             if student_user is not None:
                 attrs[self.username_field] = student_user.username
                 data = super().validate(attrs)
+                self._validate_portal_access(portal_type)
                 return self._enrich(data, login_method='student_username_admission_number')
         except Student.DoesNotExist:
             pass
