@@ -11,6 +11,11 @@ from django.contrib.auth.models import User as DjangoUser
 from domains.auth.domain.entities import UserAccount, Role, Permission
 from domains.auth.domain.interfaces.repositories import UserRepository
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 
 def _permission_from_grant(grant) -> Permission:
     perm = grant.permission
@@ -42,7 +47,7 @@ def _user_from_orm(django_user: DjangoUser) -> UserAccount:
         if profile.role:
             role_entity = _role_from_orm(profile.role)
     except Exception:
-        pass
+        logger.warning("Caught and logged", exc_info=True)
 
     return UserAccount(
         id=django_user.pk,
@@ -99,7 +104,7 @@ class DjangoUserRepository(UserRepository):
                 ).select_related('permission')
                 role_perm_names = {g.permission.name for g in grants}
         except Exception:
-            pass
+            logger.warning("Caught and logged", exc_info=True)
 
         overrides = UserPermissionOverride.objects.filter(user_id=user_id).select_related('permission')
         explicitly_allowed = {o.permission.name for o in overrides if o.is_allowed}

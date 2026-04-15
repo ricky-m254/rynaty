@@ -51,6 +51,11 @@ from .smartpss_client import (
 )
 from school.permissions import HasModuleAccess
 from django.db.models import Q
+
+import logging
+
+logger = logging.getLogger(__name__)
+
 # ── DBMA cross-domain imports removed from module level ──────────────────────
 # school.models, hr.models, communication.models are accessed ONLY through
 # infrastructure layer services:
@@ -119,12 +124,12 @@ def _dahua_sadp_discover(sadp_timeout: float = 3.0) -> list:
             except socket.timeout:
                 break
     except Exception:
-        pass
+        logger.warning("Caught and logged", exc_info=True)
     finally:
         try:
             sock.close()
         except Exception:
-            pass
+            logger.warning("Caught and logged", exc_info=True)
     return results
 
 
@@ -161,7 +166,7 @@ def _dahua_http_identify(ip: str, timeout: float = 1.5) -> dict:
                 if m:
                     info[key] = m.group(1).strip()
         except Exception:
-            pass
+            logger.warning("Caught and logged", exc_info=True)
     return info
 
 def _notify_admins(title, message, priority='Important', action_url=''):
@@ -188,7 +193,7 @@ def _notify_admins(title, message, priority='Important', action_url=''):
                 delivery_status='Sent',
             )
     except Exception:
-        pass
+        logger.warning("Caught and logged", exc_info=True)
 
 class ClockInModuleMixin:
     permission_classes = [permissions.IsAuthenticated, HasModuleAccess]
@@ -412,7 +417,7 @@ class DahuaEventView(APIView):
                     _, _, pw = decoded.partition(':')
                     key = pw
                 except Exception:
-                    pass
+                    logger.warning("Caught and logged", exc_info=True)
 
         if key:
             device = BiometricDevice.objects.filter(api_key=key, is_active=True).first()
@@ -481,7 +486,7 @@ class DahuaEventView(APIView):
                 if result:
                     processed.append(result)
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
         return Response({
             'ok': True,
@@ -806,11 +811,11 @@ class DeviceDiscoverView(APIView):
                     try:
                         raw_hits.extend(future.result())
                     except Exception:
-                        pass
+                        logger.warning("Caught and logged", exc_info=True)
         except concurrent.futures.TimeoutError:
             pass  # Return whatever was found before timeout
         except Exception:
-            pass
+            logger.warning("Caught and logged", exc_info=True)
 
         # ── Back in the main thread: merge + DB check ───────────────────────
         # Deduplicate by device_id (SADP results win over TCP-only)

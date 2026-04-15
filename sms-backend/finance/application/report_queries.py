@@ -18,6 +18,11 @@ from school.models import (
 )
 from school.services import FinanceService
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 
 def _empty_aging_buckets() -> dict[str, dict[str, float | int]]:
     return {
@@ -390,7 +395,7 @@ def get_budget_variance_payload(*, academic_year: str | None, term: str | None) 
                 expense_date__lte=term_obj.end_date,
             )
         except Exception:
-            pass
+            logger.warning("Caught and logged", exc_info=True)
     elif academic_year:
         try:
             year_obj = AcademicYear.objects.get(id=academic_year)
@@ -399,7 +404,7 @@ def get_budget_variance_payload(*, academic_year: str | None, term: str | None) 
                 expense_date__lte=year_obj.end_date,
             )
         except Exception:
-            pass
+            logger.warning("Caught and logged", exc_info=True)
 
     expense_by_category = defaultdict(float)
     for expense in expenses_qs:

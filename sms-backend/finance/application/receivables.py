@@ -17,6 +17,10 @@ from school.models import (
     Student,
 )
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 def _role_name(user):
     profile = getattr(user, "userprofile", None)
@@ -214,7 +218,7 @@ def auto_post_journal(entry_key, entry_date, memo, source_type, source_id, lines
                 description=description,
             )
     except Exception:
-        pass
+        logger.warning("Caught and logged", exc_info=True)
 
 
 def resolve_tenant_pdf_meta(request):

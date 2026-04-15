@@ -14,6 +14,11 @@ Usage:
 from django.core.management.base import BaseCommand
 from django_tenants.utils import schema_context, get_tenant_model
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 
 class Command(BaseCommand):
     help = "Seed KICD digital textbooks and Harvard/open e-learning materials (CBE Grade 7-10)"
@@ -640,7 +645,7 @@ class Command(BaseCommand):
             from academics.models import Term as AcademicTerm
             term = AcademicTerm.objects.filter(is_active=True).first()
         except Exception:
-            pass
+            logger.warning("Caught and logged", exc_info=True)
 
         # ── Course + Materials catalogue ─────────────────────────────────────
         # Each entry: (title, code, subject_hint, description, [(mat_title, mat_type, link_url), ...])

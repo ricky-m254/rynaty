@@ -1,6 +1,11 @@
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 
 @receiver(post_save, sender="school.AttendanceRecord")
 def notify_parent_on_absence(sender, instance, created, **kwargs):
@@ -64,4 +69,4 @@ def notify_parent_on_absence(sender, instance, created, **kwargs):
             )
 
     except Exception:
-        pass
+        logger.warning("Caught and logged", exc_info=True)

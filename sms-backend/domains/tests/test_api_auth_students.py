@@ -4,10 +4,13 @@ Tests: /api/auth/login/ and /api/students/
 Uses Django test client (no external calls).
 """
 import django
+import logging
 import os
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "sms_backend.settings")
 
 import unittest
+
+logger = logging.getLogger(__name__)
 
 
 class TestLoginAPI(unittest.TestCase):
@@ -43,7 +46,7 @@ class TestLoginAPI(unittest.TestCase):
         try:
             url = reverse("rest_framework:login")
         except Exception:
-            pass
+            logger.warning("Caught and logged", exc_info=True)
         expected_path = "/api/auth/login/"
         self.assertEqual(expected_path, "/api/auth/login/")
 

@@ -38,6 +38,10 @@ from .serializers import (
     ResourceCopySerializer,
 )
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class LibraryAccessMixin:
     permission_classes = [permissions.IsAuthenticated, HasModuleAccess]
@@ -606,7 +610,7 @@ class LibraryMemberViewSet(LibraryAccessMixin, viewsets.ModelViewSet):
                 else:
                     unchanged += 1
         except Exception:
-            pass
+            logger.warning("Caught and logged", exc_info=True)
 
         try:
             from hr.models import Employee
@@ -633,7 +637,7 @@ class LibraryMemberViewSet(LibraryAccessMixin, viewsets.ModelViewSet):
                 else:
                     unchanged += 1
         except Exception:
-            pass
+            logger.warning("Caught and logged", exc_info=True)
 
         try:
             from staff_mgmt.models import StaffMember
@@ -660,7 +664,7 @@ class LibraryMemberViewSet(LibraryAccessMixin, viewsets.ModelViewSet):
                 else:
                     unchanged += 1
         except Exception:
-            pass
+            logger.warning("Caught and logged", exc_info=True)
 
         return Response(
             {
@@ -1309,21 +1313,21 @@ class CirculationBulkRemindView(LibraryAccessMixin, APIView):
                     _create_library_notification(member_user, title, message, created_by=request.user)
                     channels.append("notification")
                 except Exception:
-                    pass
+                    logger.warning("Caught and logged", exc_info=True)
             if recipient_email:
                 try:
                     email_result = send_email_placeholder(subject=title.title(), body=message, recipients=[recipient_email])
                     if email_result.status == "Sent":
                         channels.append("email")
                 except Exception:
-                    pass
+                    logger.warning("Caught and logged", exc_info=True)
             if recipient_phone:
                 try:
                     sms_result = send_sms_placeholder(recipient_phone, message, channel="SMS")
                     if sms_result.status == "Sent":
                         channels.append("sms")
                 except Exception:
-                    pass
+                    logger.warning("Caught and logged", exc_info=True)
 
             if channels:
                 # Append reminder note to transaction
@@ -1332,7 +1336,7 @@ class CirculationBulkRemindView(LibraryAccessMixin, APIView):
                 try:
                     row.save(update_fields=["notes"])
                 except Exception:
-                    pass
+                    logger.warning("Caught and logged", exc_info=True)
                 results["sent"] += 1
                 results["details"].append({
                     "transaction": row.id,

@@ -10,6 +10,11 @@ from decimal import Decimal
 from django.core.management.base import BaseCommand
 from django_tenants.utils import schema_context
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 
 class Command(BaseCommand):
     help = "Seed supplementary demo data (25+ records per module)"
@@ -1044,7 +1049,7 @@ class Command(BaseCommand):
                 if c:
                     created += 1
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
         self.stdout.write(f"  Assets: {created} assets")
 
@@ -1127,7 +1132,7 @@ class Command(BaseCommand):
                 if c:
                     lr_created += 1
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
         # ── Extra PTM Sessions ────────────────────────────────────────────────
         term = Term.objects.order_by("-start_date").first()

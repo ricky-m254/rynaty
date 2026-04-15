@@ -148,6 +148,10 @@ from .security_policy import (
     get_or_create_security_policy,
 )
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 def _role_name(user):
     profile = getattr(user, 'userprofile', None)
@@ -566,7 +570,7 @@ def _auto_post_journal(entry_key, entry_date, memo, source_type, source_id, line
                 description=desc,
             )
     except Exception:
-        pass
+        logger.warning("Caught and logged", exc_info=True)
 
 
 class InvoiceViewSet(viewsets.ModelViewSet):
@@ -1083,7 +1087,7 @@ class AttendanceRecordViewSet(viewsets.ModelViewSet):
                 )
                 results.append({'id': obj.id, 'student_id': obj.student_id, 'status': obj.status, 'created': created})
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
         return Response({'count': len(results), 'records': results}, status=status.HTTP_201_CREATED)
 
 class SchoolClassListView(APIView):
@@ -3714,7 +3718,7 @@ class StudentsModuleReportPdfExportView(APIView):
             try:
                 story.append(Image(tenant_meta["logo_path"], width=48, height=48))
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
         story.append(Paragraph(f"<b>{_safe_cell(tenant_meta.get('school_name'))}</b>", styles["Title"]))
         story.append(Paragraph(f"Tenant: {_safe_cell(tenant_meta.get('schema'))}", styles["Normal"]))
@@ -3820,7 +3824,7 @@ class StudentReportPdfExportView(APIView):
             try:
                 story.append(Image(tenant_meta["logo_path"], width=48, height=48))
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
         story.append(Paragraph(f"<b>{_safe_cell(tenant_meta.get('school_name'))}</b>", styles["Title"]))
         story.append(Paragraph(f"Tenant: {_safe_cell(tenant_meta.get('schema'))}", styles["Normal"]))
@@ -3977,7 +3981,7 @@ class StudentsDirectoryPdfExportView(APIView):
             try:
                 story.append(Image(tenant_meta["logo_path"], width=48, height=48))
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
         story.append(Paragraph(f"<b>{_safe_cell(tenant_meta.get('school_name'))}</b>", styles["Title"]))
         story.append(Paragraph(f"Tenant: {_safe_cell(tenant_meta.get('schema'))}", styles["Normal"]))
@@ -4087,7 +4091,7 @@ class MedicalProfilesPdfExportView(APIView):
             try:
                 story.append(Image(tenant_meta["logo_path"], width=48, height=48))
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
         story.append(Paragraph(f"<b>{_safe_cell(tenant_meta.get('school_name'))}</b>", styles["Title"]))
         story.append(Paragraph("<b>Medical Profiles Report</b>", styles["Heading2"]))
         story.append(Spacer(1, 8))
@@ -4175,7 +4179,7 @@ class MedicalImmunizationsPdfExportView(APIView):
             try:
                 story.append(Image(tenant_meta["logo_path"], width=48, height=48))
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
         story.append(Paragraph(f"<b>{_safe_cell(tenant_meta.get('school_name'))}</b>", styles["Title"]))
         story.append(Paragraph("<b>Medical Immunizations Report</b>", styles["Heading2"]))
         story.append(Spacer(1, 8))
@@ -4277,7 +4281,7 @@ class MedicalClinicVisitsPdfExportView(APIView):
             try:
                 story.append(Image(tenant_meta["logo_path"], width=48, height=48))
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
         story.append(Paragraph(f"<b>{_safe_cell(tenant_meta.get('school_name'))}</b>", styles["Title"]))
         story.append(Paragraph("<b>Clinic Visits Report</b>", styles["Heading2"]))
         story.append(Spacer(1, 8))
@@ -4359,7 +4363,7 @@ class StudentsDocumentsPdfExportView(APIView):
             try:
                 story.append(Image(tenant_meta["logo_path"], width=48, height=48))
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
         story.append(Paragraph(f"<b>{_safe_cell(tenant_meta.get('school_name'))}</b>", styles["Title"]))
         story.append(Paragraph("<b>Students Documents Report</b>", styles["Heading2"]))
         story.append(Spacer(1, 8))
@@ -4820,7 +4824,7 @@ class SmartCampusTokenObtainPairSerializer(TokenObtainPairSerializer):
                 if self.user.userprofile.role:
                     role_name = self.user.userprofile.role.name
         except Exception:
-            pass
+            logger.warning("Caught and logged", exc_info=True)
 
         tenant_id = getattr(connection, 'schema_name', 'public')
         redirect_to = _post_login_redirect_path(role_name, self.user)
@@ -4843,7 +4847,7 @@ class SmartCampusTokenObtainPairSerializer(TokenObtainPairSerializer):
                 }),
             )
         except Exception:
-            pass
+            logger.warning("Caught and logged", exc_info=True)
 
         data['role'] = role_name
         data['available_roles'] = available_roles
@@ -4914,7 +4918,7 @@ class SmartCampusTokenObtainPairSerializer(TokenObtainPairSerializer):
             data = super().validate(attrs)
             return self._enrich(data, login_method='username')
         except Exception:
-            pass
+            logger.warning("Caught and logged", exc_info=True)
 
         # Stage 2: username/email/phone lookup
         resolved_user, login_method = _resolve_user_from_login_identifier(username)
@@ -4967,7 +4971,7 @@ class SmartCampusTokenObtainPairSerializer(TokenObtainPairSerializer):
         except Student.DoesNotExist:
             pass
         except Exception:
-            pass
+            logger.warning("Caught and logged", exc_info=True)
 
         # All stages failed - raise standard error
         raise ValidationError({'detail': 'No active account found with the given credentials.'})
@@ -4998,7 +5002,7 @@ class RoleSwitchView(APIView):
             if hasattr(user, 'userprofile') and user.userprofile and user.userprofile.role:
                 current_role = user.userprofile.role.name
         except Exception:
-            pass
+            logger.warning("Caught and logged", exc_info=True)
 
         available_roles = [current_role] if current_role else []
         if requested_role not in available_roles:
@@ -5024,7 +5028,7 @@ class RoleSwitchView(APIView):
                 }),
             )
         except Exception:
-            pass
+            logger.warning("Caught and logged", exc_info=True)
 
         return Response({
             'role': requested_role,
@@ -5394,7 +5398,7 @@ class FinanceSummaryPdfExportView(APIView):
             try:
                 story.append(Image(tenant_meta["logo_path"], width=48, height=48))
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
         story.append(Paragraph(f"<b>{_safe_cell(tenant_meta.get('school_name'))}</b>", styles["Title"]))
         story.append(Paragraph(f"Tenant: {_safe_cell(tenant_meta.get('schema'))}", styles["Normal"]))
@@ -5500,7 +5504,7 @@ class AttendanceSummaryPdfExportView(APIView):
             try:
                 story.append(Image(tenant_meta["logo_path"], width=48, height=48))
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
         story.append(Paragraph(f"<b>{_safe_cell(tenant_meta.get('school_name'))}</b>", styles["Title"]))
         story.append(Paragraph(f"Tenant: {_safe_cell(tenant_meta.get('schema'))}", styles["Normal"]))
@@ -5617,7 +5621,7 @@ class AttendanceRecordsPdfExportView(APIView):
             try:
                 story.append(Image(tenant_meta["logo_path"], width=48, height=48))
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
         story.append(Paragraph(f"<b>{_safe_cell(tenant_meta.get('school_name'))}</b>", styles["Title"]))
         story.append(Paragraph(f"Tenant: {_safe_cell(tenant_meta.get('schema'))}", styles["Normal"]))
@@ -5743,7 +5747,7 @@ class BehaviorIncidentsPdfExportView(APIView):
             try:
                 story.append(Image(tenant_meta["logo_path"], width=48, height=48))
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
         story.append(Paragraph(f"<b>{_safe_cell(tenant_meta.get('school_name'))}</b>", styles["Title"]))
         story.append(Paragraph(f"Tenant: {_safe_cell(tenant_meta.get('schema'))}", styles["Normal"]))
@@ -6131,7 +6135,7 @@ class FinanceBudgetVarianceReportView(APIView):
                     expense_date__lte=term_obj.end_date,
                 )
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
         elif academic_year:
             try:
                 year_obj = AcademicYear.objects.get(id=academic_year)
@@ -6140,7 +6144,7 @@ class FinanceBudgetVarianceReportView(APIView):
                     expense_date__lte=year_obj.end_date,
                 )
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
         expense_by_category = defaultdict(float)
         for exp in expenses_qs:
@@ -6210,7 +6214,7 @@ class FinanceReceiptPdfView(APIView):
             try:
                 story.append(Image(tenant_meta['logo_path'], width=60, height=60))
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
         school_name = tenant_meta.get('school_name', 'School')
         story.append(Paragraph(f"<b>{_safe_cell(school_name)}</b>", styles['Title']))
@@ -6972,7 +6976,7 @@ class DispensaryDeliveryNoteViewSet(viewsets.ModelViewSet):
             note.finance_expense_id = expense.id
             note.save(update_fields=['finance_expense_id'])
         except Exception:
-            pass
+            logger.warning("Caught and logged", exc_info=True)
         return Response(DispensaryDeliveryNoteSerializer(note).data)
 
 
@@ -7063,7 +7067,7 @@ class ModuleSeedView(APIView):
                 perm_out = io.StringIO()
                 call_command('seed_default_permissions', '--assign-roles', f'--schema={schema}', stdout=perm_out)
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
             # Create portal login accounts for all seeded students and guardians
             counts = self._create_portal_accounts()
@@ -7498,7 +7502,7 @@ def _transfer_generate_package(transfer):
                     dept = emp.department
                     snapshot['department'] = dept.name if dept else ''
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
     except Exception as e:
         snapshot['error'] = str(e)
 
@@ -7639,7 +7643,7 @@ class TransferInitiateView(APIView):
             except Student.DoesNotExist:
                 return Response({'detail': 'Student not found.'}, status=status.HTTP_404_NOT_FOUND)
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
         transfer = CrossTenantTransfer.objects.create(
             transfer_type=transfer_type,
@@ -7905,7 +7909,7 @@ class TransferExecuteView(APIView):
                         emp.is_active = False
                         emp.save(update_fields=['is_active'])
             except Exception as e:
-                pass
+                logger.warning("Caught and logged: %s", e, exc_info=True)
 
         transfer.status = 'completed'
         transfer.executed_at = timezone.now()

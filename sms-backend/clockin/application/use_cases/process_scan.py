@@ -19,6 +19,11 @@ from typing import Optional
 from clockin.domain.rules.attendance import determine_event_type, is_late_arrival, minutes_late
 from clockin.domain.entities.clock_event import ClockEventEntity
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 
 class ProcessScanUseCase:
     """
@@ -184,7 +189,7 @@ class ProcessScanUseCase:
                 event_orm.attendance_updated = True
                 event_orm.save(update_fields=['attendance_updated'])
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
         # 7. Late-arrival notification through infrastructure service
         if late:

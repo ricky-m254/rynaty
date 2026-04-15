@@ -15,6 +15,11 @@ Registration: Add to MIDDLEWARE after SessionMiddleware.
 from __future__ import annotations
 from typing import Callable
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 
 class TenantResolverMiddleware:
     def __init__(self, get_response: Callable) -> None:
@@ -32,6 +37,6 @@ class TenantResolverMiddleware:
             host = request.get_host().split(':')[0]
             request.tenant_obj = service.resolve(header_value=header, domain=host)
         except Exception:
-            pass
+            logger.warning("Caught and logged", exc_info=True)
 
         return self.get_response(request)

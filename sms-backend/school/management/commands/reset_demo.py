@@ -7,6 +7,11 @@ from django.core.management import call_command
 from django_tenants.utils import schema_context
 from django.contrib.auth import get_user_model
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 User = get_user_model()
 
 
@@ -102,7 +107,7 @@ class Command(BaseCommand):
                 Period.objects.all().delete()
                 StaffDutySlot.objects.all().delete()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
             # ── Curriculum (before Term/Subject) ─────────────────────────────
             self.stdout.write("Clearing curriculum (schemes, lesson plans)...")
@@ -113,7 +118,7 @@ class Command(BaseCommand):
                 SchemeTopic.objects.all().delete()
                 SchemeOfWork.objects.all().delete()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
             # ── Clear ALL remaining FK references to school_term before deletion
             self.stdout.write("Clearing all remaining Term-linked records...")
@@ -123,7 +128,7 @@ class Command(BaseCommand):
                 PTMSlot.objects.all().delete()
                 PTMSession.objects.all().delete()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
             try:
                 from admissions.models import (
                     AdmissionDecision, AdmissionInterview, AdmissionAssessment,
@@ -136,26 +141,26 @@ class Command(BaseCommand):
                 AdmissionApplicationProfile.objects.all().delete()
                 AdmissionInquiry.objects.all().delete()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
             try:
                 from cafeteria.models import StudentMealEnrollment, CafeteriaWalletTransaction, MealTransaction
                 StudentMealEnrollment.objects.all().delete()
                 CafeteriaWalletTransaction.objects.all().delete()
                 MealTransaction.objects.all().delete()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
             try:
                 from hostel.models import HostelAllocation, HostelLeave, HostelAttendance
                 HostelAllocation.objects.all().delete()
                 HostelLeave.objects.all().delete()
                 HostelAttendance.objects.all().delete()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
             try:
                 from transport.models import StudentTransport
                 StudentTransport.objects.all().delete()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
             # Use raw SQL to null-out any remaining school_term FKs we can't find by model
             from django.db import connection
             term_fk_tables = [
@@ -168,7 +173,7 @@ class Command(BaseCommand):
                     try:
                         cursor.execute(f"DELETE FROM {tbl}")
                     except Exception:
-                        pass
+                        logger.warning("Caught and logged", exc_info=True)
 
             # ── Academic structures ──────────────────────────────────────────
             self.stdout.write("Clearing academic structures...")
@@ -181,11 +186,11 @@ class Command(BaseCommand):
             try:
                 AdmissionApplication.objects.all().delete()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
             try:
                 MaintenanceRequest.objects.all().delete()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
             # ── Library ───────────────────────────────────────────────────────
             self.stdout.write("Clearing library records...")
@@ -203,7 +208,7 @@ class Command(BaseCommand):
                 LibraryCategory.objects.all().delete()
                 CirculationRule.objects.all().delete()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
             # ── Cafeteria ─────────────────────────────────────────────────────
             self.stdout.write("Clearing cafeteria records...")
@@ -218,7 +223,7 @@ class Command(BaseCommand):
                 WeeklyMenu.objects.all().delete()
                 MealPlan.objects.all().delete()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
             # ── Sports ────────────────────────────────────────────────────────
             self.stdout.write("Clearing sports records...")
@@ -229,7 +234,7 @@ class Command(BaseCommand):
                 Tournament.objects.all().delete()
                 Club.objects.all().delete()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
             # ── Assets ────────────────────────────────────────────────────────
             self.stdout.write("Clearing asset records...")
@@ -241,7 +246,7 @@ class Command(BaseCommand):
                 Asset.objects.all().delete()
                 AssetCategory.objects.all().delete()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
             # ── Transport ─────────────────────────────────────────────────────
             self.stdout.write("Clearing transport records...")
@@ -253,7 +258,7 @@ class Command(BaseCommand):
                 Route.objects.all().delete()
                 Vehicle.objects.all().delete()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
             # ── Hostel ────────────────────────────────────────────────────────
             self.stdout.write("Clearing hostel records...")
@@ -265,7 +270,7 @@ class Command(BaseCommand):
                 BedSpace.objects.all().delete()
                 Dormitory.objects.all().delete()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
             # ── Timetable ─────────────────────────────────────────────────────
             self.stdout.write("Clearing timetable records...")
@@ -276,7 +281,7 @@ class Command(BaseCommand):
                 StaffDutySlot.objects.all().delete()
                 TimetableSlot.objects.all().delete()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
             # ── Visitor management ────────────────────────────────────────────
             self.stdout.write("Clearing visitor records...")
@@ -286,7 +291,7 @@ class Command(BaseCommand):
                 AuthorizedPickup.objects.all().delete()
                 Visitor.objects.all().delete()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
             # ── Communication ─────────────────────────────────────────────────
             self.stdout.write("Clearing communication records...")
@@ -296,7 +301,7 @@ class Command(BaseCommand):
                 Message.objects.all().delete()
                 Announcement.objects.all().delete()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
             # ── School profile ────────────────────────────────────────────────
             self.stdout.write("Clearing school profile...")
@@ -312,7 +317,7 @@ class Command(BaseCommand):
                 ExamPaper.objects.all().delete()
                 ExamSession.objects.all().delete()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
             # ── Alumni ────────────────────────────────────────────────────────
             self.stdout.write("Clearing alumni records...")
@@ -324,7 +329,7 @@ class Command(BaseCommand):
                 AlumniEvent.objects.all().delete()
                 AlumniProfile.objects.all().delete()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
             # ── PTM ──────────────────────────────────────────────────────────
             self.stdout.write("Clearing PTM records...")
@@ -334,7 +339,7 @@ class Command(BaseCommand):
                 PTMSlot.objects.all().delete()
                 PTMSession.objects.all().delete()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
             # ── Clock-in ─────────────────────────────────────────────────────
             self.stdout.write("Clearing clock-in records...")
@@ -344,7 +349,7 @@ class Command(BaseCommand):
                 PersonRegistry.objects.all().delete()
                 SchoolShift.objects.all().delete()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
             # ── Parent portal ─────────────────────────────────────────────────
             self.stdout.write("Clearing parent portal links...")
@@ -358,7 +363,7 @@ class Command(BaseCommand):
                 # Remove seeded student login accounts (username matches admission number pattern)
                 _User.objects.filter(username__startswith="stm").delete()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
             # ── Admissions pipeline ───────────────────────────────────────────
             self.stdout.write("Clearing admissions pipeline...")
@@ -374,7 +379,7 @@ class Command(BaseCommand):
                 AdmissionApplicationProfile.objects.all().delete()
                 AdmissionInquiry.objects.all().delete()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
             # ── Curriculum ────────────────────────────────────────────────────
             self.stdout.write("Clearing curriculum...")
@@ -385,7 +390,7 @@ class Command(BaseCommand):
                 SchemeTopic.objects.all().delete()
                 SchemeOfWork.objects.all().delete()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
             # ── HR comprehensive ──────────────────────────────────────────────
             self.stdout.write("Clearing comprehensive HR records...")
@@ -422,7 +427,7 @@ class Command(BaseCommand):
                 EmployeeQualification.objects.all().delete()
                 EmployeeEmploymentProfile.objects.all().delete()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
             # ── Staff management comprehensive ────────────────────────────────
             self.stdout.write("Clearing staff management records...")
@@ -441,7 +446,7 @@ class Command(BaseCommand):
                 StaffEmergencyContact.objects.all().delete()
                 StaffQualification.objects.all().delete()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
             # ── Communication comprehensive ───────────────────────────────────
             self.stdout.write("Clearing comprehensive communication records...")
@@ -460,7 +465,7 @@ class Command(BaseCommand):
                 Conversation.objects.all().delete()
                 MessageTemplate.objects.all().delete()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
             # ── Assets comprehensive ──────────────────────────────────────────
             self.stdout.write("Clearing comprehensive asset records...")
@@ -471,7 +476,7 @@ class Command(BaseCommand):
                 AssetMaintenanceRecord.objects.all().delete()
                 AssetAssignment.objects.all().delete()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
             # ── Cafeteria comprehensive ───────────────────────────────────────
             self.stdout.write("Clearing cafeteria transaction records...")
@@ -480,7 +485,7 @@ class Command(BaseCommand):
                 CafeteriaWalletTransaction.objects.all().delete()
                 MealTransaction.objects.all().delete()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
             # ── Hostel comprehensive ──────────────────────────────────────────
             self.stdout.write("Clearing hostel attendance and leave records...")
@@ -489,7 +494,7 @@ class Command(BaseCommand):
                 HostelLeave.objects.all().delete()
                 HostelAttendance.objects.all().delete()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
             # ── Timetable duty slots ──────────────────────────────────────────
             self.stdout.write("Clearing timetable duty slots...")
@@ -497,7 +502,7 @@ class Command(BaseCommand):
                 from timetable.models import StaffDutySlot
                 StaffDutySlot.objects.all().delete()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
             # ── Transport incidents ───────────────────────────────────────────
             self.stdout.write("Clearing transport incidents...")
@@ -505,7 +510,7 @@ class Command(BaseCommand):
                 from transport.models import TransportIncident
                 TransportIncident.objects.all().delete()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
             # ── Library comprehensive ─────────────────────────────────────────
             self.stdout.write("Clearing library reservations, audits and requests...")
@@ -515,7 +520,7 @@ class Command(BaseCommand):
                 InventoryAudit.objects.all().delete()
                 Reservation.objects.all().delete()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
             # ── E-Learning quiz attempts ──────────────────────────────────────
             self.stdout.write("Clearing e-learning quiz attempts...")
@@ -523,7 +528,7 @@ class Command(BaseCommand):
                 from elearning.models import QuizAttempt
                 QuizAttempt.objects.all().delete()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
             # ── Maintenance checklist ─────────────────────────────────────────
             self.stdout.write("Clearing maintenance checklist items...")
@@ -531,7 +536,7 @@ class Command(BaseCommand):
                 from maintenance.models import MaintenanceChecklist
                 MaintenanceChecklist.objects.all().delete()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
             # ── Store ─────────────────────────────────────────────────────────
             self.stdout.write("Clearing school store data...")
@@ -547,7 +552,7 @@ class Command(BaseCommand):
                 StoreSupplier.objects.all().delete()
                 StoreCategory.objects.all().delete()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
             # ── Dispensary ────────────────────────────────────────────────────
             self.stdout.write("Clearing dispensary data...")
@@ -557,7 +562,7 @@ class Command(BaseCommand):
                 DispensaryVisit.objects.all().delete()
                 DispensaryStock.objects.all().delete()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
             # ── Exam setter assignments ───────────────────────────────────────
             self.stdout.write("Clearing exam setter assignments...")
@@ -565,7 +570,7 @@ class Command(BaseCommand):
                 from examinations.models import ExamSetterAssignment
                 ExamSetterAssignment.objects.all().delete()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
         # Reseed everything
         self.stdout.write(self.style.SUCCESS("Reseeding Kenya school data..."))

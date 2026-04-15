@@ -895,7 +895,7 @@ class PlatformTenantViewSet(viewsets.ModelViewSet):
             from clients.platform_email import platform_email as _pe
             _pe.reactivation(tenant)
         except Exception:
-            pass
+            logger.warning("Caught and logged", exc_info=True)
         return Response(TenantSerializer(tenant, context={"request": request}).data)
 
     @action(detail=True, methods=["post"])
@@ -918,7 +918,7 @@ class PlatformTenantViewSet(viewsets.ModelViewSet):
             from clients.platform_email import platform_email as _pe
             _pe.suspension(tenant, reason=reason)
         except Exception:
-            pass
+            logger.warning("Caught and logged", exc_info=True)
         return Response(TenantSerializer(tenant, context={"request": request}).data)
 
     @action(detail=True, methods=["post"])
@@ -937,7 +937,7 @@ class PlatformTenantViewSet(viewsets.ModelViewSet):
             from clients.platform_email import platform_email as _pe
             _pe.reactivation(tenant)
         except Exception:
-            pass
+            logger.warning("Caught and logged", exc_info=True)
         return Response(TenantSerializer(tenant, context={"request": request}).data)
 
     @action(detail=True, methods=["post"], url_path="assign-plan")
@@ -1022,7 +1022,7 @@ class PlatformTenantViewSet(viewsets.ModelViewSet):
             from clients.platform_email import platform_email as _pe
             _pe.invoice_issued(tenant, invoice)
         except Exception:
-            pass
+            logger.warning("Caught and logged", exc_info=True)
         return Response(SubscriptionInvoiceSerializer(invoice).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["get"], url_path="billing-overview")
@@ -1222,7 +1222,7 @@ class PlatformSubscriptionInvoiceViewSet(mixins.ListModelMixin, mixins.RetrieveM
                 method=payment.method or "M-Pesa",
             )
         except Exception:
-            pass
+            logger.warning("Caught and logged", exc_info=True)
 
         return Response(
             {
@@ -1574,7 +1574,7 @@ class PlatformAnalyticsViewSet(viewsets.ViewSet):
                         updated_at__gte=thirty_days_ago,
                     ).count()
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
         cross_tenant = {
             "pending": cross_pending,

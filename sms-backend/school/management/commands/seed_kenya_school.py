@@ -31,6 +31,10 @@ from communication.models import Message
 from school.management.commands.seed_modules import ALL_MODULES
 from school.role_scope import iter_seed_role_definitions
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 User = get_user_model()
 
 KENYAN_MALE_NAMES = [
@@ -582,7 +586,7 @@ class Command(BaseCommand):
             for key, name, _ in ALL_MODULES:
                 Module.objects.get_or_create(key=key, defaults={"name": name})
         except ImportError:
-            pass
+            logger.warning("Caught and logged", exc_info=True)
 
     # ── Admin User ───────────────────────────────────────────────────────────
     def _seed_admin_user(self):
@@ -959,7 +963,7 @@ class Command(BaseCommand):
                     description=desc,
                 )
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
     # ── Admission Applications ────────────────────────────────────────────────
     def _seed_admissions(self, year, terms):
@@ -1075,7 +1079,7 @@ class Command(BaseCommand):
                     },
                 )
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
     # ── Library ───────────────────────────────────────────────────────────────
     def _seed_library(self, students, admin_user):
@@ -1313,7 +1317,7 @@ class Command(BaseCommand):
             from academics.models import Term as AcademicTerm
             term = AcademicTerm.objects.filter(is_active=True).first()
         except Exception:
-            pass
+            logger.warning("Caught and logged", exc_info=True)
         teachers = list(User.objects.exclude(username='Riqs#.')[:12])
         if not teachers:
             teachers = [admin_user]
@@ -1489,7 +1493,7 @@ class Command(BaseCommand):
                     }
                 )
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
         self.stdout.write(f'    → Cafeteria: {MealPlan.objects.count()} meal plans, {WeeklyMenu.objects.count()} weekly menus, {StudentMealEnrollment.objects.count()} enrollments')
 
@@ -1534,7 +1538,7 @@ class Command(BaseCommand):
                         defaults={'is_active': True}
                     )
                 except Exception:
-                    pass
+                    logger.warning("Caught and logged", exc_info=True)
 
         # Tournaments
         TOURNAMENTS = [
@@ -1550,7 +1554,7 @@ class Command(BaseCommand):
                     defaults={'club': club, 'start_date': start, 'end_date': end, 'location': loc}
                 )
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
         # Awards
         from datetime import date as ddate
@@ -1580,7 +1584,7 @@ class Command(BaseCommand):
                     }
                 )
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
         self.stdout.write(f'    → Sports: {Club.objects.count()} clubs, {ClubMembership.objects.count()} memberships, {Tournament.objects.count()} tournaments')
 
@@ -1643,7 +1647,7 @@ class Command(BaseCommand):
                     }
                 )
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
         self.stdout.write(f'    → Assets: {AssetCategory.objects.count()} categories, {Asset.objects.count()} assets')
 
@@ -1718,7 +1722,7 @@ class Command(BaseCommand):
                     defaults={'route': route, 'boarding_stop': stop, 'is_active': True}
                 )
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
         self.stdout.write(f'    → Transport: {Vehicle.objects.count()} vehicles, {Route.objects.count()} routes, {StudentTransport.objects.count()} assignments')
 
@@ -1774,7 +1778,7 @@ class Command(BaseCommand):
                         }
                     )
                 except Exception:
-                    pass
+                    logger.warning("Caught and logged", exc_info=True)
 
         self.stdout.write(f'    → Hostel: {Dormitory.objects.count()} dorms, {BedSpace.objects.count()} beds, {HostelAllocation.objects.count()} allocations')
 
@@ -1886,7 +1890,7 @@ class Command(BaseCommand):
                             sign_out_time=sign_in + timedelta(hours=random.randint(1, 3))
                         )
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
         self.stdout.write(f'    → Visitors: {Visitor.objects.count()} visitor entries seeded')
 

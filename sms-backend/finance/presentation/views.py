@@ -38,6 +38,11 @@ from finance.presentation.serializers import (
 from school.models import Payment, VoteHeadPaymentAllocation
 from school.permissions import HasModuleAccess, IsAccountant
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 
 class FinanceStudentRefView(APIView):
     permission_classes = [IsAccountant, HasModuleAccess]
@@ -307,7 +312,7 @@ class FinanceReceiptPdfView(APIView):
             try:
                 story.append(Image(tenant_meta["logo_path"], width=60, height=60))
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
         school_name = tenant_meta.get("school_name", "School")
         story.append(Paragraph(f"<b>{safe_cell(school_name)}</b>", styles["Title"]))

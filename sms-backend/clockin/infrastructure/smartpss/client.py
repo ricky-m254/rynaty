@@ -147,7 +147,7 @@ class SmartPSSLiteClient:
         try:
             self._request('POST', '/evo/doLogout', {}, token=token, timeout=CONNECT_TIMEOUT)
         except SmartPSSError:
-            pass
+            logger.warning("Caught and logged", exc_info=True)
 
     class _SessionContext:
         """Context manager: login on enter, logout on exit."""
@@ -249,6 +249,11 @@ def parse_smartpss_time(time_str: Optional[str]) -> datetime:
 
 import csv
 import io
+
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 SMARTPSS_CSV_COLUMN_ALIASES = {
     'name':            ['name', 'employee name', 'person name', '员工姓名', 'student name'],

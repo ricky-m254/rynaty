@@ -171,6 +171,10 @@ from .serializers import (
     StaffTransferSerializer,
 )
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 SUPPORTED_ROLE_NAMES = set(iter_seed_role_names())
 
 
@@ -1933,7 +1937,7 @@ td:last-child,th:last-child{{text-align:right}}
             if struct:
                 currency = struct.currency
         except Exception:
-            pass
+            logger.warning("Caught and logged", exc_info=True)
         content = f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Payslip — {emp_name}</title>
 <style>

@@ -25,6 +25,11 @@ from .models import (
 from hr.models import Staff
 from hr.models import Department as HrDepartment
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 # ==========================================
 # DEPARTMENT SERIALIZERS
 # ==========================================
@@ -1232,9 +1237,9 @@ class CrossTenantTransferSerializer(serializers.ModelSerializer):
                     if e:
                         return f"{e.first_name} {e.last_name} ({e.employee_id})"
                 except Exception:
-                    pass
+                    logger.warning("Caught and logged", exc_info=True)
         except Exception:
-            pass
+            logger.warning("Caught and logged", exc_info=True)
         return f"Entity #{obj.entity_id}"
 
     def get_status_display(self, obj):

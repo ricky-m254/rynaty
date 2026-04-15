@@ -28,6 +28,11 @@ from typing import List, Tuple
 from django.core.management.base import BaseCommand
 from django_tenants.utils import get_public_schema_name, schema_context
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 
 # ── ANSI colours ──────────────────────────────────────────────────────────────
 R = "\033[91m"   # red
@@ -284,7 +289,7 @@ class Command(BaseCommand):
                     rel = str(path.relative_to(BASE_DIR))
                     offenders.append(f"{rel}:{line_no}")
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
         if not offenders:
             return []
@@ -328,7 +333,7 @@ class Command(BaseCommand):
                             continue
                         offenders.append(f"{rel}:{line_no}  →  {snippet[:80]}")
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
         if not offenders:
             return []
@@ -352,7 +357,7 @@ class Command(BaseCommand):
                     rel = str(path.relative_to(BASE_DIR))
                     offenders.append(f"{rel}:{line_no}")
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
         if not offenders:
             return []
         return [Finding(
@@ -397,7 +402,7 @@ class Command(BaseCommand):
                     key = m.group(1).upper()
                     markers[key].append(f"{rel}:{line_no} — {m.group(2).strip()}")
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
         findings = []
         for marker_type in ["BROKEN", "BUG", "FIXME"]:
@@ -442,7 +447,7 @@ class Command(BaseCommand):
                             continue
                         offenders.append(f"{rel}:{line_no}  →  {snippet[:80]}")
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
         if not offenders:
             return []
         return [Finding(
@@ -464,7 +469,7 @@ class Command(BaseCommand):
                     rel = str(path.relative_to(BASE_DIR))
                     offenders.append(f"{rel}:{line_no}")
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
         if not offenders:
             return []
         return [Finding(
@@ -575,7 +580,7 @@ class Command(BaseCommand):
                     detail,
                 )]
         except Exception:
-            pass
+            logger.warning("Caught and logged", exc_info=True)
         return []
 
     def _check_viewset_registration(self) -> List[Finding]:
@@ -593,7 +598,7 @@ class Command(BaseCommand):
                 for m in re.finditer(r"class (\w+ViewSet)\s*\(", content):
                     viewsets_defined.append((m.group(1), str(views_file.relative_to(BASE_DIR))))
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
         for urls_file in BASE_DIR.rglob("urls.py"):
             if "__pycache__" in str(urls_file):
@@ -605,7 +610,7 @@ class Command(BaseCommand):
                 for m in re.finditer(r"(\w+ViewSet)", content):
                     viewsets_registered.add(m.group(1))
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
         unregistered = [
             f"{name!r} in {path}"

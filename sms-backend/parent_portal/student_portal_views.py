@@ -25,6 +25,11 @@ from school.models import (
 )
 from school.permissions import HasModuleAccess
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 
 class StudentPortalAccessMixin:
     permission_classes = [permissions.IsAuthenticated, HasModuleAccess]
@@ -189,7 +194,7 @@ class StudentDashboardView(StudentPortalAccessMixin, APIView):
             try:
                 class_section_name = enrollment.school_class.name
             except Exception:
-                pass
+                logger.warning("Caught and logged", exc_info=True)
 
         return Response({
             "student": {

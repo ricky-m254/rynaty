@@ -9,6 +9,11 @@ from typing import List, Optional
 from domains.tenants.domain.entities import Tenant
 from domains.tenants.domain.interfaces.repositories import TenantRepository
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 
 def _tenant_from_orm(client) -> Tenant:
     domain = None
@@ -16,7 +21,7 @@ def _tenant_from_orm(client) -> Tenant:
         first_domain = client.domains.filter(is_primary=True).first()
         domain = first_domain.domain if first_domain else None
     except Exception:
-        pass
+        logger.warning("Caught and logged", exc_info=True)
     return Tenant(
         id=client.pk,
         name=client.name,

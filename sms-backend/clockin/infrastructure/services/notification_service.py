@@ -1,6 +1,11 @@
 """NotificationService — infrastructure adapter for admin notifications."""
 from datetime import datetime
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 
 class DjangoNotificationService:
     def notify_late_arrival(self, person, event_time: datetime, minutes_late: int) -> None:
@@ -44,4 +49,4 @@ class DjangoNotificationService:
                               'auto_flagged': True, 'notes': f'Late arrival at {time_str}'},
                 )
         except Exception:
-            pass
+            logger.warning("Caught and logged", exc_info=True)
