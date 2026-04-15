@@ -82,6 +82,7 @@ class Command(BaseCommand):
                 self._grade_levels(tag)
                 self._academic_year(tag)
                 self._departments_and_subjects(tag)
+                self._repair_missing_user_profiles(tag)
         except Exception as exc:
             self.stdout.write(f"{tag} ERROR: {exc}")
 
@@ -177,3 +178,48 @@ class Command(BaseCommand):
             if c:
                 subj_created += 1
         self.stdout.write(f"{tag}   Subjects: {subj_created} created, {len(CBC_SUBJECTS) - subj_created} existed")
+
+    def _repair_missing_user_profiles(self, tag):
+        """
+        Detect users with no UserProfile and repair those whose role can be
+        inferred from their username prefix:
+          - stm* → STUDENT
+        All others are logged as warnings for manual review.
+        Fully idempotent — safe to run multiple times.
+        """
+        from django.contrib.auth import get_user_model
+        from school.models import Role, UserProfile
+
+        User = get_user_model()
+
+        users_without_profile = (
+            User.objects
+            .filter(is_staff=False, is_superuser=False)
+            .exclude(id__in=UserProfile.objects.values_list("user_id", flat=True))
+        )
+
+        if not users_without_profile.exists():
+            self.stdout.write(f"{tag}   UserProfile repair: all users have profiles")
+            return
+
+        student_role = Role.objects.filter(name="STUDENT").first()
+
+        repaired = 0
+        skipped = []
+        for user in users_without_profile:
+            if user.username.startswith("stm") and student_role:
+                UserProfile.objects.get_or_create(user=user, defaults={"role": student_role})
+                repaired += 1
+            else:
+                skipped.append(user.username)
+
+        if repaired:
+            self.stdout.write(
+                f"{tag}   UserProfile repair: {repaired} student profile(s) created"
+            )
+        if skipped:
+            self.stdout.write(
+                f"{tag}   UserProfile repair: {len(skipped)} user(s) need manual role assignment — "
+                + ", ".join(skipped[:10])
+                + ("..." if len(skipped) > 10 else "")
+            )
