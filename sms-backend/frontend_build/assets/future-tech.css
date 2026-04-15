@@ -1,0 +1,967 @@
+/* ═══════════════════════════════════════════════════════════════════
+   SMARTCAMPUS — FUTURE TECH DESIGN SYSTEM v2.0
+   Next-generation UI skin — injected over Tailwind base
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Design Tokens ── */
+:root {
+  --neon-green:   #10b981;
+  --neon-green2:  #34d399;
+  --neon-indigo:  #6366f1;
+  --neon-cyan:    #06b6d4;
+  --neon-violet:  #8b5cf6;
+  --neon-amber:   #f59e0b;
+  --neon-rose:    #f43f5e;
+  --bg-deep:      #020617;
+  --bg-surface:   #0d1117;
+  --bg-elevated:  #0f172a;
+  --border-glass: rgba(255,255,255,0.07);
+  --border-glow:  rgba(16,185,129,0.3);
+  --glow-sm: 0 0 8px rgba(16,185,129,0.4);
+  --glow-md: 0 0 16px rgba(16,185,129,0.35), 0 0 32px rgba(16,185,129,0.15);
+  --glow-lg: 0 0 24px rgba(16,185,129,0.5), 0 0 48px rgba(16,185,129,0.2);
+  --glow-indigo: 0 0 16px rgba(99,102,241,0.4), 0 0 32px rgba(99,102,241,0.15);
+  --glow-cyan: 0 0 16px rgba(6,182,212,0.4), 0 0 32px rgba(6,182,212,0.15);
+}
+
+/* ── Global Page Foundation ── */
+html, body, #root {
+  background-color: var(--bg-deep) !important;
+  font-feature-settings: "cv11", "ss01";
+}
+
+/* Subtle grid texture on body */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(16,185,129,0.015) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(16,185,129,0.015) 1px, transparent 1px);
+  background-size: 48px 48px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Glass Panel — Core Card Component ── */
+.glass-panel {
+  background: linear-gradient(145deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.02) 100%) !important;
+  border: 1px solid rgba(255,255,255,0.08) !important;
+  backdrop-filter: blur(20px) saturate(1.2) !important;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.05) inset,
+    0 -1px 0 rgba(0,0,0,0.2) inset,
+    0 4px 24px rgba(0,0,0,0.4),
+    0 0 0 0 transparent !important;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+  position: relative !important;
+  overflow: hidden !important;
+}
+
+.glass-panel::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(16,185,129,0.5), rgba(99,102,241,0.4), transparent);
+  opacity: 0.7;
+}
+
+.glass-panel:hover {
+  border-color: rgba(16,185,129,0.2) !important;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.07) inset,
+    0 -1px 0 rgba(0,0,0,0.2) inset,
+    0 4px 32px rgba(0,0,0,0.5),
+    0 0 24px rgba(16,185,129,0.06) !important;
+}
+
+.glass-panel-hover {
+  background: linear-gradient(145deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.02) 100%) !important;
+  border: 1px solid rgba(255,255,255,0.08) !important;
+  backdrop-filter: blur(20px) !important;
+  transition: all 0.2s ease !important;
+}
+.glass-panel-hover:hover {
+  border-color: rgba(16,185,129,0.25) !important;
+  background: linear-gradient(145deg, rgba(16,185,129,0.06) 0%, rgba(99,102,241,0.03) 100%) !important;
+  box-shadow: var(--glow-sm), 0 4px 24px rgba(0,0,0,0.4) !important;
+  transform: translateY(-1px) !important;
+}
+
+/* ── Sidebar Navigation Links — Active State ── */
+.bg-emerald-500\/15 {
+  background: linear-gradient(90deg, rgba(16,185,129,0.18) 0%, rgba(16,185,129,0.06) 100%) !important;
+  border: 1px solid rgba(16,185,129,0.3) !important;
+  box-shadow: 0 0 12px rgba(16,185,129,0.15), inset 0 0 8px rgba(16,185,129,0.05) !important;
+  position: relative !important;
+  overflow: hidden !important;
+}
+.bg-emerald-500\/15::after {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: linear-gradient(180deg, #10b981, #34d399);
+  border-radius: 0 2px 2px 0;
+  box-shadow: 0 0 8px rgba(16,185,129,0.8);
+}
+.bg-emerald-500\/15.text-emerald-200 {
+  color: #6ee7b7 !important;
+  text-shadow: 0 0 12px rgba(16,185,129,0.6) !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.01em !important;
+}
+
+/* ── Tab Bars — Finance, HR, etc. ── */
+/* Tab strip container */
+[class*="overflow-x-auto"][class*="rounded-2xl"][class*="border"] {
+  border-color: rgba(255,255,255,0.06) !important;
+  background: rgba(255,255,255,0.015) !important;
+}
+
+/* Tab buttons — inactive */
+.text-slate-400[class*="border-b-2"],
+.text-slate-500[class*="border-b-2"] {
+  color: rgba(148,163,184,0.7) !important;
+  transition: color 0.2s ease, text-shadow 0.2s ease !important;
+}
+.text-slate-400[class*="border-b-2"]:hover {
+  color: #94a3b8 !important;
+}
+
+/* ApprovalsHub active tab — the border-b-2 active pattern */
+[class*="border-b-2"][class*="border-\[#"] {
+  text-shadow: 0 0 12px currentColor !important;
+}
+
+/* ── Tables — Future Grid Design ── */
+table {
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+}
+
+thead tr {
+  background: linear-gradient(90deg,
+    rgba(16,185,129,0.04) 0%,
+    rgba(99,102,241,0.03) 50%,
+    rgba(6,182,212,0.04) 100%) !important;
+  border-bottom: 1px solid rgba(16,185,129,0.15) !important;
+}
+
+thead th {
+  color: rgba(100,116,139,0.9) !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.12em !important;
+  text-transform: uppercase !important;
+  padding: 10px 16px !important;
+  border-bottom: 1px solid rgba(16,185,129,0.1) !important;
+  white-space: nowrap !important;
+}
+
+thead th:first-child {
+  border-left: 2px solid rgba(16,185,129,0.2) !important;
+  padding-left: 20px !important;
+}
+
+tbody tr {
+  transition: background 0.15s ease, box-shadow 0.15s ease !important;
+  border-bottom: 1px solid rgba(255,255,255,0.03) !important;
+  position: relative !important;
+}
+
+tbody tr:hover {
+  background: linear-gradient(90deg,
+    rgba(16,185,129,0.05) 0%,
+    rgba(99,102,241,0.03) 60%,
+    transparent 100%) !important;
+  box-shadow: inset 2px 0 0 rgba(16,185,129,0.5) !important;
+}
+
+tbody td {
+  padding: 10px 16px !important;
+  font-size: 13px !important;
+  transition: color 0.15s ease !important;
+}
+
+tbody td:first-child {
+  padding-left: 20px !important;
+}
+
+/* ── Stat / KPI Cards ── */
+.rounded-2xl[class*="glass-panel"],
+.rounded-2xl[class*="bg-white"] {
+  transition: transform 0.2s ease, box-shadow 0.2s ease !important;
+}
+
+/* Number values — make them glow */
+.text-2xl.font-bold,
+.text-3xl.font-bold,
+.text-2xl.font-semibold,
+.text-3xl.font-semibold {
+  letter-spacing: -0.02em !important;
+}
+
+/* ── Buttons — Neon Style ── */
+/* Primary / Success buttons */
+button[class*="bg-emerald-500"],
+a[class*="bg-emerald-500"],
+button[class*="emerald-500"][class*="border"] {
+  background: linear-gradient(135deg, #10b981, #059669) !important;
+  border-color: transparent !important;
+  box-shadow: 0 0 16px rgba(16,185,129,0.4), 0 2px 8px rgba(0,0,0,0.3) !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.02em !important;
+  transition: all 0.2s ease !important;
+}
+button[class*="bg-emerald-500"]:hover,
+a[class*="bg-emerald-500"]:hover {
+  box-shadow: 0 0 24px rgba(16,185,129,0.6), 0 2px 12px rgba(0,0,0,0.4) !important;
+  transform: translateY(-1px) !important;
+}
+
+/* Ghost / Outline buttons */
+button[class*="border"][class*="border-emerald"],
+button[class*="border"][class*="border-white"],
+button[class*="border"][class*="border-slate"] {
+  transition: all 0.2s ease !important;
+}
+button[class*="border"][class*="border-emerald"]:hover {
+  background: rgba(16,185,129,0.1) !important;
+  border-color: rgba(16,185,129,0.5) !important;
+  box-shadow: 0 0 12px rgba(16,185,129,0.2) !important;
+}
+button[class*="border"][class*="border-indigo"]:hover,
+button[class*="border"][class*="border-violet"]:hover {
+  box-shadow: var(--glow-indigo) !important;
+  border-color: rgba(99,102,241,0.6) !important;
+}
+
+/* Danger buttons */
+button[class*="bg-rose-500"],
+button[class*="bg-red-500"] {
+  box-shadow: 0 0 16px rgba(244,63,94,0.4), 0 2px 8px rgba(0,0,0,0.3) !important;
+}
+button[class*="bg-rose-500"]:hover,
+button[class*="bg-red-500"]:hover {
+  box-shadow: 0 0 24px rgba(244,63,94,0.6) !important;
+  transform: translateY(-1px) !important;
+}
+
+/* Icon buttons / round buttons */
+button[class*="rounded-full"] {
+  transition: all 0.2s ease !important;
+}
+
+/* ── Form Inputs — Neon Focus ── */
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  background: rgba(2,6,23,0.8) !important;
+  border-color: rgba(255,255,255,0.07) !important;
+  color: #e2e8f0 !important;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+}
+input:not([type="checkbox"]):not([type="radio"]):focus,
+select:focus,
+textarea:focus {
+  outline: none !important;
+  border-color: rgba(16,185,129,0.5) !important;
+  box-shadow: 0 0 0 3px rgba(16,185,129,0.1), 0 0 12px rgba(16,185,129,0.15) !important;
+  background: rgba(16,185,129,0.03) !important;
+}
+input::placeholder {
+  color: rgba(100,116,139,0.5) !important;
+}
+
+/* Search inputs */
+input[placeholder*="Search"],
+input[placeholder*="search"],
+input[placeholder*="Find"],
+input[placeholder*="find"] {
+  background: rgba(255,255,255,0.03) !important;
+  border-color: rgba(255,255,255,0.06) !important;
+}
+
+/* ── Status Badges / Pills ── */
+[class*="rounded-full"][class*="px-2"],
+[class*="rounded-full"][class*="px-3"] {
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.06em !important;
+  text-transform: uppercase !important;
+}
+
+/* ── Page Hero / Header Sections ── */
+[class*="rounded-3xl"] {
+  position: relative !important;
+}
+
+/* ── Module Sidebar ── */
+aside[class*="glass-panel"] {
+  border-right: 1px solid rgba(255,255,255,0.06) !important;
+}
+
+/* Navigation section titles */
+.text-\[10px\].uppercase.tracking-\[0\.35em\],
+p.text-xs.uppercase.tracking-\[0\.3em\] {
+  background: linear-gradient(90deg, rgba(16,185,129,0.7), rgba(99,102,241,0.5));
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  background-clip: text !important;
+  font-weight: 700 !important;
+}
+
+/* ── Scrollbar — Neon Style ── */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(16,185,129,0.4), rgba(99,102,241,0.3));
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(16,185,129,0.7), rgba(99,102,241,0.5));
+  box-shadow: 0 0 6px rgba(16,185,129,0.4);
+}
+
+/* ── Selection Color ── */
+::selection {
+  background: rgba(16,185,129,0.25);
+  color: #e2e8f0;
+}
+
+/* ── Dashboard Stat Cards (KPI) ── */
+.rounded-2xl.border[class*="bg-white\/"],
+.rounded-2xl.glass-panel {
+  position: relative !important;
+  overflow: hidden !important;
+}
+
+/* Shimmer sweep animation on stat cards */
+@keyframes shimmer-sweep {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+.rounded-2xl.glass-panel::after {
+  content: '';
+  position: absolute;
+  top: 0; left: -100%;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255,255,255,0.03),
+    transparent
+  );
+  animation: shimmer-sweep 4s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* ── Finance-Specific Tab Navigation ── */
+/* Finance sidebar active item glow based on route */
+a[href*="/modules/finance"].bg-emerald-500\/15,
+a[class*="bg-emerald-500\/15"] {
+  box-shadow:
+    inset 0 0 16px rgba(16,185,129,0.08),
+    0 0 0 1px rgba(16,185,129,0.25) !important;
+}
+
+/* ── Approvals Hub Tab Bar ── */
+.flex-shrink-0[class*="border-b-2"] {
+  position: relative !important;
+  transition: all 0.2s ease !important;
+}
+.flex-shrink-0[class*="border-b-2"]:hover {
+  background: rgba(255,255,255,0.03) !important;
+}
+
+/* ── Number / Amount Display ── */
+.font-mono,
+[class*="font-mono"] {
+  font-feature-settings: "tnum" !important;
+  letter-spacing: 0.02em !important;
+}
+
+/* ── Notification Dots ── */
+[class*="animate-pulse"] {
+  animation: neon-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite !important;
+}
+@keyframes neon-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 4px currentColor; }
+  50% { opacity: 0.5; box-shadow: 0 0 12px currentColor; }
+}
+
+/* ── Loading Spinner ── */
+[class*="animate-spin"] {
+  filter: drop-shadow(0 0 6px rgba(16,185,129,0.6)) !important;
+}
+
+/* ── Modal Overlays ── */
+.fixed.inset-0[style*="rgba(0,0,0"] {
+  backdrop-filter: blur(8px) saturate(1.1) !important;
+}
+
+/* Modal card */
+.fixed.inset-0 > .w-full[class*="max-w"],
+.fixed.inset-0 > div > .w-full[class*="max-w"] {
+  box-shadow:
+    0 0 0 1px rgba(16,185,129,0.1),
+    0 25px 50px rgba(0,0,0,0.7),
+    0 0 80px rgba(16,185,129,0.06) !important;
+}
+
+/* ── Hero Sections (Dashboard banners) ── */
+[style*="linear-gradient(135deg"][class*="rounded-3xl"],
+[style*="linear-gradient(135deg"][class*="overflow-hidden"] {
+  box-shadow:
+    0 4px 24px rgba(0,0,0,0.4),
+    0 0 0 1px rgba(255,255,255,0.06) !important;
+}
+
+/* ── Dividers ── */
+hr, [class*="border-t"][class*="border-slate-8"] {
+  border-color: rgba(255,255,255,0.05) !important;
+}
+
+/* ── Avatar / Icon Boxes ── */
+[style*="border-radius: 6px"][style*="background: linear-gradient"],
+[style*="border-radius:6px"][style*="background:linear-gradient"] {
+  box-shadow: 0 0 12px rgba(16,185,129,0.35) !important;
+}
+
+/* ── Text Colors — Enhanced Contrast ── */
+.text-emerald-200 { color: #a7f3d0 !important; }
+.text-emerald-300 { color: #6ee7b7 !important; }
+.text-emerald-400 { color: #34d399 !important; }
+.text-slate-400 { color: rgba(148,163,184,0.85) !important; }
+.text-slate-300 { color: rgba(203,213,225,0.9) !important; }
+.text-white { color: #f0fafa !important; }
+
+/* ── Finance Payment Records — Column Highlights ── */
+/* Amount cells — make KES amounts stand out */
+td[class*="text-emerald"],
+td[class*="text-green"] {
+  font-weight: 600 !important;
+  letter-spacing: 0.01em !important;
+}
+
+td[class*="text-rose"],
+td[class*="text-red"] {
+  font-weight: 600 !important;
+}
+
+/* ── Chart / Visual Data Areas ── */
+.recharts-wrapper svg {
+  filter: drop-shadow(0 0 4px rgba(16,185,129,0.15));
+}
+.recharts-line path {
+  filter: drop-shadow(0 0 4px var(--neon-green));
+}
+.recharts-bar-rectangle path {
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+}
+
+/* ── Keyboard / Tag Chips ── */
+kbd {
+  background: rgba(255,255,255,0.06) !important;
+  border: 1px solid rgba(255,255,255,0.12) !important;
+  color: #94a3b8 !important;
+  font-size: 10px !important;
+  padding: 1px 5px !important;
+  border-radius: 4px !important;
+}
+
+/* ── Print Fab Button ── */
+#global-print-btn {
+  background: linear-gradient(135deg, #10b981, #059669) !important;
+  box-shadow: 0 0 20px rgba(16,185,129,0.4) !important;
+}
+#global-print-btn:hover {
+  box-shadow: 0 0 30px rgba(16,185,129,0.7) !important;
+}
+
+/* ── Module Header Badge ── */
+[class*="px-3"][class*="py-1"][class*="rounded-full"][class*="text-xs"][class*="font-bold"] {
+  letter-spacing: 0.08em !important;
+  font-size: 10px !important;
+}
+
+/* ── Card Title Lines ── */
+h1[class*="text-2xl"], h1[class*="text-3xl"] {
+  letter-spacing: -0.02em !important;
+}
+h2[class*="text-lg"], h2[class*="text-xl"] {
+  letter-spacing: -0.01em !important;
+}
+
+/* ── Hover lift on clickable rows ── */
+tr[class*="cursor-pointer"]:hover,
+tr[onclick]:hover {
+  transform: translateX(2px) !important;
+  transition: transform 0.15s ease !important;
+}
+
+/* ── Keyframe Animations ── */
+@keyframes glow-border-pulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(16,185,129,0.3); }
+  50% { box-shadow: 0 0 20px rgba(16,185,129,0.6); }
+}
+
+@keyframes scan-line {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
+
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Content sections fade in */
+.col-span-12.md\:col-span-9,
+.col-span-12.lg\:col-span-10 {
+  animation: fade-in-up 0.25s ease-out both !important;
+}
+
+/* ── Responsive Tweaks ── */
+@media (max-width: 768px) {
+  .glass-panel::before { display: none; }
+  .glass-panel::after { display: none; }
+}
+
+/* ── Focused / Active States ── */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid rgba(16,185,129,0.5) !important;
+  outline-offset: 2px !important;
+  box-shadow: 0 0 8px rgba(16,185,129,0.3) !important;
+}
+
+/* ── Horizontal Rule Dividers ── */
+.border-t.border-slate-800,
+.border-t.border-white\/\[0\.07\] {
+  border-color: rgba(255,255,255,0.05) !important;
+  position: relative !important;
+}
+
+/* ── Tooltips ── */
+[role="tooltip"],
+[data-tooltip] {
+  background: rgba(15,23,42,0.95) !important;
+  border: 1px solid rgba(16,185,129,0.2) !important;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5), 0 0 12px rgba(16,185,129,0.1) !important;
+}
+
+/* ── Link Hover States ── */
+a:not([class]):hover {
+  color: #34d399 !important;
+  text-decoration-color: rgba(16,185,129,0.5) !important;
+}
+
+/* ── Dropdown menus ── */
+[role="menu"],
+[role="listbox"] {
+  background: rgba(13,17,23,0.97) !important;
+  border: 1px solid rgba(255,255,255,0.08) !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 0 24px rgba(16,185,129,0.08) !important;
+  backdrop-filter: blur(24px) !important;
+}
+
+/* ── Finance Layout Sidebar Filter Input ── */
+aside input[placeholder="Find section"],
+aside input[placeholder="find section"] {
+  background: rgba(255,255,255,0.03) !important;
+  border-color: rgba(255,255,255,0.06) !important;
+  border-radius: 10px !important;
+}
+aside input[placeholder="Find section"]:focus,
+aside input[placeholder="find section"]:focus {
+  border-color: rgba(16,185,129,0.4) !important;
+  box-shadow: 0 0 8px rgba(16,185,129,0.1) !important;
+}
+
+/* ── PaymentsPage — Record cards & rows ── */
+/* Transaction type pill distinction */
+[style*="background:rgba(16,185,129"] {
+  box-shadow: 0 0 8px rgba(16,185,129,0.25) !important;
+}
+[style*="background:rgba(239,68,68"] {
+  box-shadow: 0 0 8px rgba(239,68,68,0.25) !important;
+}
+[style*="background:rgba(245,158,11"] {
+  box-shadow: 0 0 8px rgba(245,158,11,0.2) !important;
+}
+[style*="background:rgba(99,102,241"] {
+  box-shadow: 0 0 8px rgba(99,102,241,0.25) !important;
+}
+
+/* ── Student / Member Avatar Initials ── */
+[style*="border-radius:50%"][style*="background:linear-gradient"] {
+  box-shadow: 0 0 10px rgba(99,102,241,0.4) !important;
+}
+
+/* ── Hero gradient text in banners ── */
+[style*="color:#818cf8"],
+[style*="color: #818cf8"] {
+  text-shadow: 0 0 20px rgba(129,140,248,0.5) !important;
+}
+[style*="color:#6ee7b7"],
+[style*="color: #6ee7b7"] {
+  text-shadow: 0 0 20px rgba(110,231,183,0.5) !important;
+}
+[style*="color:#34d399"],
+[style*="color: #34d399"] {
+  text-shadow: 0 0 20px rgba(52,211,153,0.5) !important;
+}
+
+/* ── Page transition wrapper ── */
+main, [role="main"], .min-h-screen {
+  position: relative;
+}
+
+/* ── Footer / "All caught up" states ── */
+[class*="text-emerald"][class*="opacity"] {
+  filter: blur(0) !important;
+}
+
+/* ── Finance specific: Filter bar ── */
+.flex.flex-wrap.items-center.gap-3 > button,
+.flex.flex-wrap.items-center.gap-2 > button {
+  transition: all 0.15s ease !important;
+}
+
+/* ── Responsive Tables (overflow wrapper) ── */
+.overflow-x-auto {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(16,185,129,0.3) transparent;
+}
+
+/* ── Inline data labels ── */
+[class*="text-\[10px\]"][class*="uppercase"][class*="tracking"] {
+  letter-spacing: 0.15em !important;
+  color: rgba(100,116,139,0.7) !important;
+}
+
+/* ── Receipt / Invoice Cards ── */
+.print-area table thead tr {
+  background: transparent !important;
+}
+.print-area table th {
+  border-bottom: 1px solid #e2e8f0 !important;
+  color: #374151 !important;
+}
+@media print {
+  body::before { display: none !important; }
+  .glass-panel::before,
+  .glass-panel::after { display: none !important; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   EXTENDED — Payments, Finance Tables & Module Enhancements
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Select Dropdowns — Futuristic Style ── */
+select {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2310b981' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 12px center !important;
+  padding-right: 36px !important;
+  cursor: pointer !important;
+}
+select:hover {
+  border-color: rgba(16,185,129,0.3) !important;
+}
+select option {
+  background: #0d1117 !important;
+  color: #e2e8f0 !important;
+}
+
+/* ── Finance Filter Bar ── */
+.flex.flex-wrap.items-center.gap-3 {
+  position: relative !important;
+}
+
+/* Date range inputs in finance */
+input[type="date"] {
+  background: rgba(2,6,23,0.8) !important;
+  border-color: rgba(255,255,255,0.07) !important;
+  color: #94a3b8 !important;
+  cursor: pointer !important;
+}
+input[type="date"]:focus {
+  color: #e2e8f0 !important;
+  border-color: rgba(16,185,129,0.4) !important;
+  box-shadow: 0 0 10px rgba(16,185,129,0.12) !important;
+}
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.6) sepia(1) saturate(3) hue-rotate(100deg) !important;
+  cursor: pointer !important;
+}
+
+/* ── Payment Status Badges — Neon Glow ── */
+.border-emerald-500\/40.bg-emerald-500\/10 {
+  box-shadow: 0 0 8px rgba(16,185,129,0.2), inset 0 0 8px rgba(16,185,129,0.05) !important;
+}
+.border-rose-500\/40.bg-rose-500\/10 {
+  box-shadow: 0 0 8px rgba(244,63,94,0.2), inset 0 0 8px rgba(244,63,94,0.05) !important;
+}
+.border-amber-500\/40.bg-amber-500\/10 {
+  box-shadow: 0 0 8px rgba(245,158,11,0.2), inset 0 0 8px rgba(245,158,11,0.05) !important;
+}
+.border-indigo-500\/40.bg-indigo-500\/10,
+.border-violet-500\/40.bg-violet-500\/10 {
+  box-shadow: 0 0 8px rgba(99,102,241,0.2) !important;
+}
+.border-cyan-500\/40.bg-cyan-500\/10,
+.border-sky-500\/40.bg-sky-500\/10 {
+  box-shadow: 0 0 8px rgba(6,182,212,0.2) !important;
+}
+
+/* ── Payment Record Table — Enhanced ── */
+/* Section header */
+section.col-span-12.rounded-2xl.glass-panel {
+  border: 1px solid rgba(255,255,255,0.07) !important;
+}
+
+/* Table wrapper glow line */
+.overflow-x-auto.rounded-2xl.border {
+  border-color: rgba(255,255,255,0.05) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04) !important;
+}
+
+/* Payment amount cells — make them shine */
+td.text-emerald-300, td.text-emerald-200, td.text-green-300 {
+  font-variant-numeric: tabular-nums !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.01em !important;
+}
+
+/* ── Pagination Controls ── */
+[class*="pagination"],
+nav[aria-label*="pagination"],
+.flex.items-center.gap-1 > button[class*="rounded"] {
+  transition: all 0.15s ease !important;
+}
+
+/* Pagination active page button */
+button[class*="bg-emerald-500"]:not([disabled]),
+button[class*="bg-indigo-500"]:not([disabled]) {
+  box-shadow: 0 0 12px currentColor !important;
+  opacity: 0.9 !important;
+}
+
+/* ── Print Button ── */
+button[class*="print"],
+button[title*="Print"],
+button[title*="print"] {
+  transition: all 0.2s ease !important;
+}
+button[class*="print"]:hover,
+button[title*="Print"]:hover {
+  box-shadow: 0 0 16px rgba(16,185,129,0.4) !important;
+  transform: translateY(-1px) !important;
+}
+
+/* ── Module Sections (h2 + subtitle pattern) ── */
+.text-lg.font-display.font-semibold,
+h2.text-lg.font-display,
+h2.text-sm.font-semibold.text-slate-200 {
+  background: linear-gradient(90deg, #f0fafa 0%, rgba(240,250,250,0.8) 100%);
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  background-clip: text !important;
+}
+
+/* ── Hover state on glass-panel sections ── */
+section.rounded-2xl.glass-panel:hover {
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.06) inset,
+    0 4px 32px rgba(0,0,0,0.4),
+    0 0 20px rgba(16,185,129,0.04) !important;
+}
+
+/* ── Dashboard Widgets / Quick Action Buttons ── */
+button[class*="rounded-2xl"] {
+  transition: all 0.2s ease !important;
+}
+button[class*="rounded-2xl"]:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4) !important;
+}
+
+/* ── Page Loading States ── */
+[class*="animate-spin"] + span,
+[class*="animate-pulse"] + span {
+  color: rgba(148,163,184,0.7) !important;
+}
+
+/* ── Finance Cashbook / Ledger ── */
+/* Positive numbers */
+[class*="text-green-"],
+[class*="text-emerald-"] {
+  font-variant-numeric: tabular-nums !important;
+}
+
+/* ── Student / Member Selector in Payments ── */
+select[class*="rounded-xl"] {
+  border-radius: 12px !important;
+}
+
+/* ── Revenue / KPI Banner on Finance Dashboard ── */
+[class*="rounded-3xl"][class*="px-6"][class*="py-10"],
+[class*="rounded-3xl"][class*="px-6"][class*="py-8"] {
+  position: relative !important;
+  overflow: hidden !important;
+}
+
+/* Scan line effect on hero banners */
+[class*="rounded-3xl"][class*="px-6"]::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 3px,
+    rgba(255,255,255,0.008) 3px,
+    rgba(255,255,255,0.008) 4px
+  );
+  pointer-events: none;
+  z-index: 1;
+}
+
+[class*="rounded-3xl"][class*="px-6"] > * {
+  position: relative !important;
+  z-index: 2 !important;
+}
+
+/* ── Module Navigation Active Item — All Modules ── */
+/* Applied to any active nav link across all module layouts */
+a.bg-emerald-500\/15,
+a[class*="bg-emerald-500\/15"] {
+  background: linear-gradient(90deg, rgba(16,185,129,0.15), rgba(16,185,129,0.05)) !important;
+  border: 1px solid rgba(16,185,129,0.28) !important;
+  box-shadow: 0 0 16px rgba(16,185,129,0.12) !important;
+  color: #6ee7b7 !important;
+  font-weight: 600 !important;
+}
+
+/* Inactive nav items */
+a.text-slate-300.hover\:bg-white\/\[0\.035\] {
+  border: 1px solid transparent !important;
+  transition: all 0.15s ease !important;
+}
+a.text-slate-300.hover\:bg-white\/\[0\.035\]:hover {
+  background: rgba(255,255,255,0.04) !important;
+  border-color: rgba(255,255,255,0.06) !important;
+  color: #cbd5e1 !important;
+}
+
+/* ── Notification Badges ── */
+span[class*="rounded-full"][class*="bg-rose"],
+span[class*="rounded-full"][class*="bg-amber"],
+span[class*="rounded-full"][class*="bg-emerald"] {
+  animation: neon-pulse 2.5s ease-in-out infinite !important;
+}
+
+/* ── Confirmation / Alert Dialogs ── */
+[role="dialog"] .rounded-2xl,
+[role="alertdialog"] .rounded-2xl {
+  background: rgba(13,17,23,0.97) !important;
+  border: 1px solid rgba(255,255,255,0.1) !important;
+  box-shadow:
+    0 25px 60px rgba(0,0,0,0.7),
+    0 0 0 1px rgba(16,185,129,0.08),
+    0 0 60px rgba(16,185,129,0.04) !important;
+  backdrop-filter: blur(32px) !important;
+}
+
+/* ── Module Sub-section Cards ── */
+.rounded-2xl.border.border-white\/\[0\.07\] {
+  background: linear-gradient(145deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%) !important;
+  transition: border-color 0.2s ease !important;
+}
+.rounded-2xl.border.border-white\/\[0\.07\]:hover {
+  border-color: rgba(255,255,255,0.1) !important;
+}
+
+/* ── Progress Bars ── */
+[role="progressbar"] {
+  overflow: hidden !important;
+  position: relative !important;
+}
+[role="progressbar"]::after {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0;
+  left: -100%;
+  width: 50%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+  animation: shimmer-sweep 1.5s ease-in-out infinite;
+}
+
+/* ── Extra: Frosted Glass for Modals ── */
+.fixed.inset-0 > div[class*="max-w"] {
+  background: linear-gradient(145deg, rgba(13,17,23,0.97) 0%, rgba(9,12,20,0.98) 100%) !important;
+  border: 1px solid rgba(255,255,255,0.08) !important;
+  box-shadow:
+    0 25px 50px rgba(0,0,0,0.7),
+    0 0 80px rgba(16,185,129,0.05),
+    0 0 0 1px rgba(16,185,129,0.08) !important;
+  backdrop-filter: blur(40px) saturate(1.2) !important;
+}
+
+/* ── Hover tooltips and small info boxes ── */
+[class*="text-\[11px\]"][class*="bg-slate-800"],
+[class*="text-\[10px\]"][class*="bg-slate-800"],
+[class*="text-xs"][class*="bg-slate-800\/"] {
+  backdrop-filter: blur(8px) !important;
+  border: 1px solid rgba(255,255,255,0.07) !important;
+}
+
+/* ── Finance Stat Numbers ── */
+.text-2xl.font-bold.text-white,
+.text-3xl.font-bold.text-white,
+.text-xl.font-bold.text-white {
+  font-variant-numeric: tabular-nums !important;
+  letter-spacing: -0.03em !important;
+  text-rendering: optimizeLegibility !important;
+}
+
+/* ── All Section Headers with Icon+Title pattern ── */
+.flex.items-center.gap-2 > [style*="borderRadius"][style*="background"] + div > .text-sm {
+  letter-spacing: 0.01em !important;
+}
+
+/* ── Error / Warning Panels ── */
+.rounded-2xl.border.border-rose-500\/40.bg-rose-500\/10 {
+  box-shadow: 0 0 24px rgba(244,63,94,0.1), inset 0 0 16px rgba(244,63,94,0.04) !important;
+}
+.rounded-2xl.border.border-amber-500\/30.bg-amber-500\/10 {
+  box-shadow: 0 0 24px rgba(245,158,11,0.1) !important;
+}
+.rounded-2xl.border.border-emerald-500\/30.bg-emerald-500\/10 {
+  box-shadow: 0 0 24px rgba(16,185,129,0.1) !important;
+}
+
+/* ── All Module Content Sections — Content fade-in ── */
+.space-y-6 > .rounded-2xl,
+.space-y-8 > .rounded-2xl {
+  animation: fade-in-up 0.2s ease both !important;
+}
+.space-y-6 > .rounded-2xl:nth-child(2) { animation-delay: 0.04s !important; }
+.space-y-6 > .rounded-2xl:nth-child(3) { animation-delay: 0.08s !important; }
+.space-y-6 > .rounded-2xl:nth-child(4) { animation-delay: 0.12s !important; }
+.space-y-6 > .rounded-2xl:nth-child(5) { animation-delay: 0.16s !important; }
