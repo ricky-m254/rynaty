@@ -86,6 +86,8 @@ class Command(BaseCommand):
 
         # ── Seed admin user INSIDE the resolved schema ─────────────────────────
         self._seed_admin(tenant.schema_name)
+        # ── Seed minimal school profile + academic structure ───────────────────
+        self._seed_school_data(tenant.schema_name)
         self.stdout.write("  [olom] Done.")
 
     # ──────────────────────────────────────────────────────────────────────────
@@ -176,16 +178,167 @@ class Command(BaseCommand):
             else:
                 self.stdout.write(f"  [olom] Admin user '{_ADMIN_USER}' password refreshed")
 
+            # ── Assign TENANT_SUPER_ADMIN role via FK (not string) ─────────────
+            # UserProfile.role is a ForeignKey(Role). If Role objects haven't been
+            # seeded yet (first startup), we create the TENANT_SUPER_ADMIN role now;
+            # the full seed_default_permissions pass will fill in the rest later.
             try:
-                from school.models import UserProfile
-                profile, _ = UserProfile.objects.get_or_create(
-                    user=admin_user,
-                    defaults={"role": "TENANT_SUPER_ADMIN"},
+                from school.models import UserProfile, Role
+                role_obj, role_created = Role.objects.get_or_create(
+                    name="TENANT_SUPER_ADMIN",
+                    defaults={"description": "Tenant Super Admin"},
                 )
-                if profile.role != "TENANT_SUPER_ADMIN":
-                    profile.role = "TENANT_SUPER_ADMIN"
+                if role_created:
+                    self.stdout.write("  [olom] Created TENANT_SUPER_ADMIN Role record")
+
+                profile, profile_created = UserProfile.objects.get_or_create(
+                    user=admin_user,
+                    defaults={"role": role_obj},
+                )
+                if not profile_created and profile.role_id != role_obj.pk:
+                    profile.role = role_obj
                     profile.save(update_fields=["role"])
-            except Exception:
-                pass
+                    self.stdout.write("  [olom] Updated olom_admin UserProfile role to TENANT_SUPER_ADMIN")
+                else:
+                    action = "Created" if profile_created else "Already correct"
+                    self.stdout.write(f"  [olom] UserProfile role: {action} (TENANT_SUPER_ADMIN)")
+            except Exception as exc:
+                self.stdout.write(f"  [olom] WARNING: Could not assign UserProfile role: {exc}")
+
+    def _seed_school_data(self, schema_name):
+        """Seed minimal school profile and academic structure for the olom tenant."""
+        with schema_context(schema_name):
+            from datetime import date
+
+            # ── SchoolProfile ─────────────────────────────────────────────────
+            from school.models import SchoolProfile
+            profile, created = SchoolProfile.objects.get_or_create(
+                is_active=True,
+                defaults={
+                    "school_name": "Olom School",
+                    "motto": "Excellence in Education",
+                    "address": "Nairobi, Kenya",
+                    "phone": "+254 700 000 000",
+                    "email_address": "info@olom.rynatyschool.app",
+                    "country": "Kenya",
+                    "county": "Nairobi",
+                    "currency": "KES",
+                    "timezone": "Africa/Nairobi",
+                    "language": "en",
+                    "primary_color": "#10b981",
+                    "secondary_color": "#0d1117",
+                    "admission_number_mode": "AUTO",
+                    "admission_number_prefix": "OLM-",
+                    "receipt_prefix": "RCT-",
+                    "invoice_prefix": "INV-",
+                },
+            )
+            action = "Created" if created else "Already exists"
+            self.stdout.write(f"  [olom] SchoolProfile: {action} ({profile.school_name})")
+
+            # ── Grade Levels (CBC Kenya: Grade 7-10) ─────────────────────────
+            from school.models import GradeLevel
+            grade_levels = [
+                ("Grade 7", 7),
+                ("Grade 8", 8),
+                ("Grade 9", 9),
+                ("Grade 10", 10),
+            ]
+            gl_created = 0
+            for name, order in grade_levels:
+                _, c = GradeLevel.objects.get_or_create(name=name, defaults={"order": order, "is_active": True})
+                if c:
+                    gl_created += 1
+            self.stdout.write(f"  [olom] GradeLevels: {gl_created} created, {len(grade_levels) - gl_created} existed")
+
+            # ── Academic Year & Term ──────────────────────────────────────────
+            from school.models import AcademicYear, Term
+            year_name = "2025-2026"
+            academic_year, ay_created = AcademicYear.objects.get_or_create(
+                name=year_name,
+                defaults={
+                    "start_date": date(2025, 1, 1),
+                    "end_date": date(2025, 12, 31),
+                    "is_active": True,
+                    "is_current": True,
+                },
+            )
+            if not academic_year.is_current:
+                AcademicYear.objects.filter(pk=academic_year.pk).update(is_current=True)
+                AcademicYear.objects.exclude(pk=academic_year.pk).update(is_current=False)
+            if ay_created:
+                self.stdout.write(f"  [olom] AcademicYear '{year_name}' created")
+            else:
+                self.stdout.write(f"  [olom] AcademicYear '{year_name}' already exists (marked current)")
+
+            terms_data = [
+                ("Term 1", date(2025, 1, 6), date(2025, 4, 4)),
+                ("Term 2", date(2025, 5, 5), date(2025, 8, 8)),
+                ("Term 3", date(2025, 9, 1), date(2025, 11, 28)),
+            ]
+            t_created = 0
+            for tname, tstart, tend in terms_data:
+                _, c = Term.objects.get_or_create(
+                    academic_year=academic_year,
+                    name=tname,
+                    defaults={
+                        "start_date": tstart,
+                        "end_date": tend,
+                        "is_active": True,
+                        "is_current": (tname == "Term 2"),
+                    },
+                )
+                if c:
+                    t_created += 1
+            self.stdout.write(f"  [olom] Terms: {t_created} created, {len(terms_data) - t_created} existed")
+
+            # ── Departments ───────────────────────────────────────────────────
+            from school.models import Department
+            departments = [
+                ("Languages", "Language and Communication"),
+                ("Mathematics", "Mathematical Sciences"),
+                ("Sciences", "Natural Sciences"),
+                ("Humanities", "Humanities and Social Studies"),
+                ("Technology", "ICT and Technology"),
+                ("Arts", "Creative Arts and Sports"),
+            ]
+            dept_created = 0
+            dept_map = {}
+            for dname, ddesc in departments:
+                dept, c = Department.objects.get_or_create(name=dname, defaults={"description": ddesc})
+                dept_map[dname] = dept
+                if c:
+                    dept_created += 1
+            self.stdout.write(f"  [olom] Departments: {dept_created} created")
+
+            # ── Subjects (CBC Kenya core subjects for Junior Secondary) ───────
+            from school.models import Subject
+            subjects = [
+                ("English", "ENG", "Languages"),
+                ("Kiswahili", "KIS", "Languages"),
+                ("Mathematics", "MAT", "Mathematics"),
+                ("Integrated Science", "ISC", "Sciences"),
+                ("Social Studies", "SST", "Humanities"),
+                ("Religious Education", "CRE", "Humanities"),
+                ("Business Studies", "BST", "Humanities"),
+                ("Agriculture and Nutrition", "AGR", "Sciences"),
+                ("Pre-Technical Studies", "PTS", "Technology"),
+                ("Creative Arts and Sports", "CAS", "Arts"),
+            ]
+            subj_created = 0
+            for sname, scode, sdept in subjects:
+                dept = dept_map.get(sdept)
+                _, c = Subject.objects.get_or_create(
+                    code=scode,
+                    defaults={
+                        "name": sname,
+                        "department": dept,
+                        "is_active": True,
+                        "subject_type": "Compulsory",
+                    },
+                )
+                if c:
+                    subj_created += 1
+            self.stdout.write(f"  [olom] Subjects: {subj_created} created")
 
 
