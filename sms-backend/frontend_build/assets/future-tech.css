@@ -1,658 +1,888 @@
-/* ═══════════════════════════════════════════════════════════════════
-   SMARTCAMPUS — FUTURE TECH DESIGN SYSTEM v2.0
-   Next-generation UI skin — injected over Tailwind base
-   ═══════════════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════════════
+   SMARTCAMPUS — OBSIDIAN MARBLE & GOLD DESIGN SYSTEM v3.0
+   "Opulent Intelligence" — A living marble-glass luxury UI
+   Concept: Dark Obsidian + Champagne Gold + True Glass + Pearl Shimmer
+   ═══════════════════════════════════════════════════════════════════════════ */
 
-/* ── Design Tokens ── */
+/* ── Luxury Design Tokens ── */
 :root {
-  --neon-green:   #10b981;
-  --neon-green2:  #34d399;
-  --neon-indigo:  #6366f1;
-  --neon-cyan:    #06b6d4;
-  --neon-violet:  #8b5cf6;
-  --neon-amber:   #f59e0b;
-  --neon-rose:    #f43f5e;
-  --bg-deep:      #020617;
-  --bg-surface:   #0d1117;
-  --bg-elevated:  #0f172a;
-  --border-glass: rgba(255,255,255,0.07);
-  --border-glow:  rgba(16,185,129,0.3);
-  --glow-sm: 0 0 8px rgba(16,185,129,0.4);
-  --glow-md: 0 0 16px rgba(16,185,129,0.35), 0 0 32px rgba(16,185,129,0.15);
-  --glow-lg: 0 0 24px rgba(16,185,129,0.5), 0 0 48px rgba(16,185,129,0.2);
-  --glow-indigo: 0 0 16px rgba(99,102,241,0.4), 0 0 32px rgba(99,102,241,0.15);
-  --glow-cyan: 0 0 16px rgba(6,182,212,0.4), 0 0 32px rgba(6,182,212,0.15);
+  /* Gold palette */
+  --gold-deep:      #8B6914;
+  --gold-mid:       #C9A84C;
+  --gold-bright:    #E8C96A;
+  --gold-shimmer:   #F5E194;
+  --gold-pale:      #FDF3CC;
+
+  /* Marble tones */
+  --marble-void:    #060608;
+  --marble-deep:    #0a0a10;
+  --marble-base:    #0e0e18;
+  --marble-mid:     #141422;
+  --marble-light:   #1c1c2e;
+  --marble-vein:    rgba(220,210,190,0.055);
+  --marble-vein2:   rgba(200,185,155,0.035);
+
+  /* Glass */
+  --glass-bg:       rgba(12,12,22,0.55);
+  --glass-bg-light: rgba(18,18,32,0.65);
+  --glass-border:   rgba(201,168,76,0.18);
+  --glass-border-h: rgba(201,168,76,0.32);
+  --glass-inner:    rgba(255,255,255,0.03);
+
+  /* Teal (brand accent — kept for actions) */
+  --teal:           #10b981;
+  --teal-bright:    #34d399;
+  --teal-dim:       rgba(16,185,129,0.25);
+
+  /* Status */
+  --danger:         #f43f5e;
+  --warning:        #f59e0b;
+  --info:           #6366f1;
+  --cyan:           #06b6d4;
+
+  /* Typography */
+  --cream:          #EDE8DC;
+  --silver:         #A8B4C4;
+  --muted:          rgba(168,180,196,0.65);
+
+  /* Shadows */
+  --shadow-marble:  0 24px 64px rgba(0,0,0,0.75), 0 4px 16px rgba(0,0,0,0.5);
+  --shadow-gold:    0 0 24px rgba(201,168,76,0.25), 0 0 8px rgba(201,168,76,0.15);
+  --shadow-teal:    0 0 20px rgba(16,185,129,0.3), 0 0 8px rgba(16,185,129,0.15);
+  --shadow-glass:   0 8px 40px rgba(0,0,0,0.6), inset 0 1px 0 rgba(201,168,76,0.12), inset 0 0 0 1px rgba(255,255,255,0.03);
 }
 
-/* ── Global Page Foundation ── */
+/* ══════════════════════════════════════
+   GLOBAL FOUNDATION — Marble Canvas
+   ══════════════════════════════════════ */
+
 html, body, #root {
-  background-color: var(--bg-deep) !important;
-  font-feature-settings: "cv11", "ss01";
+  background-color: var(--marble-void) !important;
+  color: var(--cream) !important;
+  font-feature-settings: "cv11", "ss01", "kern";
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
 }
 
-/* Subtle grid texture on body */
+/* Living marble background — layered SVG noise + gold vein gradients */
 body::before {
   content: '';
   position: fixed;
   inset: 0;
-  background-image:
-    linear-gradient(rgba(16,185,129,0.015) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(16,185,129,0.015) 1px, transparent 1px);
-  background-size: 48px 48px;
-  pointer-events: none;
   z-index: 0;
+  pointer-events: none;
+
+  background-image:
+    /* Gold veins — diagonal sweeps */
+    linear-gradient(
+      137deg,
+      transparent 0%,
+      transparent 28%,
+      rgba(201,168,76,0.025) 28.5%,
+      rgba(201,168,76,0.015) 29%,
+      transparent 30%,
+      transparent 55%,
+      rgba(201,168,76,0.02) 55.5%,
+      rgba(201,168,76,0.012) 56%,
+      transparent 57%,
+      transparent 80%,
+      rgba(201,168,76,0.018) 80.5%,
+      rgba(201,168,76,0.010) 81%,
+      transparent 82%
+    ),
+    /* Secondary vein set */
+    linear-gradient(
+      -52deg,
+      transparent 0%,
+      transparent 18%,
+      rgba(220,200,160,0.018) 18.5%,
+      transparent 20%,
+      transparent 44%,
+      rgba(220,200,160,0.014) 44.8%,
+      transparent 46%,
+      transparent 70%,
+      rgba(220,200,160,0.016) 70.5%,
+      transparent 72%
+    ),
+    /* Tertiary micro-veins */
+    repeating-linear-gradient(
+      73deg,
+      transparent 0px,
+      transparent 120px,
+      rgba(200,185,155,0.012) 120px,
+      rgba(200,185,155,0.012) 121px,
+      transparent 121px,
+      transparent 240px
+    ),
+    /* Marble cloud depth — radial light zones */
+    radial-gradient(ellipse 80% 60% at 15% 20%, rgba(18,18,32,0.9) 0%, transparent 70%),
+    radial-gradient(ellipse 60% 80% at 85% 75%, rgba(14,14,24,0.85) 0%, transparent 60%),
+    radial-gradient(ellipse 100% 100% at 50% 50%, var(--marble-deep) 0%, var(--marble-void) 100%);
 }
 
-/* ── Glass Panel — Core Card Component ── */
+/* Slow animated marble drift — the "living marble" effect */
+@keyframes marble-drift {
+  0%   { background-position: 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%; }
+  50%  { background-position: 8px 4px, -6px 3px, 4px -2px, 0% 0%, 0% 0%, 0% 0%; }
+  100% { background-position: 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%; }
+}
+
+body::before {
+  animation: marble-drift 40s ease-in-out infinite;
+}
+
+/* Marble noise overlay (SVG turbulence for stone texture) */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.65;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='700' height='700'%3E%3Cfilter id='mn'%3E%3CfeTurbulence type='turbulence' baseFrequency='0.016 0.038' numOctaves='8' seed='9' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0.055 0 0 0 0 0.055 0 0 0 0 0.09 0 0 0 22 -11'/%3E%3C/filter%3E%3Crect width='700' height='700' filter='url(%23mn)'/%3E%3C/svg%3E");
+  background-size: 700px 700px;
+  mix-blend-mode: screen;
+}
+
+/* Ensure all content sits above the marble background */
+#root > * { position: relative; z-index: 1; }
+
+/* ══════════════════════════════════════
+   GLASS PANELS — True Frosted Marble Glass
+   ══════════════════════════════════════ */
+
 .glass-panel {
-  background: linear-gradient(145deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.02) 100%) !important;
-  border: 1px solid rgba(255,255,255,0.08) !important;
-  backdrop-filter: blur(20px) saturate(1.2) !important;
+  background:
+    linear-gradient(
+      145deg,
+      rgba(201,168,76,0.04) 0%,
+      rgba(255,255,255,0.025) 30%,
+      rgba(12,12,22,0.5) 60%,
+      rgba(6,6,14,0.6) 100%
+    ) !important;
+  border: 1px solid var(--glass-border) !important;
+  backdrop-filter: blur(28px) saturate(1.6) brightness(1.05) !important;
+  -webkit-backdrop-filter: blur(28px) saturate(1.6) brightness(1.05) !important;
   box-shadow:
-    0 1px 0 rgba(255,255,255,0.05) inset,
-    0 -1px 0 rgba(0,0,0,0.2) inset,
-    0 4px 24px rgba(0,0,0,0.4),
-    0 0 0 0 transparent !important;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+    var(--shadow-glass),
+    0 0 0 0.5px rgba(201,168,76,0.1) inset !important;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease !important;
   position: relative !important;
   overflow: hidden !important;
 }
 
+/* Gold hairline top edge */
 .glass-panel::before {
   content: '';
   position: absolute;
   top: 0; left: 0; right: 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(16,185,129,0.5), rgba(99,102,241,0.4), transparent);
-  opacity: 0.7;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(201,168,76,0.0) 5%,
+    rgba(201,168,76,0.65) 30%,
+    rgba(245,225,148,0.85) 50%,
+    rgba(201,168,76,0.65) 70%,
+    rgba(201,168,76,0.0) 95%,
+    transparent 100%
+  );
+  z-index: 2;
+}
+
+/* Pearl shimmer sweep */
+@keyframes pearl-sweep {
+  0%   { transform: translateX(-100%) skewX(-15deg); opacity: 0; }
+  15%  { opacity: 1; }
+  85%  { opacity: 1; }
+  100% { transform: translateX(250%) skewX(-15deg); opacity: 0; }
+}
+
+.glass-panel::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 40%;
+  height: 100%;
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    rgba(255,252,230,0.015) 40%,
+    rgba(255,248,200,0.03) 50%,
+    rgba(255,252,230,0.015) 60%,
+    transparent 100%
+  );
+  animation: pearl-sweep 8s ease-in-out infinite;
+  animation-delay: calc(var(--panel-delay, 0) * 1s);
+  pointer-events: none;
+  z-index: 1;
 }
 
 .glass-panel:hover {
-  border-color: rgba(16,185,129,0.2) !important;
+  border-color: var(--glass-border-h) !important;
   box-shadow:
-    0 1px 0 rgba(255,255,255,0.07) inset,
-    0 -1px 0 rgba(0,0,0,0.2) inset,
-    0 4px 32px rgba(0,0,0,0.5),
-    0 0 24px rgba(16,185,129,0.06) !important;
+    0 12px 48px rgba(0,0,0,0.65),
+    0 0 32px rgba(201,168,76,0.08),
+    inset 0 1px 0 rgba(201,168,76,0.2),
+    inset 0 0 0 0.5px rgba(201,168,76,0.12) !important;
 }
 
 .glass-panel-hover {
-  background: linear-gradient(145deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.02) 100%) !important;
-  border: 1px solid rgba(255,255,255,0.08) !important;
-  backdrop-filter: blur(20px) !important;
-  transition: all 0.2s ease !important;
+  background: rgba(14,14,24,0.45) !important;
+  border: 1px solid rgba(201,168,76,0.12) !important;
+  backdrop-filter: blur(24px) !important;
+  -webkit-backdrop-filter: blur(24px) !important;
+  transition: all 0.25s ease !important;
 }
 .glass-panel-hover:hover {
-  border-color: rgba(16,185,129,0.25) !important;
-  background: linear-gradient(145deg, rgba(16,185,129,0.06) 0%, rgba(99,102,241,0.03) 100%) !important;
-  box-shadow: var(--glow-sm), 0 4px 24px rgba(0,0,0,0.4) !important;
-  transform: translateY(-1px) !important;
+  border-color: rgba(201,168,76,0.3) !important;
+  background: rgba(201,168,76,0.04) !important;
+  box-shadow: var(--shadow-gold), 0 4px 24px rgba(0,0,0,0.5) !important;
+  transform: translateY(-2px) !important;
 }
 
-/* ── Sidebar Navigation Links — Active State ── */
+/* ══════════════════════════════════════
+   SIDEBAR NAVIGATION — Gold Active
+   ══════════════════════════════════════ */
+
+/* Active nav item */
 .bg-emerald-500\/15 {
-  background: linear-gradient(90deg, rgba(16,185,129,0.18) 0%, rgba(16,185,129,0.06) 100%) !important;
-  border: 1px solid rgba(16,185,129,0.3) !important;
-  box-shadow: 0 0 12px rgba(16,185,129,0.15), inset 0 0 8px rgba(16,185,129,0.05) !important;
+  background: linear-gradient(
+    95deg,
+    rgba(201,168,76,0.14) 0%,
+    rgba(232,201,106,0.08) 60%,
+    rgba(16,185,129,0.05) 100%
+  ) !important;
+  border: 1px solid rgba(201,168,76,0.3) !important;
+  box-shadow:
+    0 0 16px rgba(201,168,76,0.12),
+    inset 0 0 12px rgba(201,168,76,0.04) !important;
   position: relative !important;
   overflow: hidden !important;
 }
+
+/* Gold left-bar indicator */
 .bg-emerald-500\/15::after {
   content: '';
   position: absolute;
-  left: 0; top: 0; bottom: 0;
-  width: 3px;
-  background: linear-gradient(180deg, #10b981, #34d399);
+  left: 0; top: 10%; bottom: 10%;
+  width: 2.5px;
+  background: linear-gradient(180deg,
+    rgba(201,168,76,0.3) 0%,
+    var(--gold-bright) 30%,
+    var(--gold-shimmer) 50%,
+    var(--gold-bright) 70%,
+    rgba(201,168,76,0.3) 100%
+  );
   border-radius: 0 2px 2px 0;
-  box-shadow: 0 0 8px rgba(16,185,129,0.8);
+  box-shadow: 0 0 10px rgba(201,168,76,0.7), 0 0 4px rgba(232,201,106,0.9);
 }
+
 .bg-emerald-500\/15.text-emerald-200 {
-  color: #6ee7b7 !important;
-  text-shadow: 0 0 12px rgba(16,185,129,0.6) !important;
+  color: var(--gold-bright) !important;
+  text-shadow: 0 0 14px rgba(201,168,76,0.5) !important;
   font-weight: 600 !important;
-  letter-spacing: 0.01em !important;
 }
 
-/* ── Tab Bars — Finance, HR, etc. ── */
-/* Tab strip container */
-[class*="overflow-x-auto"][class*="rounded-2xl"][class*="border"] {
-  border-color: rgba(255,255,255,0.06) !important;
-  background: rgba(255,255,255,0.015) !important;
+/* Inactive nav item hover */
+a.text-slate-300,
+a.text-slate-400 {
+  border: 1px solid transparent !important;
+  transition: all 0.2s ease !important;
+  color: rgba(168,180,196,0.7) !important;
+}
+a.text-slate-300:hover,
+a.text-slate-400:hover {
+  background: rgba(201,168,76,0.04) !important;
+  border-color: rgba(201,168,76,0.1) !important;
+  color: rgba(232,201,106,0.8) !important;
 }
 
-/* Tab buttons — inactive */
-.text-slate-400[class*="border-b-2"],
-.text-slate-500[class*="border-b-2"] {
-  color: rgba(148,163,184,0.7) !important;
-  transition: color 0.2s ease, text-shadow 0.2s ease !important;
-}
-.text-slate-400[class*="border-b-2"]:hover {
-  color: #94a3b8 !important;
+/* Sidebar module nav section labels */
+.text-\[10px\].uppercase.tracking-\[0\.35em\],
+p.text-xs.uppercase.tracking-\[0\.3em\] {
+  background: linear-gradient(90deg,
+    rgba(201,168,76,0.85) 0%,
+    rgba(232,201,106,0.65) 50%,
+    rgba(168,180,196,0.5) 100%
+  );
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  background-clip: text !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.32em !important;
 }
 
-/* ApprovalsHub active tab — the border-b-2 active pattern */
-[class*="border-b-2"][class*="border-\[#"] {
-  text-shadow: 0 0 12px currentColor !important;
-}
+/* ══════════════════════════════════════
+   TABLES — Marble Crystal Design
+   ══════════════════════════════════════ */
 
-/* ── Tables — Future Grid Design ── */
 table {
   border-collapse: separate !important;
   border-spacing: 0 !important;
 }
 
 thead tr {
-  background: linear-gradient(90deg,
-    rgba(16,185,129,0.04) 0%,
-    rgba(99,102,241,0.03) 50%,
-    rgba(6,182,212,0.04) 100%) !important;
-  border-bottom: 1px solid rgba(16,185,129,0.15) !important;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(201,168,76,0.07) 0%,
+      rgba(232,201,106,0.04) 40%,
+      rgba(201,168,76,0.06) 100%
+    ) !important;
+  border-bottom: 1px solid rgba(201,168,76,0.2) !important;
+  position: relative !important;
 }
 
 thead th {
-  color: rgba(100,116,139,0.9) !important;
+  color: rgba(201,168,76,0.85) !important;
   font-size: 10px !important;
   font-weight: 700 !important;
-  letter-spacing: 0.12em !important;
+  letter-spacing: 0.14em !important;
   text-transform: uppercase !important;
-  padding: 10px 16px !important;
-  border-bottom: 1px solid rgba(16,185,129,0.1) !important;
+  padding: 11px 16px !important;
+  border-bottom: 1px solid rgba(201,168,76,0.15) !important;
   white-space: nowrap !important;
+  text-shadow: 0 0 16px rgba(201,168,76,0.3) !important;
 }
 
 thead th:first-child {
-  border-left: 2px solid rgba(16,185,129,0.2) !important;
+  border-left: 2px solid rgba(201,168,76,0.3) !important;
   padding-left: 20px !important;
 }
 
 tbody tr {
-  transition: background 0.15s ease, box-shadow 0.15s ease !important;
-  border-bottom: 1px solid rgba(255,255,255,0.03) !important;
+  transition: background 0.18s ease, box-shadow 0.18s ease !important;
+  border-bottom: 1px solid rgba(255,255,255,0.028) !important;
   position: relative !important;
 }
 
+/* Alternating subtle marble row tint */
+tbody tr:nth-child(even) {
+  background: rgba(255,255,255,0.012) !important;
+}
+
 tbody tr:hover {
-  background: linear-gradient(90deg,
-    rgba(16,185,129,0.05) 0%,
-    rgba(99,102,241,0.03) 60%,
-    transparent 100%) !important;
-  box-shadow: inset 2px 0 0 rgba(16,185,129,0.5) !important;
+  background: linear-gradient(
+    90deg,
+    rgba(201,168,76,0.07) 0%,
+    rgba(201,168,76,0.04) 50%,
+    transparent 100%
+  ) !important;
+  box-shadow:
+    inset 2.5px 0 0 rgba(201,168,76,0.6),
+    inset 0 0 32px rgba(201,168,76,0.02) !important;
 }
 
 tbody td {
-  padding: 10px 16px !important;
+  padding: 11px 16px !important;
   font-size: 13px !important;
+  color: rgba(220,215,205,0.88) !important;
   transition: color 0.15s ease !important;
 }
+tbody td:first-child { padding-left: 20px !important; }
 
-tbody td:first-child {
-  padding-left: 20px !important;
-}
+/* ══════════════════════════════════════
+   BUTTONS — Gold & Glass Style
+   ══════════════════════════════════════ */
 
-/* ── Stat / KPI Cards ── */
-.rounded-2xl[class*="glass-panel"],
-.rounded-2xl[class*="bg-white"] {
-  transition: transform 0.2s ease, box-shadow 0.2s ease !important;
-}
-
-/* Number values — make them glow */
-.text-2xl.font-bold,
-.text-3xl.font-bold,
-.text-2xl.font-semibold,
-.text-3xl.font-semibold {
-  letter-spacing: -0.02em !important;
-}
-
-/* ── Buttons — Neon Style ── */
-/* Primary / Success buttons */
+/* Primary action button */
 button[class*="bg-emerald-500"],
-a[class*="bg-emerald-500"],
-button[class*="emerald-500"][class*="border"] {
-  background: linear-gradient(135deg, #10b981, #059669) !important;
-  border-color: transparent !important;
-  box-shadow: 0 0 16px rgba(16,185,129,0.4), 0 2px 8px rgba(0,0,0,0.3) !important;
+a[class*="bg-emerald-500"] {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+  border: 1px solid rgba(16,185,129,0.4) !important;
+  box-shadow:
+    0 0 20px rgba(16,185,129,0.3),
+    0 2px 8px rgba(0,0,0,0.4),
+    inset 0 1px 0 rgba(255,255,255,0.15) !important;
   font-weight: 600 !important;
-  letter-spacing: 0.02em !important;
-  transition: all 0.2s ease !important;
+  letter-spacing: 0.03em !important;
+  transition: all 0.25s ease !important;
 }
 button[class*="bg-emerald-500"]:hover,
 a[class*="bg-emerald-500"]:hover {
-  box-shadow: 0 0 24px rgba(16,185,129,0.6), 0 2px 12px rgba(0,0,0,0.4) !important;
+  box-shadow:
+    0 0 28px rgba(16,185,129,0.5),
+    0 4px 16px rgba(0,0,0,0.5),
+    inset 0 1px 0 rgba(255,255,255,0.2) !important;
   transform: translateY(-1px) !important;
+  filter: brightness(1.08) !important;
 }
 
-/* Ghost / Outline buttons */
-button[class*="border"][class*="border-emerald"],
+/* Ghost / outline buttons */
 button[class*="border"][class*="border-white"],
-button[class*="border"][class*="border-slate"] {
+button[class*="border"][class*="border-slate"],
+button[class*="border"][class*="border-white\/"] {
+  background: rgba(255,255,255,0.03) !important;
+  border-color: rgba(201,168,76,0.2) !important;
+  color: rgba(201,168,76,0.8) !important;
   transition: all 0.2s ease !important;
+  backdrop-filter: blur(8px) !important;
 }
+button[class*="border"][class*="border-white"]:hover,
+button[class*="border"][class*="border-slate"]:hover {
+  background: rgba(201,168,76,0.07) !important;
+  border-color: rgba(201,168,76,0.4) !important;
+  box-shadow: 0 0 14px rgba(201,168,76,0.15) !important;
+  color: var(--gold-bright) !important;
+}
+
 button[class*="border"][class*="border-emerald"]:hover {
-  background: rgba(16,185,129,0.1) !important;
+  background: rgba(16,185,129,0.08) !important;
   border-color: rgba(16,185,129,0.5) !important;
-  box-shadow: 0 0 12px rgba(16,185,129,0.2) !important;
-}
-button[class*="border"][class*="border-indigo"]:hover,
-button[class*="border"][class*="border-violet"]:hover {
-  box-shadow: var(--glow-indigo) !important;
-  border-color: rgba(99,102,241,0.6) !important;
+  box-shadow: var(--shadow-teal) !important;
 }
 
 /* Danger buttons */
 button[class*="bg-rose-500"],
 button[class*="bg-red-500"] {
-  box-shadow: 0 0 16px rgba(244,63,94,0.4), 0 2px 8px rgba(0,0,0,0.3) !important;
+  box-shadow:
+    0 0 18px rgba(244,63,94,0.35),
+    0 2px 8px rgba(0,0,0,0.4),
+    inset 0 1px 0 rgba(255,255,255,0.12) !important;
+  transition: all 0.2s ease !important;
 }
 button[class*="bg-rose-500"]:hover,
 button[class*="bg-red-500"]:hover {
-  box-shadow: 0 0 24px rgba(244,63,94,0.6) !important;
+  box-shadow: 0 0 28px rgba(244,63,94,0.55), 0 4px 16px rgba(0,0,0,0.5) !important;
   transform: translateY(-1px) !important;
 }
 
-/* Icon buttons / round buttons */
-button[class*="rounded-full"] {
+/* All other buttons */
+button[class*="rounded-2xl"],
+button[class*="rounded-xl"] {
   transition: all 0.2s ease !important;
 }
+button[class*="rounded-2xl"]:hover,
+button[class*="rounded-xl"]:hover:not([disabled]) {
+  transform: translateY(-1px) !important;
+}
 
-/* ── Form Inputs — Neon Focus ── */
+/* Icon buttons */
+button[class*="rounded-full"] {
+  transition: all 0.2s ease !important;
+  backdrop-filter: blur(8px) !important;
+}
+
+/* ══════════════════════════════════════
+   FORM INPUTS — Luxury Glass Style
+   ══════════════════════════════════════ */
+
 input:not([type="checkbox"]):not([type="radio"]),
 select,
 textarea {
-  background: rgba(2,6,23,0.8) !important;
-  border-color: rgba(255,255,255,0.07) !important;
-  color: #e2e8f0 !important;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+  background: rgba(6,6,14,0.7) !important;
+  border: 1px solid rgba(201,168,76,0.15) !important;
+  color: var(--cream) !important;
+  backdrop-filter: blur(8px) !important;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease !important;
+}
+input:not([type="checkbox"]):not([type="radio"]):hover,
+select:hover,
+textarea:hover {
+  border-color: rgba(201,168,76,0.25) !important;
 }
 input:not([type="checkbox"]):not([type="radio"]):focus,
 select:focus,
 textarea:focus {
   outline: none !important;
-  border-color: rgba(16,185,129,0.5) !important;
-  box-shadow: 0 0 0 3px rgba(16,185,129,0.1), 0 0 12px rgba(16,185,129,0.15) !important;
-  background: rgba(16,185,129,0.03) !important;
+  background: rgba(201,168,76,0.03) !important;
+  border-color: rgba(201,168,76,0.45) !important;
+  box-shadow:
+    0 0 0 3px rgba(201,168,76,0.08),
+    0 0 16px rgba(201,168,76,0.12),
+    inset 0 1px 0 rgba(201,168,76,0.08) !important;
 }
-input::placeholder {
-  color: rgba(100,116,139,0.5) !important;
+input::placeholder { color: rgba(168,180,196,0.4) !important; }
+
+/* Select dropdown */
+select {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23C9A84C' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 12px center !important;
+  padding-right: 36px !important;
+  cursor: pointer !important;
+}
+select option {
+  background: #0e0e18 !important;
+  color: #ede8dc !important;
 }
 
-/* Search inputs */
-input[placeholder*="Search"],
-input[placeholder*="search"],
-input[placeholder*="Find"],
-input[placeholder*="find"] {
-  background: rgba(255,255,255,0.03) !important;
-  border-color: rgba(255,255,255,0.06) !important;
+/* Date inputs */
+input[type="date"] {
+  color: rgba(168,180,196,0.75) !important;
+  cursor: pointer !important;
+}
+input[type="date"]:focus { color: var(--cream) !important; }
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.7) sepia(0.7) saturate(2) hue-rotate(15deg) brightness(0.9) !important;
+  cursor: pointer !important;
 }
 
-/* ── Status Badges / Pills ── */
+/* ══════════════════════════════════════
+   STATUS BADGES — Gem-stone Style
+   ══════════════════════════════════════ */
+
 [class*="rounded-full"][class*="px-2"],
 [class*="rounded-full"][class*="px-3"] {
   font-size: 10px !important;
   font-weight: 700 !important;
-  letter-spacing: 0.06em !important;
+  letter-spacing: 0.07em !important;
   text-transform: uppercase !important;
+  backdrop-filter: blur(8px) !important;
 }
 
-/* ── Page Hero / Header Sections ── */
-[class*="rounded-3xl"] {
-  position: relative !important;
+/* Emerald gem badge */
+.border-emerald-500\/40.bg-emerald-500\/10 {
+  border-color: rgba(16,185,129,0.5) !important;
+  background: rgba(16,185,129,0.1) !important;
+  box-shadow:
+    0 0 10px rgba(16,185,129,0.2),
+    inset 0 0 6px rgba(16,185,129,0.06),
+    inset 0 1px 0 rgba(52,211,153,0.2) !important;
+  text-shadow: 0 0 8px rgba(16,185,129,0.5) !important;
 }
 
-/* ── Module Sidebar ── */
-aside[class*="glass-panel"] {
-  border-right: 1px solid rgba(255,255,255,0.06) !important;
+/* Ruby gem badge */
+.border-rose-500\/40.bg-rose-500\/10 {
+  border-color: rgba(244,63,94,0.5) !important;
+  box-shadow:
+    0 0 10px rgba(244,63,94,0.2),
+    inset 0 0 6px rgba(244,63,94,0.06),
+    inset 0 1px 0 rgba(255,100,130,0.2) !important;
+  text-shadow: 0 0 8px rgba(244,63,94,0.5) !important;
 }
 
-/* Navigation section titles */
-.text-\[10px\].uppercase.tracking-\[0\.35em\],
-p.text-xs.uppercase.tracking-\[0\.3em\] {
-  background: linear-gradient(90deg, rgba(16,185,129,0.7), rgba(99,102,241,0.5));
-  -webkit-background-clip: text !important;
-  -webkit-text-fill-color: transparent !important;
-  background-clip: text !important;
-  font-weight: 700 !important;
+/* Amber/topaz badge */
+.border-amber-500\/40.bg-amber-500\/10 {
+  border-color: rgba(245,158,11,0.5) !important;
+  box-shadow:
+    0 0 10px rgba(245,158,11,0.2),
+    inset 0 0 6px rgba(245,158,11,0.06),
+    inset 0 1px 0 rgba(255,190,60,0.2) !important;
+  text-shadow: 0 0 8px rgba(245,158,11,0.4) !important;
 }
 
-/* ── Scrollbar — Neon Style ── */
-::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, rgba(16,185,129,0.4), rgba(99,102,241,0.3));
-  border-radius: 999px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, rgba(16,185,129,0.7), rgba(99,102,241,0.5));
-  box-shadow: 0 0 6px rgba(16,185,129,0.4);
+/* Sapphire / indigo badge */
+.border-indigo-500\/40.bg-indigo-500\/10,
+.border-violet-500\/40.bg-violet-500\/10 {
+  border-color: rgba(99,102,241,0.5) !important;
+  box-shadow: 0 0 10px rgba(99,102,241,0.2), inset 0 1px 0 rgba(130,133,255,0.2) !important;
 }
 
-/* ── Selection Color ── */
-::selection {
-  background: rgba(16,185,129,0.25);
-  color: #e2e8f0;
+/* ══════════════════════════════════════
+   TAB BARS — Engraved Glass
+   ══════════════════════════════════════ */
+
+[class*="overflow-x-auto"][class*="rounded-2xl"][class*="border"] {
+  background: rgba(8,8,16,0.6) !important;
+  border-color: rgba(201,168,76,0.12) !important;
+  backdrop-filter: blur(12px) !important;
 }
 
-/* ── Dashboard Stat Cards (KPI) ── */
-.rounded-2xl.border[class*="bg-white\/"],
-.rounded-2xl.glass-panel {
+[class*="border-b-2"][class*="border-\[#"] {
+  text-shadow: 0 0 14px currentColor !important;
+  font-weight: 600 !important;
+}
+
+.flex-shrink-0[class*="border-b-2"] {
+  transition: all 0.2s ease !important;
+}
+.flex-shrink-0[class*="border-b-2"]:hover {
+  background: rgba(201,168,76,0.04) !important;
+}
+
+/* ══════════════════════════════════════
+   PAGE HERO / HEADER BANNERS
+   ══════════════════════════════════════ */
+
+/* Scan-line overlay on gradient banners */
+[style*="linear-gradient(135deg"][class*="rounded-3xl"],
+[style*="linear-gradient(135deg"][class*="overflow-hidden"] {
+  box-shadow:
+    0 4px 24px rgba(0,0,0,0.5),
+    0 0 0 1px rgba(201,168,76,0.08) !important;
   position: relative !important;
   overflow: hidden !important;
 }
 
-/* Shimmer sweep animation on stat cards */
-@keyframes shimmer-sweep {
-  0%   { transform: translateX(-100%); }
-  100% { transform: translateX(200%); }
-}
-
-.rounded-2xl.glass-panel::after {
-  content: '';
-  position: absolute;
-  top: 0; left: -100%;
-  width: 60%;
-  height: 100%;
+/* Section titles — gradient gold text */
+.text-lg.font-display.font-semibold,
+h2.text-lg.font-display,
+h1.text-2xl, h1.text-3xl,
+h2.text-xl, h2.text-2xl {
   background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(255,255,255,0.03),
-    transparent
+    120deg,
+    var(--cream) 0%,
+    rgba(232,201,106,0.85) 50%,
+    var(--cream) 100%
   );
-  animation: shimmer-sweep 4s ease-in-out infinite;
-  pointer-events: none;
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  background-clip: text !important;
+  letter-spacing: -0.02em !important;
 }
 
-/* ── Finance-Specific Tab Navigation ── */
-/* Finance sidebar active item glow based on route */
-a[href*="/modules/finance"].bg-emerald-500\/15,
-a[class*="bg-emerald-500\/15"] {
-  box-shadow:
-    inset 0 0 16px rgba(16,185,129,0.08),
-    0 0 0 1px rgba(16,185,129,0.25) !important;
+/* Module badge (e.g., "FINANCE MODULE") */
+[class*="px-3"][class*="py-1"][class*="rounded-full"][class*="text-xs"][class*="font-bold"] {
+  letter-spacing: 0.1em !important;
+  font-size: 10px !important;
+  background: rgba(201,168,76,0.1) !important;
+  border: 1px solid rgba(201,168,76,0.25) !important;
+  color: var(--gold-bright) !important;
+  box-shadow: 0 0 10px rgba(201,168,76,0.1) !important;
+  text-shadow: 0 0 8px rgba(201,168,76,0.4) !important;
 }
 
-/* ── Approvals Hub Tab Bar ── */
-.flex-shrink-0[class*="border-b-2"] {
+/* ══════════════════════════════════════
+   KPI / STAT CARDS
+   ══════════════════════════════════════ */
+
+.rounded-2xl.border[class*="bg-white\/"],
+.rounded-2xl.glass-panel {
   position: relative !important;
-  transition: all 0.2s ease !important;
-}
-.flex-shrink-0[class*="border-b-2"]:hover {
-  background: rgba(255,255,255,0.03) !important;
+  overflow: hidden !important;
+  transition: transform 0.25s ease, box-shadow 0.25s ease !important;
 }
 
-/* ── Number / Amount Display ── */
-.font-mono,
-[class*="font-mono"] {
-  font-feature-settings: "tnum" !important;
-  letter-spacing: 0.02em !important;
+.text-2xl.font-bold,
+.text-3xl.font-bold,
+.text-2xl.font-semibold,
+.text-3xl.font-semibold {
+  letter-spacing: -0.025em !important;
+  font-variant-numeric: tabular-nums !important;
 }
 
-/* ── Notification Dots ── */
-[class*="animate-pulse"] {
-  animation: neon-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite !important;
+/* ══════════════════════════════════════
+   SCROLLBAR — Gold Thread
+   ══════════════════════════════════════ */
+
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(
+    180deg,
+    rgba(201,168,76,0.5),
+    rgba(232,201,106,0.35),
+    rgba(201,168,76,0.5)
+  );
+  border-radius: 999px;
+  box-shadow: 0 0 4px rgba(201,168,76,0.3);
 }
-@keyframes neon-pulse {
-  0%, 100% { opacity: 1; box-shadow: 0 0 4px currentColor; }
-  50% { opacity: 0.5; box-shadow: 0 0 12px currentColor; }
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(201,168,76,0.8), rgba(232,201,106,0.6));
+  box-shadow: 0 0 8px rgba(201,168,76,0.5);
 }
 
-/* ── Loading Spinner ── */
-[class*="animate-spin"] {
-  filter: drop-shadow(0 0 6px rgba(16,185,129,0.6)) !important;
+/* Thin scrollbars in overflow areas */
+.overflow-x-auto {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(201,168,76,0.35) transparent;
 }
 
-/* ── Modal Overlays ── */
+/* ══════════════════════════════════════
+   TEXT SELECTION
+   ══════════════════════════════════════ */
+
+::selection {
+  background: rgba(201,168,76,0.22);
+  color: #ede8dc;
+}
+
+/* ══════════════════════════════════════
+   MODALS & OVERLAYS
+   ══════════════════════════════════════ */
+
+/* Backdrop blur for modal overlay */
 .fixed.inset-0[style*="rgba(0,0,0"] {
-  backdrop-filter: blur(8px) saturate(1.1) !important;
+  backdrop-filter: blur(12px) saturate(1.2) brightness(0.7) !important;
 }
 
 /* Modal card */
 .fixed.inset-0 > .w-full[class*="max-w"],
 .fixed.inset-0 > div > .w-full[class*="max-w"] {
+  background:
+    linear-gradient(145deg,
+      rgba(201,168,76,0.06) 0%,
+      rgba(14,14,26,0.92) 30%,
+      rgba(8,8,18,0.96) 100%
+    ) !important;
+  border: 1px solid rgba(201,168,76,0.25) !important;
   box-shadow:
-    0 0 0 1px rgba(16,185,129,0.1),
-    0 25px 50px rgba(0,0,0,0.7),
-    0 0 80px rgba(16,185,129,0.06) !important;
+    0 32px 80px rgba(0,0,0,0.8),
+    0 0 80px rgba(201,168,76,0.06),
+    0 0 0 0.5px rgba(201,168,76,0.15) inset !important;
+  backdrop-filter: blur(48px) saturate(1.4) !important;
 }
 
-/* ── Hero Sections (Dashboard banners) ── */
-[style*="linear-gradient(135deg"][class*="rounded-3xl"],
-[style*="linear-gradient(135deg"][class*="overflow-hidden"] {
+/* ══════════════════════════════════════
+   SIDEBAR MODULE LAYOUT
+   ══════════════════════════════════════ */
+
+aside[class*="glass-panel"] {
+  border-right: 1px solid rgba(201,168,76,0.1) !important;
+}
+
+/* ══════════════════════════════════════
+   DROPDOWN MENUS
+   ══════════════════════════════════════ */
+
+[role="menu"], [role="listbox"] {
+  background: rgba(8,8,18,0.97) !important;
+  border: 1px solid rgba(201,168,76,0.2) !important;
   box-shadow:
-    0 4px 24px rgba(0,0,0,0.4),
-    0 0 0 1px rgba(255,255,255,0.06) !important;
+    0 12px 40px rgba(0,0,0,0.65),
+    0 0 24px rgba(201,168,76,0.06) !important;
+  backdrop-filter: blur(32px) !important;
 }
 
-/* ── Dividers ── */
-hr, [class*="border-t"][class*="border-slate-8"] {
-  border-color: rgba(255,255,255,0.05) !important;
+/* ══════════════════════════════════════
+   TOOLTIPS
+   ══════════════════════════════════════ */
+
+[role="tooltip"], [data-tooltip] {
+  background: rgba(10,10,20,0.97) !important;
+  border: 1px solid rgba(201,168,76,0.2) !important;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5), 0 0 12px rgba(201,168,76,0.1) !important;
+  color: var(--cream) !important;
 }
 
-/* ── Avatar / Icon Boxes ── */
-[style*="border-radius: 6px"][style*="background: linear-gradient"],
-[style*="border-radius:6px"][style*="background:linear-gradient"] {
-  box-shadow: 0 0 12px rgba(16,185,129,0.35) !important;
+/* ══════════════════════════════════════
+   RECHARTS / DATA VISUALISATIONS
+   ══════════════════════════════════════ */
+
+.recharts-wrapper svg {
+  filter: drop-shadow(0 0 6px rgba(201,168,76,0.1));
+}
+.recharts-line path {
+  filter: drop-shadow(0 0 4px rgba(16,185,129,0.6));
+}
+.recharts-bar-rectangle path {
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));
 }
 
-/* ── Text Colors — Enhanced Contrast ── */
+/* ══════════════════════════════════════
+   TEXT COLOURS — Luxury Palette
+   ══════════════════════════════════════ */
+
+.text-white   { color: var(--cream) !important; }
+.text-slate-300 { color: rgba(220,215,200,0.88) !important; }
+.text-slate-400 { color: rgba(168,180,196,0.75) !important; }
+.text-slate-500 { color: rgba(130,145,165,0.65) !important; }
+
+/* Brand teal text — kept */
 .text-emerald-200 { color: #a7f3d0 !important; }
 .text-emerald-300 { color: #6ee7b7 !important; }
 .text-emerald-400 { color: #34d399 !important; }
-.text-slate-400 { color: rgba(148,163,184,0.85) !important; }
-.text-slate-300 { color: rgba(203,213,225,0.9) !important; }
-.text-white { color: #f0fafa !important; }
 
-/* ── Finance Payment Records — Column Highlights ── */
-/* Amount cells — make KES amounts stand out */
-td[class*="text-emerald"],
-td[class*="text-green"] {
+/* Amount display */
+td[class*="text-emerald"], td[class*="text-green"] {
   font-weight: 600 !important;
-  letter-spacing: 0.01em !important;
+  font-variant-numeric: tabular-nums !important;
 }
-
-td[class*="text-rose"],
-td[class*="text-red"] {
+td[class*="text-rose"], td[class*="text-red"] {
   font-weight: 600 !important;
 }
 
-/* ── Chart / Visual Data Areas ── */
-.recharts-wrapper svg {
-  filter: drop-shadow(0 0 4px rgba(16,185,129,0.15));
-}
-.recharts-line path {
-  filter: drop-shadow(0 0 4px var(--neon-green));
-}
-.recharts-bar-rectangle path {
-  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+/* Inline section labels */
+[class*="text-\[10px\]"][class*="uppercase"][class*="tracking"] {
+  color: rgba(201,168,76,0.65) !important;
+  letter-spacing: 0.15em !important;
 }
 
-/* ── Keyboard / Tag Chips ── */
+/* ══════════════════════════════════════
+   AVATAR / ICON BOXES
+   ══════════════════════════════════════ */
+
+[style*="border-radius: 6px"][style*="background: linear-gradient"],
+[style*="border-radius:6px"][style*="background:linear-gradient"] {
+  box-shadow: 0 0 14px rgba(201,168,76,0.3) !important;
+}
+[style*="border-radius:50%"][style*="background:linear-gradient"] {
+  box-shadow: 0 0 12px rgba(99,102,241,0.4) !important;
+}
+
+/* ══════════════════════════════════════
+   NOTIFY DOTS & SPINNERS
+   ══════════════════════════════════════ */
+
+@keyframes gold-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 4px currentColor; }
+  50% { opacity: 0.6; box-shadow: 0 0 14px currentColor; }
+}
+[class*="animate-pulse"] {
+  animation: gold-pulse 2.2s cubic-bezier(0.4, 0, 0.6, 1) infinite !important;
+}
+[class*="animate-spin"] {
+  filter: drop-shadow(0 0 6px rgba(201,168,76,0.5)) !important;
+}
+
+/* ══════════════════════════════════════
+   INLINE BORDERS & DIVIDERS
+   ══════════════════════════════════════ */
+
+hr,
+.border-t.border-slate-800,
+.border-t.border-white\/\[0\.07\] {
+  border-color: rgba(201,168,76,0.08) !important;
+}
+
+/* ══════════════════════════════════════
+   KEYBOARD / TAG CHIPS
+   ══════════════════════════════════════ */
+
 kbd {
-  background: rgba(255,255,255,0.06) !important;
-  border: 1px solid rgba(255,255,255,0.12) !important;
-  color: #94a3b8 !important;
+  background: rgba(201,168,76,0.06) !important;
+  border: 1px solid rgba(201,168,76,0.2) !important;
+  color: rgba(201,168,76,0.75) !important;
   font-size: 10px !important;
-  padding: 1px 5px !important;
+  padding: 1px 6px !important;
   border-radius: 4px !important;
 }
 
-/* ── Print Fab Button ── */
-#global-print-btn {
-  background: linear-gradient(135deg, #10b981, #059669) !important;
-  box-shadow: 0 0 20px rgba(16,185,129,0.4) !important;
-}
-#global-print-btn:hover {
-  box-shadow: 0 0 30px rgba(16,185,129,0.7) !important;
-}
-
-/* ── Module Header Badge ── */
-[class*="px-3"][class*="py-1"][class*="rounded-full"][class*="text-xs"][class*="font-bold"] {
-  letter-spacing: 0.08em !important;
-  font-size: 10px !important;
-}
-
-/* ── Card Title Lines ── */
-h1[class*="text-2xl"], h1[class*="text-3xl"] {
-  letter-spacing: -0.02em !important;
-}
-h2[class*="text-lg"], h2[class*="text-xl"] {
-  letter-spacing: -0.01em !important;
-}
-
-/* ── Hover lift on clickable rows ── */
-tr[class*="cursor-pointer"]:hover,
-tr[onclick]:hover {
-  transform: translateX(2px) !important;
-  transition: transform 0.15s ease !important;
-}
-
-/* ── Keyframe Animations ── */
-@keyframes glow-border-pulse {
-  0%, 100% { box-shadow: 0 0 8px rgba(16,185,129,0.3); }
-  50% { box-shadow: 0 0 20px rgba(16,185,129,0.6); }
-}
-
-@keyframes scan-line {
-  0% { transform: translateY(-100%); }
-  100% { transform: translateY(100vh); }
-}
+/* ══════════════════════════════════════
+   PAGE CONTENT FADE-IN
+   ══════════════════════════════════════ */
 
 @keyframes fade-in-up {
-  from { opacity: 0; transform: translateY(8px); }
+  from { opacity: 0; transform: translateY(10px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* Content sections fade in */
 .col-span-12.md\:col-span-9,
 .col-span-12.lg\:col-span-10 {
-  animation: fade-in-up 0.25s ease-out both !important;
+  animation: fade-in-up 0.3s ease-out both !important;
 }
 
-/* ── Responsive Tweaks ── */
-@media (max-width: 768px) {
-  .glass-panel::before { display: none; }
-  .glass-panel::after { display: none; }
+.space-y-6 > .rounded-2xl,
+.space-y-8 > .rounded-2xl {
+  animation: fade-in-up 0.25s ease both !important;
 }
+.space-y-6 > .rounded-2xl:nth-child(2) { animation-delay: 0.05s !important; }
+.space-y-6 > .rounded-2xl:nth-child(3) { animation-delay: 0.10s !important; }
+.space-y-6 > .rounded-2xl:nth-child(4) { animation-delay: 0.15s !important; }
+.space-y-6 > .rounded-2xl:nth-child(5) { animation-delay: 0.20s !important; }
 
-/* ── Focused / Active States ── */
+/* ══════════════════════════════════════
+   FOCUS STATES
+   ══════════════════════════════════════ */
+
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,
 select:focus-visible {
-  outline: 2px solid rgba(16,185,129,0.5) !important;
+  outline: 2px solid rgba(201,168,76,0.5) !important;
   outline-offset: 2px !important;
-  box-shadow: 0 0 8px rgba(16,185,129,0.3) !important;
+  box-shadow: 0 0 10px rgba(201,168,76,0.25) !important;
 }
 
-/* ── Horizontal Rule Dividers ── */
-.border-t.border-slate-800,
-.border-t.border-white\/\[0\.07\] {
-  border-color: rgba(255,255,255,0.05) !important;
-  position: relative !important;
-}
+/* ══════════════════════════════════════
+   PRINT PRESERVATION
+   ══════════════════════════════════════ */
 
-/* ── Tooltips ── */
-[role="tooltip"],
-[data-tooltip] {
-  background: rgba(15,23,42,0.95) !important;
-  border: 1px solid rgba(16,185,129,0.2) !important;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.5), 0 0 12px rgba(16,185,129,0.1) !important;
-}
-
-/* ── Link Hover States ── */
-a:not([class]):hover {
-  color: #34d399 !important;
-  text-decoration-color: rgba(16,185,129,0.5) !important;
-}
-
-/* ── Dropdown menus ── */
-[role="menu"],
-[role="listbox"] {
-  background: rgba(13,17,23,0.97) !important;
-  border: 1px solid rgba(255,255,255,0.08) !important;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 0 24px rgba(16,185,129,0.08) !important;
-  backdrop-filter: blur(24px) !important;
-}
-
-/* ── Finance Layout Sidebar Filter Input ── */
-aside input[placeholder="Find section"],
-aside input[placeholder="find section"] {
-  background: rgba(255,255,255,0.03) !important;
-  border-color: rgba(255,255,255,0.06) !important;
-  border-radius: 10px !important;
-}
-aside input[placeholder="Find section"]:focus,
-aside input[placeholder="find section"]:focus {
-  border-color: rgba(16,185,129,0.4) !important;
-  box-shadow: 0 0 8px rgba(16,185,129,0.1) !important;
-}
-
-/* ── PaymentsPage — Record cards & rows ── */
-/* Transaction type pill distinction */
-[style*="background:rgba(16,185,129"] {
-  box-shadow: 0 0 8px rgba(16,185,129,0.25) !important;
-}
-[style*="background:rgba(239,68,68"] {
-  box-shadow: 0 0 8px rgba(239,68,68,0.25) !important;
-}
-[style*="background:rgba(245,158,11"] {
-  box-shadow: 0 0 8px rgba(245,158,11,0.2) !important;
-}
-[style*="background:rgba(99,102,241"] {
-  box-shadow: 0 0 8px rgba(99,102,241,0.25) !important;
-}
-
-/* ── Student / Member Avatar Initials ── */
-[style*="border-radius:50%"][style*="background:linear-gradient"] {
-  box-shadow: 0 0 10px rgba(99,102,241,0.4) !important;
-}
-
-/* ── Hero gradient text in banners ── */
-[style*="color:#818cf8"],
-[style*="color: #818cf8"] {
-  text-shadow: 0 0 20px rgba(129,140,248,0.5) !important;
-}
-[style*="color:#6ee7b7"],
-[style*="color: #6ee7b7"] {
-  text-shadow: 0 0 20px rgba(110,231,183,0.5) !important;
-}
-[style*="color:#34d399"],
-[style*="color: #34d399"] {
-  text-shadow: 0 0 20px rgba(52,211,153,0.5) !important;
-}
-
-/* ── Page transition wrapper ── */
-main, [role="main"], .min-h-screen {
-  position: relative;
-}
-
-/* ── Footer / "All caught up" states ── */
-[class*="text-emerald"][class*="opacity"] {
-  filter: blur(0) !important;
-}
-
-/* ── Finance specific: Filter bar ── */
-.flex.flex-wrap.items-center.gap-3 > button,
-.flex.flex-wrap.items-center.gap-2 > button {
-  transition: all 0.15s ease !important;
-}
-
-/* ── Responsive Tables (overflow wrapper) ── */
-.overflow-x-auto {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(16,185,129,0.3) transparent;
-}
-
-/* ── Inline data labels ── */
-[class*="text-\[10px\]"][class*="uppercase"][class*="tracking"] {
-  letter-spacing: 0.15em !important;
-  color: rgba(100,116,139,0.7) !important;
-}
-
-/* ── Receipt / Invoice Cards ── */
 .print-area table thead tr {
   background: transparent !important;
 }
@@ -661,293 +891,77 @@ main, [role="main"], .min-h-screen {
   color: #374151 !important;
 }
 @media print {
-  body::before { display: none !important; }
-  .glass-panel::before,
-  .glass-panel::after { display: none !important; }
+  body::before, body::after { display: none !important; }
+  .glass-panel::before, .glass-panel::after { display: none !important; }
+  html, body { background: white !important; color: black !important; }
 }
 
-/* ═══════════════════════════════════════════════════════════════════
-   EXTENDED — Payments, Finance Tables & Module Enhancements
-   ═══════════════════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════
+   RESPONSIVE
+   ══════════════════════════════════════ */
 
-/* ── Select Dropdowns — Futuristic Style ── */
-select {
-  appearance: none !important;
-  -webkit-appearance: none !important;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2310b981' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") !important;
-  background-repeat: no-repeat !important;
-  background-position: right 12px center !important;
-  padding-right: 36px !important;
-  cursor: pointer !important;
-}
-select:hover {
-  border-color: rgba(16,185,129,0.3) !important;
-}
-select option {
-  background: #0d1117 !important;
-  color: #e2e8f0 !important;
+@media (max-width: 768px) {
+  .glass-panel::before { display: none; }
+  .glass-panel::after { animation: none; }
+  body::after { display: none; }
 }
 
-/* ── Finance Filter Bar ── */
-.flex.flex-wrap.items-center.gap-3 {
-  position: relative !important;
+/* ══════════════════════════════════════
+   EXTRA — Finance & Payments specifics
+   ══════════════════════════════════════ */
+
+/* Inline style colour overrides — hero gradient elements */
+[style*="color:#818cf8"], [style*="color: #818cf8"] {
+  text-shadow: 0 0 18px rgba(129,140,248,0.5) !important;
+}
+[style*="color:#6ee7b7"], [style*="color: #6ee7b7"] {
+  text-shadow: 0 0 18px rgba(110,231,183,0.5) !important;
+}
+[style*="color:#34d399"], [style*="color: #34d399"] {
+  text-shadow: 0 0 18px rgba(52,211,153,0.5) !important;
 }
 
-/* Date range inputs in finance */
-input[type="date"] {
-  background: rgba(2,6,23,0.8) !important;
-  border-color: rgba(255,255,255,0.07) !important;
-  color: #94a3b8 !important;
-  cursor: pointer !important;
+/* Inline style glow on transaction type circles */
+[style*="background:rgba(16,185,129"] {
+  box-shadow: 0 0 10px rgba(16,185,129,0.3) !important;
 }
-input[type="date"]:focus {
-  color: #e2e8f0 !important;
-  border-color: rgba(16,185,129,0.4) !important;
-  box-shadow: 0 0 10px rgba(16,185,129,0.12) !important;
+[style*="background:rgba(239,68,68"] {
+  box-shadow: 0 0 10px rgba(239,68,68,0.3) !important;
 }
-input[type="date"]::-webkit-calendar-picker-indicator {
-  filter: invert(0.6) sepia(1) saturate(3) hue-rotate(100deg) !important;
-  cursor: pointer !important;
+[style*="background:rgba(245,158,11"] {
+  box-shadow: 0 0 10px rgba(245,158,11,0.25) !important;
+}
+[style*="background:rgba(99,102,241"] {
+  box-shadow: 0 0 10px rgba(99,102,241,0.3) !important;
 }
 
-/* ── Payment Status Badges — Neon Glow ── */
-.border-emerald-500\/40.bg-emerald-500\/10 {
-  box-shadow: 0 0 8px rgba(16,185,129,0.2), inset 0 0 8px rgba(16,185,129,0.05) !important;
-}
-.border-rose-500\/40.bg-rose-500\/10 {
-  box-shadow: 0 0 8px rgba(244,63,94,0.2), inset 0 0 8px rgba(244,63,94,0.05) !important;
-}
-.border-amber-500\/40.bg-amber-500\/10 {
-  box-shadow: 0 0 8px rgba(245,158,11,0.2), inset 0 0 8px rgba(245,158,11,0.05) !important;
-}
-.border-indigo-500\/40.bg-indigo-500\/10,
-.border-violet-500\/40.bg-violet-500\/10 {
-  box-shadow: 0 0 8px rgba(99,102,241,0.2) !important;
-}
-.border-cyan-500\/40.bg-cyan-500\/10,
-.border-sky-500\/40.bg-sky-500\/10 {
-  box-shadow: 0 0 8px rgba(6,182,212,0.2) !important;
+/* Finance aside search input */
+aside input[placeholder="Find section"]:focus {
+  border-color: rgba(201,168,76,0.4) !important;
+  box-shadow: 0 0 10px rgba(201,168,76,0.1) !important;
 }
 
-/* ── Payment Record Table — Enhanced ── */
-/* Section header */
-section.col-span-12.rounded-2xl.glass-panel {
-  border: 1px solid rgba(255,255,255,0.07) !important;
+/* Gold print FAB button */
+#global-print-btn {
+  background: linear-gradient(135deg, var(--gold-mid), var(--gold-deep)) !important;
+  box-shadow: 0 0 20px rgba(201,168,76,0.4), 0 2px 8px rgba(0,0,0,0.4) !important;
+  border: 1px solid rgba(232,201,106,0.3) !important;
+  color: #060608 !important;
+}
+#global-print-btn:hover {
+  box-shadow: 0 0 32px rgba(201,168,76,0.7), 0 4px 16px rgba(0,0,0,0.5) !important;
 }
 
-/* Table wrapper glow line */
-.overflow-x-auto.rounded-2xl.border {
-  border-color: rgba(255,255,255,0.05) !important;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04) !important;
+/* Clickable rows */
+tr[class*="cursor-pointer"]:hover,
+tr[onclick]:hover {
+  transform: translateX(2px) !important;
+  transition: transform 0.15s ease !important;
 }
 
-/* Payment amount cells — make them shine */
-td.text-emerald-300, td.text-emerald-200, td.text-green-300 {
-  font-variant-numeric: tabular-nums !important;
-  font-weight: 600 !important;
-  letter-spacing: 0.01em !important;
-}
-
-/* ── Pagination Controls ── */
-[class*="pagination"],
-nav[aria-label*="pagination"],
-.flex.items-center.gap-1 > button[class*="rounded"] {
-  transition: all 0.15s ease !important;
-}
-
-/* Pagination active page button */
-button[class*="bg-emerald-500"]:not([disabled]),
-button[class*="bg-indigo-500"]:not([disabled]) {
-  box-shadow: 0 0 12px currentColor !important;
-  opacity: 0.9 !important;
-}
-
-/* ── Print Button ── */
-button[class*="print"],
-button[title*="Print"],
-button[title*="print"] {
-  transition: all 0.2s ease !important;
-}
-button[class*="print"]:hover,
-button[title*="Print"]:hover {
-  box-shadow: 0 0 16px rgba(16,185,129,0.4) !important;
-  transform: translateY(-1px) !important;
-}
-
-/* ── Module Sections (h2 + subtitle pattern) ── */
-.text-lg.font-display.font-semibold,
-h2.text-lg.font-display,
-h2.text-sm.font-semibold.text-slate-200 {
-  background: linear-gradient(90deg, #f0fafa 0%, rgba(240,250,250,0.8) 100%);
-  -webkit-background-clip: text !important;
-  -webkit-text-fill-color: transparent !important;
-  background-clip: text !important;
-}
-
-/* ── Hover state on glass-panel sections ── */
-section.rounded-2xl.glass-panel:hover {
-  box-shadow:
-    0 1px 0 rgba(255,255,255,0.06) inset,
-    0 4px 32px rgba(0,0,0,0.4),
-    0 0 20px rgba(16,185,129,0.04) !important;
-}
-
-/* ── Dashboard Widgets / Quick Action Buttons ── */
-button[class*="rounded-2xl"] {
-  transition: all 0.2s ease !important;
-}
-button[class*="rounded-2xl"]:hover {
-  transform: translateY(-2px) !important;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.4) !important;
-}
-
-/* ── Page Loading States ── */
-[class*="animate-spin"] + span,
-[class*="animate-pulse"] + span {
-  color: rgba(148,163,184,0.7) !important;
-}
-
-/* ── Finance Cashbook / Ledger ── */
-/* Positive numbers */
-[class*="text-green-"],
-[class*="text-emerald-"] {
-  font-variant-numeric: tabular-nums !important;
-}
-
-/* ── Student / Member Selector in Payments ── */
-select[class*="rounded-xl"] {
-  border-radius: 12px !important;
-}
-
-/* ── Revenue / KPI Banner on Finance Dashboard ── */
-[class*="rounded-3xl"][class*="px-6"][class*="py-10"],
-[class*="rounded-3xl"][class*="px-6"][class*="py-8"] {
-  position: relative !important;
-  overflow: hidden !important;
-}
-
-/* Scan line effect on hero banners */
-[class*="rounded-3xl"][class*="px-6"]::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 3px,
-    rgba(255,255,255,0.008) 3px,
-    rgba(255,255,255,0.008) 4px
-  );
-  pointer-events: none;
-  z-index: 1;
-}
-
-[class*="rounded-3xl"][class*="px-6"] > * {
-  position: relative !important;
-  z-index: 2 !important;
-}
-
-/* ── Module Navigation Active Item — All Modules ── */
-/* Applied to any active nav link across all module layouts */
-a.bg-emerald-500\/15,
-a[class*="bg-emerald-500\/15"] {
-  background: linear-gradient(90deg, rgba(16,185,129,0.15), rgba(16,185,129,0.05)) !important;
-  border: 1px solid rgba(16,185,129,0.28) !important;
-  box-shadow: 0 0 16px rgba(16,185,129,0.12) !important;
-  color: #6ee7b7 !important;
-  font-weight: 600 !important;
-}
-
-/* Inactive nav items */
-a.text-slate-300.hover\:bg-white\/\[0\.035\] {
-  border: 1px solid transparent !important;
-  transition: all 0.15s ease !important;
-}
-a.text-slate-300.hover\:bg-white\/\[0\.035\]:hover {
-  background: rgba(255,255,255,0.04) !important;
-  border-color: rgba(255,255,255,0.06) !important;
-  color: #cbd5e1 !important;
-}
-
-/* ── Notification Badges ── */
-span[class*="rounded-full"][class*="bg-rose"],
-span[class*="rounded-full"][class*="bg-amber"],
-span[class*="rounded-full"][class*="bg-emerald"] {
-  animation: neon-pulse 2.5s ease-in-out infinite !important;
-}
-
-/* ── Confirmation / Alert Dialogs ── */
-[role="dialog"] .rounded-2xl,
-[role="alertdialog"] .rounded-2xl {
-  background: rgba(13,17,23,0.97) !important;
-  border: 1px solid rgba(255,255,255,0.1) !important;
-  box-shadow:
-    0 25px 60px rgba(0,0,0,0.7),
-    0 0 0 1px rgba(16,185,129,0.08),
-    0 0 60px rgba(16,185,129,0.04) !important;
-  backdrop-filter: blur(32px) !important;
-}
-
-/* ── Module Sub-section Cards ── */
-.rounded-2xl.border.border-white\/\[0\.07\] {
-  background: linear-gradient(145deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%) !important;
-  transition: border-color 0.2s ease !important;
-}
-.rounded-2xl.border.border-white\/\[0\.07\]:hover {
-  border-color: rgba(255,255,255,0.1) !important;
-}
-
-/* ── Progress Bars ── */
-[role="progressbar"] {
-  overflow: hidden !important;
-  position: relative !important;
-}
-[role="progressbar"]::after {
-  content: '';
-  position: absolute;
-  top: 0; bottom: 0;
-  left: -100%;
-  width: 50%;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
-  animation: shimmer-sweep 1.5s ease-in-out infinite;
-}
-
-/* ── Extra: Frosted Glass for Modals ── */
-.fixed.inset-0 > div[class*="max-w"] {
-  background: linear-gradient(145deg, rgba(13,17,23,0.97) 0%, rgba(9,12,20,0.98) 100%) !important;
-  border: 1px solid rgba(255,255,255,0.08) !important;
-  box-shadow:
-    0 25px 50px rgba(0,0,0,0.7),
-    0 0 80px rgba(16,185,129,0.05),
-    0 0 0 1px rgba(16,185,129,0.08) !important;
-  backdrop-filter: blur(40px) saturate(1.2) !important;
-}
-
-/* ── Hover tooltips and small info boxes ── */
-[class*="text-\[11px\]"][class*="bg-slate-800"],
-[class*="text-\[10px\]"][class*="bg-slate-800"],
-[class*="text-xs"][class*="bg-slate-800\/"] {
-  backdrop-filter: blur(8px) !important;
-  border: 1px solid rgba(255,255,255,0.07) !important;
-}
-
-/* ── Finance Stat Numbers ── */
-.text-2xl.font-bold.text-white,
-.text-3xl.font-bold.text-white,
-.text-xl.font-bold.text-white {
-  font-variant-numeric: tabular-nums !important;
-  letter-spacing: -0.03em !important;
-  text-rendering: optimizeLegibility !important;
-}
-
-/* ── All Section Headers with Icon+Title pattern ── */
-.flex.items-center.gap-2 > [style*="borderRadius"][style*="background"] + div > .text-sm {
-  letter-spacing: 0.01em !important;
-}
-
-/* ── Error / Warning Panels ── */
+/* Error/Warning/Success info panels */
 .rounded-2xl.border.border-rose-500\/40.bg-rose-500\/10 {
-  box-shadow: 0 0 24px rgba(244,63,94,0.1), inset 0 0 16px rgba(244,63,94,0.04) !important;
+  box-shadow: 0 0 24px rgba(244,63,94,0.12), inset 0 0 16px rgba(244,63,94,0.04) !important;
 }
 .rounded-2xl.border.border-amber-500\/30.bg-amber-500\/10 {
   box-shadow: 0 0 24px rgba(245,158,11,0.1) !important;
@@ -956,12 +970,271 @@ span[class*="rounded-full"][class*="bg-emerald"] {
   box-shadow: 0 0 24px rgba(16,185,129,0.1) !important;
 }
 
-/* ── All Module Content Sections — Content fade-in ── */
-.space-y-6 > .rounded-2xl,
-.space-y-8 > .rounded-2xl {
-  animation: fade-in-up 0.2s ease both !important;
+/* ══════════════════════════════════════
+   SPECIAL: Login Page Glass Card
+   ══════════════════════════════════════ */
+
+/* Login page right panel — marble glass */
+.min-h-screen > div:last-child,
+.min-h-screen > div[class*="flex"][class*="items-center"][class*="justify-center"] {
+  background:
+    linear-gradient(145deg,
+      rgba(201,168,76,0.04) 0%,
+      rgba(12,12,24,0.6) 40%,
+      rgba(6,6,14,0.75) 100%
+    ) !important;
+  backdrop-filter: blur(40px) saturate(1.5) !important;
 }
-.space-y-6 > .rounded-2xl:nth-child(2) { animation-delay: 0.04s !important; }
-.space-y-6 > .rounded-2xl:nth-child(3) { animation-delay: 0.08s !important; }
-.space-y-6 > .rounded-2xl:nth-child(4) { animation-delay: 0.12s !important; }
-.space-y-6 > .rounded-2xl:nth-child(5) { animation-delay: 0.16s !important; }
+
+/* Login form card */
+.min-h-screen div[class*="max-w-md"],
+.min-h-screen div[class*="w-full"][class*="max-w"] {
+  background:
+    linear-gradient(145deg,
+      rgba(201,168,76,0.06) 0%,
+      rgba(14,14,26,0.85) 50%,
+      rgba(8,8,18,0.92) 100%
+    ) !important;
+  border: 1px solid rgba(201,168,76,0.22) !important;
+  box-shadow:
+    var(--shadow-marble),
+    0 0 60px rgba(201,168,76,0.06),
+    inset 0 1px 0 rgba(201,168,76,0.15) !important;
+  backdrop-filter: blur(48px) saturate(1.5) !important;
+}
+
+/* ══════════════════════════════════════
+   MARBLE SHOW-THROUGH — Transparent Overrides
+   Strip inline opaque backgrounds → marble canvas shows beneath
+   ══════════════════════════════════════ */
+
+/* Login page outer shell — was solid #070b12, now marble-transparent */
+.min-h-screen[style*="070b12"] {
+  background: rgba(5,5,10,0.82) !important;
+  position: relative !important;
+}
+
+/* Login left panel — navy gradient → marble-tinted glass */
+.min-h-screen[style*="070b12"] > div:first-child[style*="linear-gradient"] {
+  background:
+    linear-gradient(
+      150deg,
+      rgba(6,20,44,0.75) 0%,
+      rgba(5,8,14,0.60) 55%,
+      rgba(4,10,18,0.70) 100%
+    ) !important;
+  backdrop-filter: blur(2px) !important;
+}
+
+/* Login right panel — glass marble */
+.min-h-screen[style*="070b12"] > div:last-child,
+.min-h-screen[style*="070b12"] > div:nth-child(2) {
+  background:
+    linear-gradient(145deg,
+      rgba(201,168,76,0.03) 0%,
+      rgba(8,8,18,0.55) 50%,
+      rgba(5,5,12,0.65) 100%
+    ) !important;
+  backdrop-filter: blur(24px) saturate(1.4) !important;
+  position: relative !important;
+}
+
+/* ── Module inner page backgrounds ── */
+/* The main content area also has an inline bg override — clear it */
+[style*="background:\"#070b12\""],
+[style*="background: \"#070b12\""],
+[style*="background:#070b12"],
+[style*="background: #070b12"] {
+  background: transparent !important;
+}
+
+/* ── Marble accent on module pages outer shell ── */
+/* The entire app shell uses a dark bg div — let marble show */
+div[class*="min-h-screen"] {
+  background: transparent !important;
+}
+
+/* ── Verified glass panels — no re-paint needed ── */
+/* Keep glass-panel class rule overriding any white/light variants */
+.rounded-2xl.bg-white\/\[0\.03\],
+.rounded-2xl.bg-white\/\[0\.04\],
+.rounded-2xl.bg-white\/\[0\.05\] {
+  background:
+    linear-gradient(145deg,
+      rgba(201,168,76,0.04) 0%,
+      rgba(255,255,255,0.02) 40%,
+      rgba(8,8,18,0.55) 100%
+    ) !important;
+  backdrop-filter: blur(24px) !important;
+}
+
+/* Module sidebar — glass tint */
+aside {
+  background:
+    linear-gradient(180deg,
+      rgba(201,168,76,0.025) 0%,
+      rgba(8,8,18,0.7) 30%,
+      rgba(5,5,12,0.72) 100%
+    ) !important;
+  backdrop-filter: blur(32px) saturate(1.3) !important;
+  border-right: 1px solid rgba(201,168,76,0.1) !important;
+}
+
+/* ── Marble vein intensifier — class applied to body ── */
+/* Give the marble a second vein layer via a persistent gradient */
+html::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    /* Long diagonal gold vein — prominent, unmistakable */
+    linear-gradient(
+      127deg,
+      transparent 0%,
+      transparent 38%,
+      rgba(201,168,76,0.04) 38.5%,
+      rgba(232,201,106,0.06) 39%,
+      rgba(201,168,76,0.035) 39.5%,
+      transparent 40%,
+      transparent 62%,
+      rgba(201,168,76,0.03) 62.5%,
+      rgba(201,168,76,0.02) 63%,
+      transparent 63.5%
+    ),
+    /* Fine cross-vein */
+    linear-gradient(
+      -31deg,
+      transparent 0%,
+      transparent 52%,
+      rgba(220,200,160,0.025) 52.5%,
+      transparent 53.5%,
+      transparent 79%,
+      rgba(220,200,160,0.02) 79.5%,
+      transparent 80%
+    );
+  mix-blend-mode: screen;
+}
+
+/* ── Gold shimmer floating particles ── */
+/* Ultra-subtle floating dots that look like gold dust in the stone */
+@keyframes dust-float-a {
+  0%, 100% { transform: translateY(0px) translateX(0px); opacity: 0.4; }
+  33%       { transform: translateY(-12px) translateX(6px); opacity: 0.7; }
+  66%       { transform: translateY(-6px) translateX(-4px); opacity: 0.5; }
+}
+@keyframes dust-float-b {
+  0%, 100% { transform: translateY(0px) translateX(0px); opacity: 0.3; }
+  50%       { transform: translateY(-18px) translateX(8px); opacity: 0.6; }
+}
+
+/* Gold dust shimmer on active glass panels */
+.glass-panel:hover::before {
+  animation: pearl-sweep 1.2s ease forwards !important;
+  opacity: 1 !important;
+}
+
+/* ── Tab nav active — gold underline glow ── */
+[class*="border-b-2"][class*="border-emerald"],
+[class*="border-b-2"][class*="border-indigo"],
+[class*="border-b-2"][class*="border-violet"] {
+  font-weight: 600 !important;
+  text-shadow: 0 0 14px currentColor !important;
+  position: relative !important;
+}
+
+/* ── Section container backgrounds — all dark glass ── */
+section.rounded-2xl {
+  background:
+    linear-gradient(145deg,
+      rgba(201,168,76,0.025) 0%,
+      rgba(12,12,22,0.55) 40%,
+      rgba(6,6,14,0.65) 100%
+    ) !important;
+  backdrop-filter: blur(24px) saturate(1.3) !important;
+  border: 1px solid rgba(201,168,76,0.14) !important;
+}
+section.rounded-2xl:hover {
+  border-color: rgba(201,168,76,0.25) !important;
+}
+
+/* ── Fancy: Thin gold outline on key containers ── */
+.rounded-2xl.border[class*="border-white"] {
+  border-color: rgba(201,168,76,0.14) !important;
+}
+.rounded-2xl.border[class*="border-white"]:hover {
+  border-color: rgba(201,168,76,0.28) !important;
+}
+
+/* ══════════════════════════════════════
+   FINAL PUNCH-THROUGH — Login Panel Glass
+   Target exact inline styles used in LoginPage.js
+   ══════════════════════════════════════ */
+
+/* Login left panel — was opaque navy, now marble glass */
+[style*="linear-gradient(150deg, #0a1f3a"] {
+  background:
+    linear-gradient(
+      150deg,
+      rgba(5,16,36,0.72) 0%,
+      rgba(4,6,12,0.58) 55%,
+      rgba(3,8,14,0.65) 100%
+    ) !important;
+  backdrop-filter: blur(8px) saturate(1.2) !important;
+  border-right: 1px solid rgba(201,168,76,0.12) !important;
+}
+
+/* Login page outer shell — pure marble canvas */
+[style*="background:\"#070b12\""],
+[style*='background:"#070b12"'] {
+  background: rgba(4,4,10,0.75) !important;
+  backdrop-filter: blur(2px) !important;
+}
+
+/* Fallback: any element with exactly this inline background color */
+div[style*="#070b12"] {
+  background: rgba(4,4,10,0.80) !important;
+}
+
+/* ── Login form card inner glow ── */
+/* The form box (School detected, Welcome back, etc.) */
+[style*="rgba(16,185,129,0.08)"][style*="rgba(16,185,129,0.18)"] {
+  background: rgba(16,185,129,0.06) !important;
+  border-color: rgba(201,168,76,0.18) !important;
+}
+
+/* Sign-in button — gold + teal gradient hybrid */
+button[class*="w-full"][style*="background"],
+button[class*="w-full"].bg-emerald-500 {
+  background: linear-gradient(
+    135deg,
+    #10b981 0%,
+    #059669 60%,
+    #047857 100%
+  ) !important;
+  box-shadow:
+    0 0 24px rgba(16,185,129,0.35),
+    0 2px 12px rgba(0,0,0,0.5),
+    inset 0 1px 0 rgba(255,255,255,0.15) !important;
+}
+
+/* ── Gold hairline on all rounded-2xl bordered cards ── */
+.rounded-2xl[class*="border-white\/\[0\.07\]"],
+.rounded-2xl[class*="border-white\/\[0\.06\]"],
+.rounded-2xl[class*="border-white\/\[0\.05\]"] {
+  border-color: rgba(201,168,76,0.13) !important;
+  background:
+    linear-gradient(
+      145deg,
+      rgba(201,168,76,0.03) 0%,
+      rgba(10,10,22,0.5) 50%,
+      rgba(6,6,14,0.62) 100%
+    ) !important;
+  backdrop-filter: blur(20px) !important;
+}
+.rounded-2xl[class*="border-white\/\[0\.07\]"]:hover,
+.rounded-2xl[class*="border-white\/\[0\.06\]"]:hover {
+  border-color: rgba(201,168,76,0.25) !important;
+  box-shadow: 0 0 20px rgba(201,168,76,0.06) !important;
+}
