@@ -221,6 +221,7 @@ class Command(BaseCommand):
         admin_role = role_cache.get("ADMIN")
 
         repaired = 0
+        skipped_no_role = []
         for user in users_without_profile:
             if user.is_superuser and super_admin_role:
                 assigned_role = super_admin_role
@@ -236,11 +237,14 @@ class Command(BaseCommand):
                 if created:
                     repaired += 1
             else:
-                self.stdout.write(
-                    f"{tag}   UserProfile repair WARNING: no roles found — "
-                    "run seed_roles first."
-                )
-                break
+                skipped_no_role.append(user.username)
+
+        if skipped_no_role:
+            self.stdout.write(
+                f"{tag}   UserProfile repair WARNING: {len(skipped_no_role)} user(s) "
+                "skipped — required role(s) missing; run seed_roles first. "
+                "Skipped: " + ", ".join(skipped_no_role[:10])
+            )
 
         if repaired:
             self.stdout.write(
