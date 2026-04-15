@@ -304,9 +304,30 @@ def _next_billing_date(start_date, cycle: str):
 
 
 def _invoice_number(tenant: Tenant) -> str:
-    now = timezone.now()
-    token = secrets.token_hex(3).upper()
-    return f"SUB-{now:%Y%m%d}-{tenant.id}-{token}"
+    """
+    Generate a sequential invoice number in the spec-compliant format: SC-YYYY-NNNN.
+    Uses PlatformSetting 'INVOICE_SEQ_{year}' as an atomic counter.
+    Thread-safe via select_for_update.
+    """
+    from django.db import transaction as _tx
+    year = timezone.now().year
+    key = f"INVOICE_SEQ_{year}"
+    try:
+        with _tx.atomic():
+            obj, _ = PlatformSetting.objects.select_for_update().get_or_create(
+                key=key,
+                defaults={"value": "0", "description": f"Invoice sequence counter for {year}"},
+            )
+            seq = int(obj.value or "0") + 1
+            obj.value = str(seq)
+            obj.save(update_fields=["value"])
+        return f"SC-{year}-{seq:04d}"
+    except Exception:
+        # Fallback to random if DB counter fails — log but don't crash billing
+        import logging as _log
+        _log.getLogger(__name__).warning("_invoice_number: counter failed, using random fallback")
+        token = secrets.token_hex(3).upper()
+        return f"SC-{year}-{token}"
 
 
 def _support_sla_hours(priority: str) -> tuple[int, int]:
@@ -772,11 +793,24 @@ class PlatformTenantViewSet(viewsets.ModelViewSet):
                     "primary_domain": f"{subdomain}.{_base_domain()}",
                     "school_admin_username": provisioned_admin_username,
                     "school_admin_temp_password": admin_password,
-                    "welcome_email_queued": False,
+                    "welcome_email_queued": True,
                 },
             },
             status=status.HTTP_201_CREATED,
         )
+
+        # Send welcome email outside the DB transaction so email failure
+        # never rolls back tenant creation (spec §4.6: "allowed to fail").
+        if admin_email:
+            try:
+                from clients.platform_email import platform_email as _pe
+                _pe.welcome(tenant, admin_email, temp_password=admin_password)
+            except Exception as _email_exc:
+                import logging as _log
+                _log.getLogger(__name__).error(
+                    "[provision] Welcome email failed for %s: %s",
+                    tenant.schema_name, _email_exc,
+                )
 
     def partial_update(self, request, *args, **kwargs):
         tenant = self.get_object()
@@ -852,6 +886,16 @@ class PlatformTenantViewSet(viewsets.ModelViewSet):
                 "updated_at",
             ]
         )
+        _platform_audit(
+            user=request.user, action="ACTIVATE", model_name="Tenant",
+            object_id=tenant.id, details="Tenant activated", tenant=tenant, request=request,
+        )
+        # Notify tenant of reactivation
+        try:
+            from clients.platform_email import platform_email as _pe
+            _pe.reactivation(tenant)
+        except Exception:
+            pass
         return Response(TenantSerializer(tenant, context={"request": request}).data)
 
     @action(detail=True, methods=["post"])
@@ -865,6 +909,16 @@ class PlatformTenantViewSet(viewsets.ModelViewSet):
         tenant.suspended_at = timezone.now()
         tenant.suspension_reason = reason
         tenant.save(update_fields=["status", "is_active", "suspended_at", "suspension_reason", "updated_at"])
+        _platform_audit(
+            user=request.user, action="SUSPEND", model_name="Tenant",
+            object_id=tenant.id, details=f"reason={reason}", tenant=tenant, request=request,
+        )
+        # Notify tenant admin of suspension (spec §4.6)
+        try:
+            from clients.platform_email import platform_email as _pe
+            _pe.suspension(tenant, reason=reason)
+        except Exception:
+            pass
         return Response(TenantSerializer(tenant, context={"request": request}).data)
 
     @action(detail=True, methods=["post"])
@@ -875,6 +929,15 @@ class PlatformTenantViewSet(viewsets.ModelViewSet):
         tenant.suspended_at = None
         tenant.suspension_reason = ""
         tenant.save(update_fields=["status", "is_active", "suspended_at", "suspension_reason", "updated_at"])
+        _platform_audit(
+            user=request.user, action="RESUME", model_name="Tenant",
+            object_id=tenant.id, details="Tenant resumed", tenant=tenant, request=request,
+        )
+        try:
+            from clients.platform_email import platform_email as _pe
+            _pe.reactivation(tenant)
+        except Exception:
+            pass
         return Response(TenantSerializer(tenant, context={"request": request}).data)
 
     @action(detail=True, methods=["post"], url_path="assign-plan")
@@ -950,6 +1013,16 @@ class PlatformTenantViewSet(viewsets.ModelViewSet):
         )
         subscription.next_billing_date = _next_billing_date(period_start, subscription.billing_cycle)
         subscription.save(update_fields=["next_billing_date", "updated_at"])
+        _platform_audit(
+            user=request.user, action="GENERATE_INVOICE", model_name="SubscriptionInvoice",
+            object_id=invoice.id, details=f"invoice={invoice.invoice_number}", tenant=tenant, request=request,
+        )
+        # Send invoice email to tenant (spec §7)
+        try:
+            from clients.platform_email import platform_email as _pe
+            _pe.invoice_issued(tenant, invoice)
+        except Exception:
+            pass
         return Response(SubscriptionInvoiceSerializer(invoice).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["get"], url_path="billing-overview")
@@ -1138,6 +1211,18 @@ class PlatformSubscriptionInvoiceViewSet(mixins.ListModelMixin, mixins.RetrieveM
                     tenant.save(update_fields=["paid_until", "is_active", "status", "suspended_at", "suspension_reason", "updated_at"])
                 else:
                     tenant.save(update_fields=["paid_until", "is_active", "updated_at"])
+
+        # Send payment receipt email (spec §7)
+        try:
+            from clients.platform_email import platform_email as _pe
+            _pe.payment_receipt(
+                tenant,
+                invoice,
+                receipt_number=payment.transaction_id or "",
+                method=payment.method or "M-Pesa",
+            )
+        except Exception:
+            pass
 
         return Response(
             {

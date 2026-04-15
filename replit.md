@@ -112,6 +112,48 @@ academics, admissions, alumni, assets, cafeteria, clockin, communication, curric
 - All structural seeds run `--all-tenants` unconditionally on every startup: `seed_modules`, `seed_default_permissions --assign-roles`, `seed_curriculum_templates`, `seed_digital_resources`.
 - New tenants created via the platform API are immediately bootstrapped by `_bootstrap_new_tenant_schema()` in `platform_views.py` (modules, RBAC, curriculum templates, KICD/Harvard e-learning).
 
+## Super Admin Platform Layer (T006 — completed)
+Files: `clients/platform_views.py` (3400+ lines), `clients/platform_urls.py`, `clients/models.py`, `clients/platform_email.py`, `clients/exceptions.py`, `clients/management/commands/check_trial_expiry.py`
+
+### Spec §9.1 — Standard Error Response Format
+All API errors (401, 403, 404, 400, 429, 500) now return:
+```json
+{"success": false, "error": {"code": "UNAUTHORIZED", "message": "...", "details": {}}, "request_id": "a1b2c3d4"}
+```
+DRF exception handler: `"EXCEPTION_HANDLER": "clients.exceptions.platform_exception_handler"` in `REST_FRAMEWORK` settings.
+
+### Spec §5.2 — Invoice Number Format (SC-YYYY-NNNN)
+`_invoice_number()` uses `PlatformSetting('INVOICE_SEQ_{year}')` as a DB-backed atomic counter (thread-safe via `select_for_update`). Generates `SC-2026-0001`, `SC-2026-0002`, etc.
+
+### Spec §7 — Platform Email Notifications
+`clients/platform_email.py` — `PlatformEmailService` singleton (`platform_email.*`):
+- `welcome(tenant, email, temp_password)` — provisioning
+- `trial_warning(tenant, days_left)` — 7-day warning
+- `trial_expired(tenant)` — trial ended + suspended
+- `suspension(tenant, reason)` — manual suspension
+- `reactivation(tenant)` — restored from suspension
+- `invoice_issued(tenant, invoice)` — new invoice
+- `payment_receipt(tenant, invoice, receipt_number, method)` — payment confirmed
+- `password_reset(admin_user, reset_url)` — operator-triggered
+Uses Resend when `RESEND_API_KEY` is set; falls back to Django email backend. Never raises to callers.
+
+### Spec §6.3 — Trial Expiry Automation
+`clients/management/commands/check_trial_expiry.py` — runs at startup + every 6 hours via background loop in `start.sh`. Suspends expired trials, sends warning emails N days before. DB-backed concurrency lock (`TRIAL_EXPIRY_LOCK` PlatformSetting).
+
+### Email Wiring in Platform Views
+- `activate` / `resume` → `platform_email.reactivation()`
+- `suspend` → `platform_email.suspension()`
+- `generate_invoice` → `platform_email.invoice_issued()`
+- `record_payment` → `platform_email.payment_receipt()`
+- Provisioning → `platform_email.welcome()` (after transaction commits)
+
+### Data State (post T006)
+| schema | status | trial_end | subscriptions |
+|---|---|---|---|
+| demo_school | TRIAL | 2026-04-29 | 1 |
+| olom | TRIAL | 2026-04-29 | 1 |
+| school_sunrise-academy | ARCHIVED | 2026-04-28 | 1 (SUSPENDED) |
+
 ## Notes
 - f-strings: no backslashes inside expressions (Python 3.11)
 - Migrations: always `--fake-initial` to avoid conflicts with existing tables
@@ -120,3 +162,6 @@ academics, admissions, alumni, assets, cafeteria, clockin, communication, curric
 - `_library_member_ids_for_child()` returns LibraryMember PKs (integer), not string member_ids
 - Tenant domain: `demo.localhost` (local), public schema at `localhost`
 - `X-Tenant-ID` header only resolves by exact schema name or registered subdomain alias; short names like `demo` don't resolve to `demo_school` via header (use hostname `demo.rynatyschool.app` instead)
+- PlatformSetting key `INVOICE_SEQ_{year}` tracks sequential invoice counter per year
+- `check_trial_expiry` uses PlatformSetting `TRIAL_EXPIRY_LOCK` for DB-level concurrency protection
+- `PlatformError(code, message, http_status)` can be raised from any platform view for spec-compliant error responses

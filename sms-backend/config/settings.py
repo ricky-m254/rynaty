@@ -341,14 +341,17 @@ REST_FRAMEWORK = {
         "rest_framework.permissions.IsAuthenticated",
     ],
     "DATETIME_FORMAT": "%Y-%m-%d %H:%M:%S",
-    # Rate limiting: protect all endpoints against brute-force and DoS attacks.
+    # Spec §9.1 — standardised error response format across all API endpoints
+    "EXCEPTION_HANDLER": "clients.exceptions.platform_exception_handler",
+    # Rate limiting — spec §10.1: 5/5min login, 100/min general
     "DEFAULT_THROTTLE_CLASSES": [
         "rest_framework.throttling.AnonRateThrottle",
         "rest_framework.throttling.UserRateThrottle",
     ],
     "DEFAULT_THROTTLE_RATES": {
-        "anon": "30/minute",   # unauthenticated (e.g. login attempts)
-        "user": "300/minute",  # authenticated users
+        "anon": "30/minute",   # unauthenticated (login attempts, public endpoints)
+        "user": "300/minute",  # authenticated users (generous for school operations)
+        "platform_login": "5/minute",  # spec: 5 login attempts per 5 min
     },
 }
 

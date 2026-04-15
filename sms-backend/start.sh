@@ -183,5 +183,19 @@ fi
 echo "[sms] Rotating insecure default admin credentials..."
 python3.11 manage.py rotate_admin_credentials 2>&1 || echo "[sms] Credential rotation skipped"
 
+# ── Trial expiry check (spec §6.3) ──────────────────────────────────────────
+# Run once at startup to catch any trials that expired while the server was down.
+# In production with cron access, schedule: 0 2 * * * manage.py check_trial_expiry
+echo "[sms] Checking trial expirations at startup..."
+python3.11 manage.py check_trial_expiry 2>&1 || echo "[sms] Trial expiry check skipped"
+
+# ── Background cron loop: check trial expiry every 6 hours ──────────────────
+(
+  while true; do
+    sleep 21600  # 6 hours
+    python3.11 manage.py check_trial_expiry 2>&1 || true
+  done
+) &
+
 echo "[sms] Waiting for server process..."
 wait $SERVER_PID
