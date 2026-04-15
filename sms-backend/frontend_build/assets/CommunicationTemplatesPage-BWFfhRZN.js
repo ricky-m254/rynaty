@@ -7,10 +7,10 @@ Balance: Ksh {{balance}}
 
 Thank you for your prompt payment.
 
-St. Mary's Nairobi High School
-Bursar's Office`},{name:"Admission Offer Letter",category:"Admissions",channel:"Email",subject:"Offer of Admission — St. Mary's Nairobi High School",body:`Dear {{parent_name}},
+{{school_name}}
+Bursar's Office`},{name:"Admission Offer Letter",category:"Admissions",channel:"Email",subject:"Offer of Admission — {{school_name}}",body:`Dear {{parent_name}},
 
-We are pleased to offer {{student_name}} a place at St. Mary's Nairobi High School for {{academic_year}}.
+We are pleased to offer {{student_name}} a place at {{school_name}} for {{academic_year}}.
 
 The student has been placed in {{class_name}}.
 
@@ -19,7 +19,7 @@ Reporting date: {{reporting_date}}
 Please confirm acceptance within 7 days and pay the caution money of Ksh 500.
 
 Yours faithfully,
-The Principal`},{name:"Low Balance Alert",category:"Finance",channel:"SMS",subject:"Fee Balance Alert",body:"Dear Parent, {{student_name}} has an outstanding balance of Ksh {{balance}} for {{term_name}}. Please pay by {{due_date}}. Contact bursar: 0722000000. St. Mary's Nairobi HS."},{name:"Absent Student Alert",category:"Attendance",channel:"SMS",subject:"Absence Notification",body:"Dear Parent, {{student_name}} ({{class_name}}) was absent on {{date}}. Please contact school: 0722000000. St. Mary's Nairobi HS."},{name:"Exam Results Ready",category:"Academics",channel:"Email",subject:"{{term_name}} Examination Results — {{student_name}}",body:`Dear {{parent_name}},
+The Principal`},{name:"Low Balance Alert",category:"Finance",channel:"SMS",subject:"Fee Balance Alert",body:"Dear Parent, {{student_name}} has an outstanding balance of Ksh {{balance}} for {{term_name}}. Please pay by {{due_date}}. Contact bursar: 0722000000. {{school_name}}."},{name:"Absent Student Alert",category:"Attendance",channel:"SMS",subject:"Absence Notification",body:"Dear Parent, {{student_name}} ({{class_name}}) was absent on {{date}}. Please contact school: 0722000000. {{school_name}}."},{name:"Exam Results Ready",category:"Academics",channel:"Email",subject:"{{term_name}} Examination Results — {{student_name}}",body:`Dear {{parent_name}},
 
 The {{term_name}} examination results for {{student_name}} are now ready.
 
@@ -27,7 +27,7 @@ Mean Grade: {{mean_grade}} | Position: {{position}}
 
 Please visit the school portal or contact the class teacher for detailed results.
 
-St. Mary's Nairobi High School`}];function ge(){const[r,j]=s.useState([]),[N,v]=s.useState(!0),[L,w]=s.useState(!1),[S,C]=s.useState(!1),[u,p]=s.useState(null),[m,d]=s.useState(null),[H,_]=s.useState(!1),[h,O]=s.useState("All"),[A,l]=s.useState(null),[P,o]=s.useState(null),[T,E]=s.useState(null),[n,i]=s.useState({name:"",category:"System",channel:"Email",subject:"",body:`Dear {{parent_name}},
+{{school_name}}`}];function ge(){const[r,j]=s.useState([]),[N,v]=s.useState(!0),[L,w]=s.useState(!1),[S,C]=s.useState(!1),[u,p]=s.useState(null),[m,d]=s.useState(null),[H,_]=s.useState(!1),[h,O]=s.useState("All"),[A,l]=s.useState(null),[P,o]=s.useState(null),[T,E]=s.useState(null),[n,i]=s.useState({name:"",category:"System",channel:"Email",subject:"",body:`Dear {{parent_name}},
 
 `,language:"en"}),b=async()=>{v(!0);try{const t=await c.get("/communication/templates/");j(Z(t.data))}catch{l("Unable to load templates.")}finally{v(!1)}};s.useEffect(()=>{b()},[]);const B=async()=>{if(!n.name.trim()||!n.body.trim()){l("Name and body are required.");return}C(!0),l(null);try{await c.post("/communication/templates/",n),i({name:"",category:"System",channel:"Email",subject:"",body:`Dear {{parent_name}},
 
