@@ -181,10 +181,14 @@ class Command(BaseCommand):
 
     def _repair_missing_user_profiles(self, tag):
         """
-        Detect users with no UserProfile and repair those whose role can be
-        inferred from their username prefix:
-          - stm* → STUDENT
-        All others are logged as warnings for manual review.
+        Detect ALL active users with no UserProfile and repair those whose role
+        can be inferred from their username prefix or account flags:
+
+          - stm* / STM* → STUDENT
+          - ADM* / adm* → STUDENT  (admission-number-style student usernames)
+          - is_superuser=True → TENANT_SUPER_ADMIN
+          - All others → logged as warnings for manual review
+
         Fully idempotent — safe to run multiple times.
         """
         from django.contrib.auth import get_user_model
@@ -194,8 +198,8 @@ class Command(BaseCommand):
 
         users_without_profile = (
             User.objects
-            .filter(is_staff=False, is_superuser=False)
-            .exclude(id__in=UserProfile.objects.values_list("user_id", flat=True))
+            .filter(is_active=True)
+            .exclude(userprofile__isnull=False)
         )
 
         if not users_without_profile.exists():
@@ -203,23 +207,29 @@ class Command(BaseCommand):
             return
 
         student_role = Role.objects.filter(name="STUDENT").first()
+        super_admin_role = Role.objects.filter(name="TENANT_SUPER_ADMIN").first()
 
         repaired = 0
         skipped = []
         for user in users_without_profile:
-            if user.username.startswith("stm") and student_role:
+            uname_lower = user.username.lower()
+            if (uname_lower.startswith("stm") or uname_lower.startswith("adm")) and student_role:
                 UserProfile.objects.get_or_create(user=user, defaults={"role": student_role})
+                repaired += 1
+            elif user.is_superuser and super_admin_role:
+                UserProfile.objects.get_or_create(user=user, defaults={"role": super_admin_role})
                 repaired += 1
             else:
                 skipped.append(user.username)
 
         if repaired:
             self.stdout.write(
-                f"{tag}   UserProfile repair: {repaired} student profile(s) created"
+                f"{tag}   UserProfile repair: {repaired} profile(s) auto-created"
             )
         if skipped:
             self.stdout.write(
-                f"{tag}   UserProfile repair: {len(skipped)} user(s) need manual role assignment — "
+                f"{tag}   UserProfile repair WARNING: {len(skipped)} user(s) need manual "
+                "role assignment — "
                 + ", ".join(skipped[:10])
                 + ("..." if len(skipped) > 10 else "")
             )
