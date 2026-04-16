@@ -35,7 +35,6 @@ class Command(BaseCommand):
         from django.contrib.auth import get_user_model
         from django.utils import timezone
         from datetime import timedelta
-        from school.fraud_detection import FraudDetectionEngine
         from school.models import LedgerEntry, Wallet, FraudAlert
 
         User = get_user_model()
@@ -56,11 +55,10 @@ class Command(BaseCommand):
             try:
                 user = User.objects.get(pk=user_id)
                 try:
-                    wallet = user.wallet
+                    user.wallet  # skip users who have no wallet at all
                 except Wallet.DoesNotExist:
                     continue
 
-                engine = FraudDetectionEngine(user=user)
                 open_alerts = FraudAlert.objects.filter(user=user, resolved=False).count()
                 if open_alerts > 0:
                     flagged += 1

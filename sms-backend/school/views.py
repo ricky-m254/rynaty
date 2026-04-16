@@ -8730,7 +8730,15 @@ class MpesaStkCallbackView(APIView):
                         # ── Enterprise: Fraud duplicate receipt check ─────────
                         try:
                             from school.fraud_detection import FraudDetectionEngine
-                            _fraud_user = tx.student.user if tx.student else None
+                            from school.models import UserProfile as _UP
+                            _fraud_user = None
+                            if tx.student and tx.student.admission_number:
+                                try:
+                                    _fraud_user = _UP.objects.get(
+                                        admission_number=tx.student.admission_number
+                                    ).user
+                                except _UP.DoesNotExist:
+                                    pass
                             _fde = FraudDetectionEngine(user=_fraud_user)
                             if parsed["mpesa_receipt"] and _fde.check_duplicate_receipt(parsed["mpesa_receipt"], exclude_tx_id=tx.id):
                                 log.warning("MPesa callback: duplicate receipt %s blocked", parsed["mpesa_receipt"])
@@ -8773,9 +8781,17 @@ class MpesaStkCallbackView(APIView):
 
                             # ── Enterprise: Wallet credit ─────────────────────
                             try:
-                                from school.models import Wallet, FinanceAuditLog
-                                if tx.student:
-                                    _wallet = Wallet.get_or_create_for_user(tx.student.user)
+                                from school.models import Wallet, FinanceAuditLog, UserProfile as _WUP
+                                _wallet_user = None
+                                if tx.student and tx.student.admission_number:
+                                    try:
+                                        _wallet_user = _WUP.objects.get(
+                                            admission_number=tx.student.admission_number
+                                        ).user
+                                    except _WUP.DoesNotExist:
+                                        pass
+                                if _wallet_user:
+                                    _wallet = Wallet.get_or_create_for_user(_wallet_user)
                                     _wallet.credit(
                                         amount=payment.amount,
                                         entry_type='DEPOSIT',
