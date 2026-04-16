@@ -810,13 +810,13 @@ class StudentProfileView(StudentPortalAccessMixin, APIView):
 
         if "current_password" in request.data and "new_password" in request.data:
             current = request.data.get("current_password", "")
-            new_pw = request.data.get("new_password", "")
+            new_pw = request.data.get("new_password")
             if not user.check_password(current):
                 return Response(
                     {"error": "Current password is incorrect."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-            if len(new_pw) < 8:
+            if not new_pw or len(new_pw) < 8:
                 return Response(
                     {"error": "New password must be at least 8 characters."},
                     status=status.HTTP_400_BAD_REQUEST,
