@@ -8727,6 +8727,20 @@ class MpesaStkCallbackView(APIView):
                         })
                         tx.save(update_fields=["status", "payload", "updated_at"])
 
+                        # ── Enterprise: Fraud duplicate receipt check ─────────
+                        try:
+                            from school.fraud_detection import FraudDetectionEngine
+                            _fraud_user = tx.student.user if tx.student else None
+                            _fde = FraudDetectionEngine(user=_fraud_user)
+                            if parsed["mpesa_receipt"] and _fde.check_duplicate_receipt(parsed["mpesa_receipt"]):
+                                log.warning("MPesa callback: duplicate receipt %s blocked", parsed["mpesa_receipt"])
+                                tx.status = "FAILED"
+                                tx.payload.update({"error": "duplicate_receipt"})
+                                tx.save(update_fields=["status", "payload", "updated_at"])
+                                return Response({"ResultCode": 0, "ResultDesc": "Accepted"})
+                        except Exception as _fde_err:
+                            log.warning("Fraud check error (non-fatal): %s", _fde_err)
+
                         # Create a Payment record if one doesn't already exist for this receipt
                         if parsed["mpesa_receipt"] and not Payment.objects.filter(
                             reference_number=parsed["mpesa_receipt"]
@@ -8756,6 +8770,68 @@ class MpesaStkCallbackView(APIView):
                                     "MPesa callback: payment %s created but allocation failed: %s",
                                     payment.id, alloc_exc,
                                 )
+
+                            # ── Enterprise: Wallet credit ─────────────────────
+                            try:
+                                from school.models import Wallet, FinanceAuditLog
+                                if tx.student:
+                                    _wallet = Wallet.get_or_create_for_user(tx.student.user)
+                                    _wallet.credit(
+                                        amount=payment.amount,
+                                        entry_type='DEPOSIT',
+                                        reference=parsed["mpesa_receipt"],
+                                        description=f"M-Pesa STK: {parsed['phone']}",
+                                    )
+                                    FinanceAuditLog.log_action(
+                                        action='WALLET_CREDITED',
+                                        entity='PAYMENT',
+                                        entity_id=str(payment.id),
+                                        metadata={
+                                            'mpesa_receipt': parsed["mpesa_receipt"],
+                                            'amount': str(payment.amount),
+                                            'phone': parsed["phone"],
+                                        },
+                                        request=request,
+                                        user=None,
+                                    )
+                            except Exception as _wallet_err:
+                                log.warning("Wallet credit error (non-fatal): %s", _wallet_err)
+
+                            # ── Enterprise: SaaS transaction fee billing ───────
+                            try:
+                                from django_tenants.utils import get_tenant
+                                from clients.billing_engine import BillingEngine
+                                _tenant = get_tenant(request)
+                                _billing = BillingEngine.for_tenant(
+                                    schema_name=_tenant.schema_name,
+                                    school_name=getattr(_tenant, 'name', _tenant.schema_name),
+                                )
+                                _billing.record_transaction_fee(
+                                    amount=payment.amount,
+                                    mpesa_receipt=parsed["mpesa_receipt"],
+                                    metadata={'checkout_id': checkout_id},
+                                )
+                            except Exception as _bill_err:
+                                log.warning("Billing fee record error (non-fatal): %s", _bill_err)
+
+                            # ── Enterprise: Audit log ─────────────────────────
+                            try:
+                                from school.models import FinanceAuditLog
+                                FinanceAuditLog.log_action(
+                                    action='PAYMENT_RECEIVED',
+                                    entity='PAYMENT',
+                                    entity_id=str(payment.id),
+                                    metadata={
+                                        'mpesa_receipt': parsed["mpesa_receipt"],
+                                        'amount': str(payment.amount),
+                                        'phone': parsed["phone"],
+                                        'transaction_date': parsed["transaction_date"],
+                                        'checkout_id': checkout_id,
+                                    },
+                                    request=request,
+                                )
+                            except Exception as _audit_err:
+                                log.warning("Audit log error (non-fatal): %s", _audit_err)
                 else:
                     tx.status = "FAILED"
                     tx.payload.update({
@@ -9170,3 +9246,403 @@ class BulkReportCardPrintView(APIView):
 </div>
 {cards_html}
 </body></html>"""
+
+
+# ==========================================
+# ENTERPRISE FINANCE — WALLET / LEDGER / FRAUD / AUDIT (Phase 2-6)
+# ==========================================
+
+class WalletDetailView(APIView):
+    """
+    GET  /api/finance/wallet/          → authenticated user's wallet balance
+    POST /api/finance/wallet/adjust/   → admin adjusts balance (with audit)
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from school.models import Wallet, LedgerEntry
+        wallet = Wallet.get_or_create_for_user(request.user)
+        return Response({
+            "balance": str(wallet.balance),
+            "frozen_balance": str(wallet.frozen_balance),
+            "available_balance": str(wallet.available_balance),
+            "last_activity": wallet.last_activity.isoformat() if wallet.last_activity else None,
+        })
+
+
+class WalletAdminAdjustView(APIView):
+    """
+    POST /api/finance/wallet/admin-adjust/
+    Allowed for FINANCE_ADMIN / superuser only.
+    Body: { student_id, amount, direction: 'credit'|'debit', reason }
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        from school.models import Wallet, FinanceAuditLog, UserProfile
+
+        if not (request.user.is_staff or request.user.is_superuser):
+            perm_ok = UserProfile.objects.filter(
+                user=request.user,
+                role__name__in=['ADMIN', 'ACCOUNTANT', 'BURSAR', 'TENANT_SUPER_ADMIN', 'PRINCIPAL']
+            ).exists()
+            if not perm_ok:
+                return Response({"error": "Insufficient permissions"}, status=403)
+
+        student_id = request.data.get("student_id")
+        amount = request.data.get("amount")
+        direction = request.data.get("direction", "credit")
+        reason = request.data.get("reason", "Admin adjustment")
+
+        if not student_id or not amount:
+            return Response({"error": "student_id and amount are required"}, status=400)
+
+        try:
+            from django.contrib.auth import get_user_model
+            User = get_user_model()
+            target_user = User.objects.get(pk=student_id)
+            wallet = Wallet.get_or_create_for_user(target_user)
+
+            if direction == "credit":
+                entry = wallet.credit(
+                    amount=amount,
+                    entry_type="ADMIN_ADJUSTMENT",
+                    reference=f"ADJ-{request.user.id}-{target_user.id}",
+                    description=reason,
+                    adjusted_by=request.user,
+                    adjustment_reason=reason,
+                )
+            elif direction == "debit":
+                entry = wallet.debit(
+                    amount=amount,
+                    entry_type="ADMIN_ADJUSTMENT",
+                    reference=f"ADJ-{request.user.id}-{target_user.id}",
+                    description=reason,
+                    adjusted_by=request.user,
+                    adjustment_reason=reason,
+                )
+            else:
+                return Response({"error": "direction must be 'credit' or 'debit'"}, status=400)
+
+            FinanceAuditLog.log_action(
+                action="BALANCE_ADJUSTED",
+                entity="WALLET",
+                entity_id=str(wallet.id),
+                metadata={
+                    "direction": direction,
+                    "amount": str(amount),
+                    "reason": reason,
+                    "target_user_id": str(target_user.id),
+                    "admin_user_id": str(request.user.id),
+                },
+                request=request,
+            )
+
+            return Response({
+                "success": True,
+                "new_balance": str(wallet.balance),
+                "entry_id": entry.id,
+            })
+        except Exception as e:
+            return Response({"error": str(e)}, status=400)
+
+
+class LedgerEntryListView(APIView):
+    """
+    GET /api/finance/ledger/?page=1&page_size=20&entry_type=DEPOSIT
+    Returns paginated ledger entries for the authenticated user.
+    Finance staff can request any user: ?user_id=123
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from school.models import LedgerEntry, UserProfile
+        from django.core.paginator import Paginator
+
+        target_user = request.user
+        user_id = request.query_params.get("user_id")
+        if user_id and user_id != str(request.user.id):
+            is_staff = request.user.is_staff or request.user.is_superuser
+            if not is_staff:
+                is_staff = UserProfile.objects.filter(
+                    user=request.user,
+                    role__name__in=['ADMIN', 'ACCOUNTANT', 'BURSAR', 'TENANT_SUPER_ADMIN', 'PRINCIPAL']
+                ).exists()
+            if not is_staff:
+                return Response({"error": "Cannot view other users' ledger"}, status=403)
+            from django.contrib.auth import get_user_model
+            try:
+                target_user = get_user_model().objects.get(pk=user_id)
+            except Exception:
+                return Response({"error": "User not found"}, status=404)
+
+        qs = LedgerEntry.objects.filter(user=target_user).order_by('-created_at')
+        entry_type = request.query_params.get("entry_type")
+        if entry_type:
+            qs = qs.filter(entry_type=entry_type)
+
+        page_size = min(int(request.query_params.get("page_size", 20)), 100)
+        paginator = Paginator(qs, page_size)
+        page_num = int(request.query_params.get("page", 1))
+        page = paginator.get_page(page_num)
+
+        data = [{
+            "id": e.id,
+            "amount": str(e.amount),
+            "entry_type": e.entry_type,
+            "reference": e.reference,
+            "description": e.description,
+            "balance_after": str(e.balance_after),
+            "created_at": e.created_at.isoformat(),
+            "is_credit": e.is_credit,
+        } for e in page.object_list]
+
+        return Response({
+            "count": paginator.count,
+            "num_pages": paginator.num_pages,
+            "current_page": page_num,
+            "results": data,
+        })
+
+
+class FraudAlertListView(APIView):
+    """
+    GET  /api/finance/fraud-alerts/?resolved=false&level=CRITICAL
+    PATCH /api/finance/fraud-alerts/<id>/resolve/
+    Finance staff only.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def _check_staff(self, user):
+        from school.models import UserProfile
+        if user.is_staff or user.is_superuser:
+            return True
+        return UserProfile.objects.filter(
+            user=user, role__name__in=['ADMIN', 'ACCOUNTANT', 'BURSAR', 'TENANT_SUPER_ADMIN', 'PRINCIPAL']
+        ).exists()
+
+    def get(self, request):
+        if not self._check_staff(request.user):
+            return Response({"error": "Finance staff only"}, status=403)
+
+        from school.models import FraudAlert
+        from django.core.paginator import Paginator
+
+        qs = FraudAlert.objects.order_by('-created_at')
+        if request.query_params.get("resolved") == "false":
+            qs = qs.filter(resolved=False)
+        elif request.query_params.get("resolved") == "true":
+            qs = qs.filter(resolved=True)
+
+        level = request.query_params.get("level")
+        if level:
+            qs = qs.filter(level=level)
+
+        alert_type = request.query_params.get("alert_type")
+        if alert_type:
+            qs = qs.filter(alert_type=alert_type)
+
+        page_size = min(int(request.query_params.get("page_size", 20)), 100)
+        paginator = Paginator(qs, page_size)
+        page_num = int(request.query_params.get("page", 1))
+        page = paginator.get_page(page_num)
+
+        data = [{
+            "id": a.id,
+            "level": a.level,
+            "alert_type": a.alert_type,
+            "message": a.message,
+            "reference": a.reference,
+            "metadata": a.metadata,
+            "resolved": a.resolved,
+            "escalated": a.escalated,
+            "created_at": a.created_at.isoformat(),
+            "resolved_at": a.resolved_at.isoformat() if a.resolved_at else None,
+        } for a in page.object_list]
+
+        return Response({
+            "count": paginator.count,
+            "num_pages": paginator.num_pages,
+            "current_page": page_num,
+            "results": data,
+        })
+
+
+class FraudAlertResolveView(APIView):
+    """PATCH /api/finance/fraud-alerts/<id>/resolve/"""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def patch(self, request, pk):
+        from school.models import FraudAlert, FinanceAuditLog, UserProfile
+
+        is_staff = request.user.is_staff or request.user.is_superuser
+        if not is_staff:
+            is_staff = UserProfile.objects.filter(
+                user=request.user, role__name__in=['ADMIN', 'ACCOUNTANT', 'BURSAR', 'TENANT_SUPER_ADMIN', 'PRINCIPAL']
+            ).exists()
+        if not is_staff:
+            return Response({"error": "Finance staff only"}, status=403)
+
+        try:
+            alert = FraudAlert.objects.get(pk=pk)
+        except FraudAlert.DoesNotExist:
+            return Response({"error": "Alert not found"}, status=404)
+
+        notes = request.data.get("notes", "")
+        alert.resolve(user=request.user, notes=notes)
+
+        FinanceAuditLog.log_action(
+            action="FRAUD_ALERT_RESOLVED",
+            entity="FRAUD_ALERT",
+            entity_id=str(alert.id),
+            metadata={"alert_type": alert.alert_type, "notes": notes},
+            request=request,
+        )
+
+        return Response({"success": True, "id": alert.id, "resolved": True})
+
+
+class FinanceAuditLogListView(APIView):
+    """
+    GET /api/finance/audit-log/?action=PAYMENT_RECEIVED&entity=PAYMENT&page=1
+    Finance admins / bursar only. Returns paginated hash-chained audit entries.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from school.models import FinanceAuditLog, UserProfile
+        from django.core.paginator import Paginator
+
+        is_staff = request.user.is_staff or request.user.is_superuser
+        if not is_staff:
+            is_staff = UserProfile.objects.filter(
+                user=request.user, role__name__in=['ADMIN', 'ACCOUNTANT', 'BURSAR', 'TENANT_SUPER_ADMIN', 'PRINCIPAL']
+            ).exists()
+        if not is_staff:
+            return Response({"error": "Finance staff only"}, status=403)
+
+        qs = FinanceAuditLog.objects.order_by('-created_at')
+        if request.query_params.get("action"):
+            qs = qs.filter(action=request.query_params["action"])
+        if request.query_params.get("entity"):
+            qs = qs.filter(entity=request.query_params["entity"])
+        if request.query_params.get("entity_id"):
+            qs = qs.filter(entity_id=request.query_params["entity_id"])
+
+        page_size = min(int(request.query_params.get("page_size", 20)), 200)
+        paginator = Paginator(qs, page_size)
+        page_num = int(request.query_params.get("page", 1))
+        page = paginator.get_page(page_num)
+
+        data = [{
+            "id": e.id,
+            "action": e.action,
+            "entity": e.entity,
+            "entity_id": e.entity_id,
+            "metadata": e.metadata,
+            "ip_address": str(e.ip_address) if e.ip_address else None,
+            "user": e.user.get_full_name() if e.user else "System",
+            "entry_hash": e.entry_hash[:16] + "...",
+            "created_at": e.created_at.isoformat(),
+        } for e in page.object_list]
+
+        return Response({
+            "count": paginator.count,
+            "num_pages": paginator.num_pages,
+            "current_page": page_num,
+            "results": data,
+        })
+
+
+class AuditChainVerifyView(APIView):
+    """GET /api/finance/audit-log/verify/ — verify integrity of the entire audit chain"""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from school.models import FinanceAuditLog, UserProfile
+
+        is_admin = request.user.is_staff or request.user.is_superuser or UserProfile.objects.filter(
+            user=request.user,
+            role__name__in=['ADMIN', 'TENANT_SUPER_ADMIN', 'PRINCIPAL', 'BURSAR']
+        ).exists()
+        if not is_admin:
+            return Response({"error": "Admin only"}, status=403)
+
+        is_valid, message, broken_entry = FinanceAuditLog.verify_chain()
+        return Response({
+            "valid": is_valid,
+            "message": message,
+            "broken_entry_id": broken_entry.id if broken_entry else None,
+        })
+
+
+class LedgerReconcileView(APIView):
+    """
+    POST /api/finance/ledger/reconcile/
+    Run a manual wallet reconciliation for the current tenant.
+    Admin/bursar only.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        from school.models import Wallet, LedgerEntry, LedgerReconciliation, UserProfile
+        from django.db.models import Sum
+        from django.utils import timezone as tz
+
+        is_staff = request.user.is_staff or request.user.is_superuser
+        if not is_staff:
+            is_staff = UserProfile.objects.filter(
+                user=request.user, role__name__in=['ADMIN', 'ACCOUNTANT', 'BURSAR', 'TENANT_SUPER_ADMIN', 'PRINCIPAL']
+            ).exists()
+        if not is_staff:
+            return Response({"error": "Finance staff only"}, status=403)
+
+        start_date = request.data.get("start_date")
+        end_date = request.data.get("end_date") or tz.now().date().isoformat()
+
+        entries = LedgerEntry.objects.all()
+        if start_date:
+            entries = entries.filter(created_at__date__gte=start_date)
+        if end_date:
+            entries = entries.filter(created_at__date__lte=end_date)
+
+        totals = entries.aggregate(
+            total_credits=Sum("amount", filter=models.Q(amount__gt=0)),
+            total_debits=Sum("amount", filter=models.Q(amount__lt=0)),
+            total_entries=models.Count("id"),
+        )
+
+        discrepancies = []
+        for wallet in Wallet.objects.all():
+            ledger_bal = LedgerEntry.objects.filter(user=wallet.user).aggregate(
+                total=Sum("amount")
+            )["total"] or 0
+            if abs(float(ledger_bal) - float(wallet.balance)) > 0.01:
+                discrepancies.append({
+                    "user_id": wallet.user_id,
+                    "wallet_balance": str(wallet.balance),
+                    "ledger_balance": str(ledger_bal),
+                    "difference": str(float(wallet.balance) - float(ledger_bal)),
+                })
+
+        rec = LedgerReconciliation.objects.create(
+            status="BALANCED" if not discrepancies else "MISMATCH",
+            start_date=start_date or tz.now().date(),
+            end_date=end_date,
+            total_entries=totals["total_entries"] or 0,
+            total_credits=totals["total_credits"] or 0,
+            total_debits=abs(totals["total_debits"] or 0),
+            discrepancies=discrepancies,
+            completed_at=tz.now(),
+            completed_by=request.user,
+        )
+
+        return Response({
+            "reconciliation_id": rec.id,
+            "status": rec.status,
+            "total_entries": rec.total_entries,
+            "total_credits": str(rec.total_credits),
+            "total_debits": str(rec.total_debits),
+            "discrepancy_count": len(discrepancies),
+            "discrepancies": discrepancies,
+        })

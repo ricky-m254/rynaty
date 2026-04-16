@@ -171,6 +171,58 @@ Uses Resend when `RESEND_API_KEY` is set; falls back to Django email backend. Ne
 | olom | TRIAL | 2026-04-29 | 1 |
 | school_sunrise-academy | ARCHIVED | 2026-04-28 | 1 (SUSPENDED) |
 
+## Enterprise M-Pesa / Finance Infrastructure (Task #7 — completed)
+
+### New Models (migration 0059 for school, 0017 for clients)
+| Model | Location | Purpose |
+|---|---|---|
+| `Wallet` | school/models.py | Per-user balance ledger (credit/debit, freeze/unfreeze) |
+| `LedgerEntry` | school/models.py | Immutable double-entry records, FK → `Wallet` |
+| `LedgerReconciliation` | school/models.py | Reconciliation run results |
+| `FraudAlert` | school/models.py | Fraud detection alerts with severity/status |
+| `RiskScoreLog` | school/models.py | Per-user risk scoring history |
+| `FraudWhitelist` | school/models.py | Approved user exceptions for fraud rules |
+| `FinanceAuditLog` | school/models.py | **Tamper-proof SHA-256 hash chain** — each entry hashes previous |
+| `RevenueLog` | clients/models.py | Cross-tenant platform revenue tracking |
+
+**Hash chain fix (migration 0060)**: `FinanceAuditLog.created_at` changed from `auto_now_add=True` to explicit field set before `_compute_hash()` to ensure hash stability during save. `verify_integrity()` now returns `valid: true`.
+
+### Service Engines
+- `school/fraud_detection.py` — `FraudDetectionEngine`: velocity checks (>3 txns/5 min), large amounts (>50k), new-user watch (30-day), daily limits (>500k). `check_duplicate_receipt()` prevents replay attacks.
+- `school/compliance.py` — `ComplianceEngine`: KYC completeness, frozen wallet enforcement, large-transaction reporting (>100k), daily limit enforcement.
+- `clients/billing_engine.py` — `BillingEngine`: 1.5% fee (min KES 5, max KES 500), records `RevenueLog` in public schema. Wired into `MpesaStkCallbackView` (non-fatal try/except).
+
+### Tenant Finance API Endpoints (`/api/finance/`)
+| Endpoint | Auth | Purpose |
+|---|---|---|
+| `GET /wallet/` | Any authenticated | Own wallet balance |
+| `POST /wallet/admin-adjust/` | Finance staff | Admin credit/debit |
+| `GET /ledger/` | Any authenticated | Own ledger entries |
+| `GET /fraud-alerts/` | Finance staff | Active fraud alerts |
+| `POST /fraud-alerts/{id}/resolve/` | Finance staff | Resolve alert |
+| `GET /audit-log/` | Finance staff | Filtered audit log |
+| `GET /audit-log/verify/` | Finance staff | SHA-256 chain verification |
+| `POST /ledger/reconcile/` | Finance staff | Run reconciliation |
+
+### Platform Admin Finance API (`/api/platform/`)
+| Endpoint | Purpose |
+|---|---|
+| `GET /revenue/` | Revenue logs across all tenants |
+| `GET /fraud/overview/` | Cross-tenant fraud summary |
+| `GET /audit/export/?schema_name=X` | Full audit export for tenant |
+| `GET /wallets/summary/?schema_name=X` | Wallet balances + ledger totals |
+
+### Management Commands
+| Command | Scope | Purpose |
+|---|---|---|
+| `reconcile_transactions` | Per-tenant | Ledger ↔ wallet balance reconciliation |
+| `check_pending_payments` | Per-tenant | Expire stuck PENDING STK pushes |
+| `run_compliance_checks` | All tenants | Compliance rules (KYC, limits) |
+| `run_fraud_monitor` | All tenants | Fraud velocity/pattern scan |
+
+Run via: `python manage.py tenant_command <cmd> --schema=demo_school`
+Or cross-tenant: `python manage.py run_compliance_checks` / `run_fraud_monitor`
+
 ## Notes
 - f-strings: no backslashes inside expressions (Python 3.11)
 - Migrations: always `--fake-initial` to avoid conflicts with existing tables
@@ -182,3 +234,4 @@ Uses Resend when `RESEND_API_KEY` is set; falls back to Django email backend. Ne
 - PlatformSetting key `INVOICE_SEQ_{year}` tracks sequential invoice counter per year
 - `check_trial_expiry` uses PlatformSetting `TRIAL_EXPIRY_LOCK` for DB-level concurrency protection
 - `PlatformError(code, message, http_status)` can be raised from any platform view for spec-compliant error responses
+- Finance role gate uses `role__name__in=['ADMIN','ACCOUNTANT','BURSAR','TENANT_SUPER_ADMIN','PRINCIPAL']` (NOT `portal_type`)

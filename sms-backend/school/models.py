@@ -1,4 +1,4 @@
-from django.db import models
+from django.db import models, transaction
 from django.core.validators import MinValueValidator
 from django.utils import timezone
 from decimal import Decimal
@@ -2375,3 +2375,420 @@ class MediaFile(models.Model):
 
     def __str__(self):
         return f"{self.module} / {self.original_name or self.file.name}"
+
+
+# ==========================================
+# LEDGER SYSTEM (Phase 2)
+# ==========================================
+
+class Wallet(models.Model):
+    """Per-user wallet. Tenant-isolated via django-tenants schema."""
+    user = models.OneToOneField('auth.User', on_delete=models.CASCADE, related_name='wallet')
+    balance = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
+    frozen_balance = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
+    last_activity = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [models.Index(fields=['user'])]
+        verbose_name = 'Wallet'
+
+    def __str__(self):
+        return f"{self.user} — Balance: {self.balance}"
+
+    @property
+    def available_balance(self):
+        return self.balance - self.frozen_balance
+
+    @transaction.atomic
+    def credit(self, amount, entry_type, reference, description='', adjusted_by=None, adjustment_reason=''):
+        from decimal import Decimal as _D
+        amount = _D(str(amount))
+        if amount <= 0:
+            raise ValueError("Credit amount must be positive")
+        self.balance += amount
+        self.save()
+        return LedgerEntry.objects.create(
+            user=self.user,
+            amount=amount,
+            entry_type=entry_type,
+            reference=reference,
+            description=description,
+            balance_after=self.balance,
+            adjusted_by=adjusted_by,
+            adjustment_reason=adjustment_reason,
+        )
+
+    @transaction.atomic
+    def debit(self, amount, entry_type, reference, description='', adjusted_by=None, adjustment_reason=''):
+        from decimal import Decimal as _D
+        amount = _D(str(amount))
+        if amount <= 0:
+            raise ValueError("Debit amount must be positive")
+        if self.balance < amount:
+            raise ValueError(f"Insufficient balance: {self.balance} < {amount}")
+        self.balance -= amount
+        self.save()
+        return LedgerEntry.objects.create(
+            user=self.user,
+            amount=-amount,
+            entry_type=entry_type,
+            reference=reference,
+            description=description,
+            balance_after=self.balance,
+            adjusted_by=adjusted_by,
+            adjustment_reason=adjustment_reason,
+        )
+
+    @transaction.atomic
+    def freeze(self, amount):
+        from decimal import Decimal as _D
+        amount = _D(str(amount))
+        if self.available_balance < amount:
+            raise ValueError("Insufficient available balance to freeze")
+        self.frozen_balance += amount
+        self.save()
+
+    @transaction.atomic
+    def unfreeze(self, amount):
+        from decimal import Decimal as _D
+        amount = _D(str(amount))
+        if self.frozen_balance < amount:
+            raise ValueError("Cannot unfreeze more than frozen amount")
+        self.frozen_balance -= amount
+        self.save()
+
+    @classmethod
+    def get_or_create_for_user(cls, user):
+        wallet, _ = cls.objects.get_or_create(user=user, defaults={'balance': Decimal('0.00')})
+        return wallet
+
+
+class LedgerEntry(models.Model):
+    """Double-entry ledger record — source of truth for all balance changes."""
+    ENTRY_TYPES = [
+        ('DEPOSIT', 'Deposit'),
+        ('WITHDRAWAL', 'Withdrawal'),
+        ('FEE_PAYMENT', 'Fee Payment'),
+        ('REFUND', 'Refund'),
+        ('ADMIN_ADJUSTMENT', 'Admin Adjustment'),
+        ('TRANSACTION_FEE', 'Transaction Fee'),
+        ('SCHOOL_CREDIT', 'School Credit'),
+        ('SCHOOL_FEE', 'School Fee'),
+        ('PENALTY', 'Penalty'),
+        ('DISCOUNT', 'Discount'),
+    ]
+
+    user = models.ForeignKey('auth.User', on_delete=models.CASCADE, related_name='ledger_entries')
+    amount = models.DecimalField(max_digits=12, decimal_places=2,
+        help_text='Positive = credit, negative = debit')
+    entry_type = models.CharField(max_length=20, choices=ENTRY_TYPES)
+    reference = models.CharField(max_length=100, db_index=True,
+        help_text='M-Pesa receipt, invoice number, etc')
+    description = models.TextField(blank=True)
+    balance_after = models.DecimalField(max_digits=12, decimal_places=2)
+    adjusted_by = models.ForeignKey('auth.User', null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='ledger_adjustments_made')
+    adjustment_reason = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', 'created_at']),
+            models.Index(fields=['reference']),
+            models.Index(fields=['entry_type', 'created_at']),
+        ]
+        verbose_name = 'Ledger Entry'
+
+    def __str__(self):
+        sign = '+' if self.amount > 0 else ''
+        return f"{self.entry_type}: {sign}{self.amount} (bal: {self.balance_after})"
+
+    @property
+    def is_credit(self):
+        return self.amount > 0
+
+    @property
+    def is_debit(self):
+        return self.amount < 0
+
+
+class LedgerReconciliation(models.Model):
+    """Records of reconciliation runs."""
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending'), ('IN_PROGRESS', 'In Progress'),
+        ('BALANCED', 'Balanced'), ('MISMATCH', 'Mismatch Found'), ('ERROR', 'Error'),
+    ]
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    start_date = models.DateField()
+    end_date = models.DateField()
+    total_entries = models.IntegerField(default=0)
+    total_credits = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0'))
+    total_debits = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0'))
+    discrepancies = models.JSONField(default=list)
+    notes = models.TextField(blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    completed_by = models.ForeignKey('auth.User', null=True, blank=True, on_delete=models.SET_NULL)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Ledger Reconciliation'
+
+
+# ==========================================
+# FRAUD DETECTION SYSTEM (Phase 5)
+# ==========================================
+
+class FraudAlert(models.Model):
+    """Security and fraud alerts. Tenant-isolated via schema."""
+    LEVEL_CHOICES = [('INFO', 'Info'), ('WARNING', 'Warning'), ('CRITICAL', 'Critical')]
+    ALERT_TYPES = [
+        ('HIGH_RISK_TRANSACTION_BLOCKED', 'High Risk Transaction Blocked'),
+        ('ELEVATED_RISK_TRANSACTION', 'Elevated Risk Transaction'),
+        ('DUPLICATE_RECEIPT', 'Duplicate Receipt Detected'),
+        ('RECONCILIATION_MISMATCH', 'Reconciliation Mismatch'),
+        ('OVERDRAFT_ATTEMPT', 'Overdraft Attempt'),
+        ('SUSPICIOUS_PATTERN', 'Suspicious Pattern Detected'),
+        ('VOLUME_SPIKE', 'Unusual Volume Spike'),
+        ('MANY_FAILURES', 'Many Failed Transactions'),
+        ('ACTIVITY_SPIKE', 'Activity Spike'),
+        ('ROUND_AMOUNT_PATTERN', 'Round Amount Pattern'),
+        ('PHONE_MISMATCH', 'Phone Number Mismatch'),
+        ('DAILY_VOLUME_LIMIT', 'Daily Volume Limit Exceeded'),
+        ('NEW_USER_LARGE_TX', 'New User Large Transaction'),
+        ('MISSING_RECEIPT', 'Missing M-Pesa Receipt'),
+    ]
+
+    level = models.CharField(max_length=20, choices=LEVEL_CHOICES, db_index=True)
+    alert_type = models.CharField(max_length=50, choices=ALERT_TYPES)
+    message = models.TextField()
+    reference = models.CharField(max_length=100, blank=True, db_index=True)
+    metadata = models.JSONField(default=dict)
+    user = models.ForeignKey('auth.User', null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='fraud_alerts')
+    resolved = models.BooleanField(default=False, db_index=True)
+    resolved_by = models.ForeignKey('auth.User', null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='resolved_fraud_alerts')
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    resolution_notes = models.TextField(blank=True)
+    escalated = models.BooleanField(default=False)
+    escalated_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['level', 'resolved']),
+            models.Index(fields=['alert_type']),
+            models.Index(fields=['created_at']),
+        ]
+        verbose_name = 'Fraud Alert'
+
+    def __str__(self):
+        return f"[{self.level}] {self.alert_type}"
+
+    def resolve(self, user, notes=''):
+        from django.utils import timezone as tz
+        self.resolved = True
+        self.resolved_by = user
+        self.resolved_at = tz.now()
+        self.resolution_notes = notes
+        self.save()
+
+    def escalate(self):
+        from django.utils import timezone as tz
+        self.escalated = True
+        self.escalated_at = tz.now()
+        self.save()
+
+
+class RiskScoreLog(models.Model):
+    """Log of fraud risk scores for all evaluated transactions."""
+    ACTION_CHOICES = [('ALLOW', 'Allowed'), ('FLAG', 'Flagged'), ('BLOCK', 'Blocked')]
+
+    user = models.ForeignKey('auth.User', on_delete=models.CASCADE, related_name='risk_scores')
+    transaction_amount = models.DecimalField(max_digits=12, decimal_places=2)
+    risk_score = models.IntegerField(help_text='0-100')
+    factors = models.JSONField(default=list)
+    action_taken = models.CharField(max_length=20, choices=ACTION_CHOICES)
+    alert = models.ForeignKey(FraudAlert, null=True, blank=True, on_delete=models.SET_NULL)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', 'created_at']),
+            models.Index(fields=['risk_score']),
+            models.Index(fields=['action_taken']),
+        ]
+        verbose_name = 'Risk Score Log'
+
+    def __str__(self):
+        return f"Score {self.risk_score} — {self.action_taken} — {self.user}"
+
+
+class FraudWhitelist(models.Model):
+    """Trusted phones/users/IPs that bypass fraud checks."""
+    TYPE_CHOICES = [('PHONE', 'Phone Number'), ('USER', 'User'), ('IP', 'IP Address')]
+
+    whitelist_type = models.CharField(max_length=20, choices=TYPE_CHOICES)
+    value = models.CharField(max_length=100)
+    reason = models.TextField()
+    whitelisted_by = models.ForeignKey('auth.User', on_delete=models.SET_NULL, null=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ['whitelist_type', 'value']
+        verbose_name = 'Fraud Whitelist Entry'
+
+    def is_valid(self):
+        from django.utils import timezone as tz
+        if not self.is_active:
+            return False
+        if self.expires_at and self.expires_at < tz.now():
+            return False
+        return True
+
+
+# ==========================================
+# TAMPER-PROOF AUDIT LOG (Phase 6)
+# ==========================================
+
+class FinanceAuditLog(models.Model):
+    """
+    Tamper-proof financial audit log with SHA-256 hash chain.
+    Every entry's hash links to the previous entry, making modification detectable.
+    """
+    ACTION_CHOICES = [
+        ('PAYMENT_RECEIVED', 'Payment Received'),
+        ('PAYMENT_FAILED', 'Payment Failed'),
+        ('BALANCE_UPDATED', 'Balance Updated'),
+        ('BALANCE_ADJUSTED', 'Balance Adjusted by Admin'),
+        ('STK_PUSH_INITIATED', 'STK Push Initiated'),
+        ('STK_PUSH_CALLBACK', 'STK Push Callback Received'),
+        ('WALLET_CREDITED', 'Wallet Credited'),
+        ('WALLET_DEBITED', 'Wallet Debited'),
+        ('WITHDRAWAL_REQUESTED', 'Withdrawal Requested'),
+        ('WITHDRAWAL_APPROVED', 'Withdrawal Approved'),
+        ('INVOICE_CREATED', 'Invoice Created'),
+        ('INVOICE_PAID', 'Invoice Paid'),
+        ('INVOICE_CANCELLED', 'Invoice Cancelled'),
+        ('FRAUD_ALERT_RAISED', 'Fraud Alert Raised'),
+        ('FRAUD_ALERT_RESOLVED', 'Fraud Alert Resolved'),
+        ('ADMIN_ACTION', 'Admin Action'),
+        ('EXPORT_GENERATED', 'Export Generated'),
+    ]
+
+    user = models.ForeignKey('auth.User', null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='finance_audit_logs')
+    action = models.CharField(max_length=50, choices=ACTION_CHOICES, db_index=True)
+    entity = models.CharField(max_length=50, help_text='TRANSACTION, WALLET, INVOICE, etc')
+    entity_id = models.CharField(max_length=100)
+    metadata = models.JSONField(default=dict)
+
+    # Request context
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.TextField(blank=True)
+    request_path = models.CharField(max_length=500, blank=True)
+    request_method = models.CharField(max_length=10, blank=True)
+
+    # Tamper-proof chain
+    entry_hash = models.CharField(max_length=64, db_index=True)
+    previous_hash = models.CharField(max_length=64, blank=True)
+
+    created_at = models.DateTimeField(null=True, blank=True,
+        help_text="Explicitly set before save to ensure hash stability")
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['action', 'created_at']),
+            models.Index(fields=['entity', 'entity_id']),
+            models.Index(fields=['user', 'created_at']),
+            models.Index(fields=['created_at']),
+        ]
+        verbose_name = 'Finance Audit Log'
+
+    def __str__(self):
+        return f"{self.action} — {self.entity} — {self.created_at}"
+
+    def save(self, *args, **kwargs):
+        from django.utils import timezone as tz
+        if not self.created_at:
+            self.created_at = tz.now()
+        if not self.entry_hash:
+            self._compute_hash()
+        super().save(*args, **kwargs)
+
+    def _compute_hash(self):
+        import hashlib
+        import json as _json
+        from django.utils import timezone as tz
+
+        last = FinanceAuditLog.objects.exclude(pk=self.pk if self.pk else None).first()
+        self.previous_hash = last.entry_hash if last else '0' * 64
+
+        ts = self.created_at.isoformat() if self.created_at else tz.now().isoformat()
+        data = {
+            'user_id': str(self.user_id) if self.user_id else None,
+            'action': self.action,
+            'entity': self.entity,
+            'entity_id': self.entity_id,
+            'metadata': self.metadata,
+            'ip_address': str(self.ip_address) if self.ip_address else None,
+            'timestamp': ts,
+            'previous_hash': self.previous_hash,
+        }
+        self.entry_hash = hashlib.sha256(
+            _json.dumps(data, sort_keys=True, separators=(',', ':')).encode()
+        ).hexdigest()
+
+    def verify_integrity(self):
+        stored = self.entry_hash
+        self.entry_hash = ''
+        self._compute_hash()
+        recomputed = self.entry_hash
+        self.entry_hash = stored
+        return stored == recomputed
+
+    @classmethod
+    def log_action(cls, action, entity, entity_id, metadata=None, request=None, user=None):
+        ip = None
+        ua = ''
+        path = ''
+        method = ''
+        if request:
+            xff = request.META.get('HTTP_X_FORWARDED_FOR')
+            ip = xff.split(',')[0].strip() if xff else request.META.get('REMOTE_ADDR')
+            ua = request.META.get('HTTP_USER_AGENT', '')[:500]
+            path = request.path[:500]
+            method = request.method
+            if user is None and hasattr(request, 'user') and request.user.is_authenticated:
+                user = request.user
+        return cls.objects.create(
+            user=user,
+            action=action,
+            entity=entity,
+            entity_id=str(entity_id),
+            metadata=metadata or {},
+            ip_address=ip,
+            user_agent=ua,
+            request_path=path,
+            request_method=method,
+        )
+
+    @classmethod
+    def verify_chain(cls):
+        entries = cls.objects.order_by('created_at')
+        previous_hash = '0' * 64
+        for entry in entries:
+            if entry.previous_hash != previous_hash:
+                return False, f"Chain broken at entry {entry.id}", entry
+            if not entry.verify_integrity():
+                return False, f"Entry {entry.id} has been tampered with", entry
+            previous_hash = entry.entry_hash
+        return True, "Chain verified", None

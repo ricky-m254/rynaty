@@ -923,3 +923,76 @@ class GlobalSuperAdmin(models.Model):
 
     def __str__(self):
         return self.user.username
+
+
+# ==========================================
+# REVENUE LOG — SaaS Platform Revenue (Phase 7)
+# ==========================================
+
+class RevenueLog(models.Model):
+    """
+    Track platform revenue from transaction fees and subscriptions.
+    Stored in public schema (clients app). Links to Tenant by schema_name.
+    """
+    SOURCE_CHOICES = [
+        ('TRANSACTION_FEE', 'Transaction Fee'),
+        ('SUBSCRIPTION', 'Subscription'),
+        ('SETUP_FEE', 'Setup Fee'),
+        ('CUSTOM', 'Custom'),
+    ]
+
+    schema_name = models.CharField(max_length=63, db_index=True,
+        help_text='Tenant schema this revenue came from')
+    school_name = models.CharField(max_length=200, blank=True,
+        help_text='School name for display')
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    source = models.CharField(max_length=20, choices=SOURCE_CHOICES)
+    description = models.TextField(blank=True)
+    metadata = models.JSONField(default=dict)
+    mpesa_receipt = models.CharField(max_length=50, blank=True, db_index=True)
+    subscription = models.ForeignKey('TenantSubscription', null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='revenue_logs')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['schema_name', 'source', 'created_at']),
+            models.Index(fields=['created_at']),
+        ]
+        verbose_name = 'Revenue Log'
+
+    def __str__(self):
+        return f"{self.source}: {self.amount} from {self.schema_name}"
+
+    @classmethod
+    def record_transaction_fee(cls, schema_name, school_name, fee_amount, mpesa_receipt='', metadata=None):
+        return cls.objects.create(
+            schema_name=schema_name,
+            school_name=school_name,
+            amount=fee_amount,
+            source='TRANSACTION_FEE',
+            description=f'Transaction fee from {mpesa_receipt or "payment"}',
+            mpesa_receipt=mpesa_receipt,
+            metadata=metadata or {},
+        )
+
+    @classmethod
+    def get_total_revenue(cls, start_date=None, end_date=None):
+        from django.db.models import Sum
+        qs = cls.objects.all()
+        if start_date:
+            qs = qs.filter(created_at__date__gte=start_date)
+        if end_date:
+            qs = qs.filter(created_at__date__lte=end_date)
+        return qs.aggregate(total=Sum('amount'))['total'] or 0
+
+    @classmethod
+    def get_revenue_by_school(cls, start_date=None, end_date=None):
+        from django.db.models import Sum
+        qs = cls.objects.all()
+        if start_date:
+            qs = qs.filter(created_at__date__gte=start_date)
+        if end_date:
+            qs = qs.filter(created_at__date__lte=end_date)
+        return qs.values('schema_name', 'school_name').annotate(total=Sum('amount')).order_by('-total')

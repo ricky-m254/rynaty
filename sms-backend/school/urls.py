@@ -17,6 +17,9 @@ from .views import (
     TenantSettingsView, TenantSettingDeleteView,
     FinanceSettingsView, GeneralSettingsView,
     MpesaStkPushView, MpesaStkCallbackView, MpesaStkStatusView,
+    WalletDetailView, WalletAdminAdjustView, LedgerEntryListView,
+    FraudAlertListView, FraudAlertResolveView,
+    FinanceAuditLogListView, AuditChainVerifyView, LedgerReconcileView,
     ControlPlaneSummaryView, SecurityPolicyView,
     LifecycleTemplateListView, LifecycleRunListCreateView,
     LifecycleRunDetailView, LifecycleRunStartView,
@@ -396,4 +399,14 @@ urlpatterns = [
     path('finance/mpesa/push/',             MpesaStkPushView.as_view(),         name='mpesa_stk_push'),
     path('finance/mpesa/callback/',         MpesaStkCallbackView.as_view(),     name='mpesa_stk_callback'),
     path('finance/mpesa/status/',           MpesaStkStatusView.as_view(),       name='mpesa_stk_status'),
+
+    # ── Enterprise Finance: Wallet / Ledger / Fraud / Audit ─────────────────
+    path('finance/wallet/',                         WalletDetailView.as_view(),         name='finance_wallet'),
+    path('finance/wallet/admin-adjust/',            WalletAdminAdjustView.as_view(),    name='finance_wallet_admin_adjust'),
+    path('finance/ledger/',                         LedgerEntryListView.as_view(),      name='finance_ledger'),
+    path('finance/ledger/reconcile/',               LedgerReconcileView.as_view(),      name='finance_ledger_reconcile'),
+    path('finance/fraud-alerts/',                   FraudAlertListView.as_view(),       name='finance_fraud_alerts'),
+    path('finance/fraud-alerts/<int:pk>/resolve/',  FraudAlertResolveView.as_view(),    name='finance_fraud_alert_resolve'),
+    path('finance/audit-log/',                      FinanceAuditLogListView.as_view(),  name='finance_audit_log'),
+    path('finance/audit-log/verify/',               AuditChainVerifyView.as_view(),     name='finance_audit_chain_verify'),
 ]

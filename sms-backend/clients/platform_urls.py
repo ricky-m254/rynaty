@@ -26,6 +26,10 @@ from clients.platform_views import (
     PlatformSupportTicketViewSet,
     PlatformTenantSubscriptionViewSet,
     PlatformTenantViewSet,
+    PlatformRevenueOverviewView,
+    PlatformFraudAlertsOverviewView,
+    PlatformAuditExportView,
+    PlatformTenantWalletSummaryView,
 )
 
 router = SimpleRouter()
@@ -51,6 +55,10 @@ router.register(r"backup/restores", PlatformRestoreJobViewSet, basename="platfor
 router.register(r"security/incidents", PlatformSecurityIncidentViewSet, basename="platform-security-incident")
 router.register(r"security/compliance-reports", PlatformComplianceReportViewSet, basename="platform-compliance-report")
 router.register(r"domain-requests", PlatformDomainRequestViewSet, basename="platform-domain-request")
+router.register(r"revenue/overview", PlatformRevenueOverviewView, basename="platform-revenue-overview")
+router.register(r"fraud/overview", PlatformFraudAlertsOverviewView, basename="platform-fraud-overview")
+router.register(r"audit/export", PlatformAuditExportView, basename="platform-audit-export")
+router.register(r"wallets/summary", PlatformTenantWalletSummaryView, basename="platform-wallet-summary")
 
 @csrf_exempt
 def platform_login_view(request):

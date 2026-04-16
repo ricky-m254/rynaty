@@ -3444,3 +3444,209 @@ class PlatformDomainRequestViewSet(
             request=request,
         )
         return Response(result)
+
+
+# ==========================================
+# PLATFORM ADMIN — REVENUE / FRAUD / AUDIT (Phase 7-9)
+# ==========================================
+
+class PlatformRevenueOverviewView(viewsets.ViewSet):
+    """
+    GET /api/platform/revenue/overview/
+    Returns revenue stats across all tenants.
+    """
+    permission_classes = [IsAuthenticated, IsGlobalSuperAdmin]
+
+    def list(self, request):
+        from clients.models import RevenueLog
+        from django.db.models import Sum, Count
+        from django.utils import timezone as tz
+        from datetime import timedelta
+
+        today = tz.now().date()
+        last_30 = today - timedelta(days=30)
+
+        total_all_time = RevenueLog.get_total_revenue()
+        total_30_days = RevenueLog.get_total_revenue(start_date=last_30)
+        by_school = list(RevenueLog.get_revenue_by_school(start_date=last_30))
+        by_source = list(
+            RevenueLog.objects.filter(created_at__date__gte=last_30)
+            .values("source")
+            .annotate(total=Sum("amount"), count=Count("id"))
+            .order_by("-total")
+        )
+
+        # Monthly breakdown (last 6 months)
+        monthly = []
+        for i in range(5, -1, -1):
+            month_start = (today.replace(day=1) - timedelta(days=i * 30)).replace(day=1)
+            if i > 0:
+                month_end = (month_start.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+            else:
+                month_end = today
+            rev = RevenueLog.get_total_revenue(start_date=month_start, end_date=month_end)
+            monthly.append({
+                "month": month_start.strftime("%Y-%m"),
+                "revenue": str(rev),
+            })
+
+        return Response({
+            "total_all_time": str(total_all_time),
+            "total_last_30_days": str(total_30_days),
+            "by_school_last_30_days": [
+                {"schema_name": r["schema_name"], "school_name": r["school_name"], "total": str(r["total"])}
+                for r in by_school
+            ],
+            "by_source_last_30_days": [
+                {"source": r["source"], "total": str(r["total"]), "count": r["count"]}
+                for r in by_source
+            ],
+            "monthly_breakdown": monthly,
+        })
+
+
+class PlatformFraudAlertsOverviewView(viewsets.ViewSet):
+    """
+    GET /api/platform/fraud/overview/
+    Cross-tenant fraud alert summary (queries each tenant schema).
+    """
+    permission_classes = [IsAuthenticated, IsGlobalSuperAdmin]
+
+    def list(self, request):
+        from django_tenants.utils import schema_context
+        from clients.models import Tenant
+
+        results = []
+        total_critical = 0
+        total_unresolved = 0
+
+        for tenant in Tenant.objects.exclude(schema_name='public').filter(
+            schema_name__isnull=False
+        )[:50]:  # Cap at 50 for performance
+            try:
+                with schema_context(tenant.schema_name):
+                    from school.models import FraudAlert
+                    critical = FraudAlert.objects.filter(level='CRITICAL', resolved=False).count()
+                    warnings = FraudAlert.objects.filter(level='WARNING', resolved=False).count()
+                    total_unresolved_schema = FraudAlert.objects.filter(resolved=False).count()
+                    total_critical += critical
+                    total_unresolved += total_unresolved_schema
+                    if total_unresolved_schema > 0:
+                        results.append({
+                            "schema_name": tenant.schema_name,
+                            "school_name": getattr(tenant, 'name', tenant.schema_name),
+                            "critical": critical,
+                            "warnings": warnings,
+                            "total_unresolved": total_unresolved_schema,
+                        })
+            except Exception:
+                continue
+
+        return Response({
+            "platform_critical_total": total_critical,
+            "platform_unresolved_total": total_unresolved,
+            "schools_with_alerts": results,
+        })
+
+
+class PlatformAuditExportView(viewsets.ViewSet):
+    """
+    GET /api/platform/audit/export/?schema_name=school1&action=PAYMENT_RECEIVED
+    Cross-tenant audit log export (CSV-compatible JSON).
+    """
+    permission_classes = [IsAuthenticated, IsGlobalSuperAdmin]
+
+    def list(self, request):
+        from django_tenants.utils import schema_context
+        from clients.models import Tenant
+
+        schema_name = request.query_params.get("schema_name")
+        action_filter = request.query_params.get("action")
+        limit = min(int(request.query_params.get("limit", 100)), 1000)
+
+        if not schema_name:
+            return Response({"error": "schema_name is required"}, status=400)
+
+        try:
+            tenant = Tenant.objects.get(schema_name=schema_name)
+        except Tenant.DoesNotExist:
+            return Response({"error": "Tenant not found"}, status=404)
+
+        results = []
+        with schema_context(schema_name):
+            from school.models import FinanceAuditLog
+            qs = FinanceAuditLog.objects.order_by('-created_at')[:limit]
+            if action_filter:
+                qs = FinanceAuditLog.objects.filter(action=action_filter).order_by('-created_at')[:limit]
+            for e in qs:
+                results.append({
+                    "id": e.id,
+                    "action": e.action,
+                    "entity": e.entity,
+                    "entity_id": e.entity_id,
+                    "user": e.user.get_full_name() if e.user else "System",
+                    "ip_address": str(e.ip_address) if e.ip_address else None,
+                    "metadata": e.metadata,
+                    "entry_hash": e.entry_hash,
+                    "previous_hash": e.previous_hash,
+                    "created_at": e.created_at.isoformat(),
+                })
+
+        return Response({
+            "schema_name": schema_name,
+            "school_name": getattr(tenant, 'name', schema_name),
+            "count": len(results),
+            "entries": results,
+        })
+
+
+class PlatformTenantWalletSummaryView(viewsets.ViewSet):
+    """
+    GET /api/platform/wallets/summary/?schema_name=school1
+    Returns wallet stats for a specific tenant schema.
+    """
+    permission_classes = [IsAuthenticated, IsGlobalSuperAdmin]
+
+    def list(self, request):
+        from django_tenants.utils import schema_context
+        from clients.models import Tenant
+        from django.db.models import Sum, Count, Avg
+
+        schema_name = request.query_params.get("schema_name")
+        if not schema_name:
+            return Response({"error": "schema_name is required"}, status=400)
+
+        try:
+            tenant = Tenant.objects.get(schema_name=schema_name)
+        except Tenant.DoesNotExist:
+            return Response({"error": "Tenant not found"}, status=404)
+
+        with schema_context(schema_name):
+            from school.models import Wallet, LedgerEntry
+            stats = Wallet.objects.aggregate(
+                total_wallets=Count("id"),
+                total_balance=Sum("balance"),
+                avg_balance=Avg("balance"),
+                total_frozen=Sum("frozen_balance"),
+            )
+            from django.db.models import Q as _Q
+            ledger_stats = LedgerEntry.objects.aggregate(
+                total_credits=Sum("amount", filter=_Q(amount__gt=0)),
+                total_debits=Sum("amount", filter=_Q(amount__lt=0)),
+                total_entries=Count("id"),
+            )
+
+        return Response({
+            "schema_name": schema_name,
+            "wallets": {
+                "count": stats["total_wallets"] or 0,
+                "total_balance": str(stats["total_balance"] or 0),
+                "avg_balance": str(round(float(stats["avg_balance"] or 0), 2)),
+                "total_frozen": str(stats["total_frozen"] or 0),
+            },
+            "ledger": {
+                "total_entries": ledger_stats["total_entries"] or 0,
+                "total_credits": str(ledger_stats["total_credits"] or 0),
+                "total_debits": str(abs(ledger_stats["total_debits"] or 0)),
+            },
+        })
