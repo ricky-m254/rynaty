@@ -171,7 +171,7 @@ class Command(BaseCommand):
             with connection.cursor() as cursor:
                 for tbl in term_fk_tables:
                     try:
-                        cursor.execute(f"DELETE FROM {tbl}")
+                        cursor.execute(f"DELETE FROM {connection.ops.quote_name(tbl)}")
                     except Exception:
                         logger.warning("Caught and logged", exc_info=True)
 
