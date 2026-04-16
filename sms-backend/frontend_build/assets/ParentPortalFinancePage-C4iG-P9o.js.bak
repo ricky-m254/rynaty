@@ -200,7 +200,7 @@ function E(){
             Number(t.balance)>0&&e.jsxs("p",{className:"text-xs text-amber-400",children:["Due: ",fmt(t.balance)]})
           ]})
         ]})
-      },t.id))})
+      },t.id))}
       :e.jsx("div",{className:"rounded-2xl overflow-hidden",style:c,children:pay.length===0
         ?e.jsx("p",{className:"py-10 text-center text-sm text-slate-500",children:"No payments recorded."})
         :e.jsxs("table",{className:"w-full text-sm",children:[

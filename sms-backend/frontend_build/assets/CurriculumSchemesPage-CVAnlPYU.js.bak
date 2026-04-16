@@ -245,7 +245,7 @@ function ae(){
               e.jsx("span",{className:"flex-1 text-slate-300",children:t.topic})
             ]},t.id))
           ]})
-        ]})
+        ])
       ]},tpl.id))})
     ]}),
     e.jsx(Y,{open:!!delScheme,title:"Delete Scheme",description:"Delete \""+( delScheme?.title||"")+"\u201d? All its topics will also be removed.",confirmLabel:"Delete",isProcessing:deleting,error:delErr,onConfirm:deleteScheme,onCancel:()=>setDelScheme(null)}),
