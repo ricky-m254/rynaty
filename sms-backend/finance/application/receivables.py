@@ -35,8 +35,6 @@ def is_admin_like(user):
         "PRINCIPAL",
         "DEPUTY_PRINCIPAL",
         "DIRECTOR",
-        "BURSAR",
-        "FINANCE_MANAGER",
     }
 
 

@@ -9,6 +9,7 @@ from .views import (
     CafeteriaDashboardView,
     StudentAccountsView,
     WalletBalanceView,
+    CafeteriaPreOrdersView,
 )
 
 router = SimpleRouter()
@@ -23,4 +24,6 @@ urlpatterns = [
     path('dashboard/', CafeteriaDashboardView.as_view()),
     path('student-accounts/', StudentAccountsView.as_view()),
     path('wallet/balance/', WalletBalanceView.as_view()),
+    path('pre-orders/', CafeteriaPreOrdersView.as_view()),
+    path('pre-orders/<int:pk>/', CafeteriaPreOrdersView.as_view()),
 ]

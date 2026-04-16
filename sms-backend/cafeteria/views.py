@@ -197,6 +197,68 @@ class StudentAccountsView(APIView):
         return Response(result)
 
 
+class CafeteriaPreOrdersView(APIView):
+    permission_classes = [permissions.IsAuthenticated, HasModuleAccess]
+    module_key = "CAFETERIA"
+
+    def get(self, request):
+        from django.utils import timezone
+        from school.models import Enrollment
+        today = timezone.now().date()
+        start = today - datetime.timedelta(days=14)
+        end = today + datetime.timedelta(days=7)
+
+        transactions = (
+            MealTransaction.objects
+            .filter(date__range=(start, end))
+            .select_related('student')
+            .order_by('-date', '-id')[:200]
+        )
+
+        student_ids = list({t.student_id for t in transactions})
+        grade_map = {}
+        for enr in (
+            Enrollment.objects
+            .filter(student_id__in=student_ids, is_active=True)
+            .select_related('school_class')
+        ):
+            grade_map[enr.student_id] = getattr(enr.school_class, 'name', '')
+
+        results = []
+        for t in transactions:
+            s = t.student
+            name = f"{s.first_name} {s.last_name}".strip() or s.admission_number
+            status_val = "Confirmed" if t.served else "Pending"
+            results.append({
+                'id': t.id,
+                'orderId': f'ORD-{t.date.year}-{t.id:05d}',
+                'studentName': name,
+                'grade': grade_map.get(s.id, ''),
+                'mealDate': str(t.date),
+                'mealType': t.meal_type,
+                'mealItem': t.meal_type,
+                'orderedBy': 'School',
+                'placedAt': t.created_at.strftime('%Y-%m-%d %H:%M'),
+                'status': status_val,
+            })
+
+        return Response(results)
+
+    def patch(self, request, pk):
+        action = request.data.get('status')
+        try:
+            t = MealTransaction.objects.get(id=pk)
+            if action == 'Confirmed':
+                t.served = True
+                t.save(update_fields=['served'])
+            elif action == 'Cancelled':
+                t.served = False
+                t.save(update_fields=['served'])
+            return Response({'status': 'ok', 'id': pk})
+        except MealTransaction.DoesNotExist:
+            return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+
+
 class WalletBalanceView(APIView):
     permission_classes = [permissions.IsAuthenticated, HasModuleAccess]
     module_key = "CAFETERIA"
