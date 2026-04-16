@@ -569,9 +569,9 @@ class StudentFinancePayView(StudentPortalAccessMixin, APIView):
     Student initiates an M-Pesa STK Push to pay their own outstanding fees.
 
     Body:
+        invoice_id      : int  — REQUIRED; must belong to this student and be unpaid
         phone           : str  — Kenyan mobile number e.g. 0712345678
-        amount          : decimal — amount in KES
-        invoice_id      : int  (optional) — specific invoice to pay against
+        amount          : decimal — amount in KES; must be > 0 and <= outstanding balance
         payment_method  : str  — "mpesa" (only supported value for now)
     """
     def post(self, request):
@@ -582,6 +582,34 @@ class StudentFinancePayView(StudentPortalAccessMixin, APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
+        # ── Invoice ownership & status validation ────────────────────────────
+        invoice_id = request.data.get("invoice_id")
+        if not invoice_id:
+            return Response(
+                {"error": "invoice_id is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            invoice = Invoice.objects.get(id=invoice_id, student=student)
+        except Invoice.DoesNotExist:
+            return Response(
+                {"error": "Invoice not found or does not belong to your account."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        if invoice.status == "PAID":
+            return Response(
+                {"error": "This invoice is already fully paid."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        outstanding = (invoice.total_amount or Decimal("0")) - (invoice.paid_amount or Decimal("0"))
+        if outstanding <= 0:
+            return Response(
+                {"error": "This invoice has no outstanding balance."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # ── Amount validation ────────────────────────────────────────────────
         amount_raw = request.data.get("amount")
         try:
             amount = Decimal(str(amount_raw or "0"))
@@ -592,10 +620,13 @@ class StudentFinancePayView(StudentPortalAccessMixin, APIView):
                 {"error": "Amount must be greater than zero."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        if amount > outstanding:
+            return Response(
+                {"error": f"Amount KES {amount} exceeds outstanding balance of KES {outstanding}."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         method = (request.data.get("payment_method") or "mpesa").strip().lower()
-        invoice_id = request.data.get("invoice_id")
-
         if method not in ("mpesa", "m-pesa", "mobile money"):
             return Response(
                 {"error": "Only M-Pesa payments are supported from the student portal."},
@@ -628,7 +659,7 @@ class StudentFinancePayView(StudentPortalAccessMixin, APIView):
             provider="mpesa",
             external_id=result["checkout_request_id"],
             student=student,
-            invoice_id=invoice_id,
+            invoice_id=invoice.id,
             amount=amount,
             currency="KES",
             status="PENDING",

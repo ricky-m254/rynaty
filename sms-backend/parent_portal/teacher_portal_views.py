@@ -11,6 +11,7 @@ from rest_framework.views import APIView
 
 from communication.models import Announcement, Notification
 from elearning.models import Course, CourseMaterial
+from hr.models import Employee
 from school.models import (
     Assessment,
     AssessmentGrade,
@@ -681,6 +682,14 @@ class TeacherPortalProfileView(TeacherPortalAccessMixin, APIView):
             except Exception:
                 pass
 
+        # HR employee record (provides employee_id + department)
+        employee = Employee.objects.filter(user=user).select_related("department").first()
+        employee_id = ""
+        department_name = ""
+        if employee:
+            employee_id = employee.employee_id or employee.staff_id or ""
+            department_name = employee.department.name if employee.department_id else ""
+
         assignments = (
             TeacherAssignment.objects.filter(teacher=user, is_active=True)
             .select_related("subject", "class_section", "class_section__grade_level")
@@ -715,6 +724,8 @@ class TeacherPortalProfileView(TeacherPortalAccessMixin, APIView):
             "bio": profile.bio if profile else "",
             "photo_url": photo_url,
             "role": getattr(getattr(profile, "role", None), "name", "TEACHER"),
+            "employee_id": employee_id,
+            "department": department_name,
             "subjects": subject_list,
             "classes": class_list,
             "force_password_change": bool(getattr(profile, "force_password_change", False)),

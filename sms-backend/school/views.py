@@ -8667,26 +8667,41 @@ class MpesaStkCallbackView(APIView):
         from .models import PaymentGatewayTransaction, Payment, PaymentGatewayWebhookEvent
         from django.utils import timezone as tz
         from django.db import transaction as db_transaction
+        import json as _json
         import logging
         import uuid
 
         log = logging.getLogger(__name__)
-        payload = request.data if isinstance(request.data, dict) else {}
 
-        # ── 1. Log the raw payload immediately — before any processing ──────
-        # This creates a permanent, tamper-evident record of exactly what
-        # Safaricom sent, protecting against disputes and replay attacks.
+        # ── 1. Capture raw request body bytes BEFORE any DRF parsing ─────────
+        # request.body is the unmodified bytes stream from Safaricom.
+        # We store it verbatim so it can be replayed and audited even if the
+        # DRF JSON parser would later fail (e.g. on malformed JSON).
+        raw_body_bytes = request.body  # bytes; safe to read before request.data
+        raw_body_str = raw_body_bytes.decode("utf-8", errors="replace")
+
+        # Try to parse the raw body ourselves; fall back to empty dict on error
+        try:
+            payload = _json.loads(raw_body_str)
+            if not isinstance(payload, dict):
+                payload = {}
+        except Exception:
+            payload = {}
+
+        # ── 2. Persist the raw webhook payload — before any processing ───────
+        # Stores the verbatim Safaricom bytes as a string so nothing is lost
+        # even if subsequent parsing or processing fails.
         try:
             PaymentGatewayWebhookEvent.objects.create(
                 event_id=f"mpesa-stk-{uuid.uuid4().hex}",
                 provider="mpesa",
                 event_type="stk_callback",
-                payload=payload,
+                payload={"raw": raw_body_str, "parsed": payload},
             )
         except Exception as raw_log_exc:
             log.error("Failed to save raw M-Pesa callback payload: %s", raw_log_exc)
 
-        # ── 2. Parse and process ─────────────────────────────────────────────
+        # ── 3. Parse and process ──────────────────────────────────────────────
         parsed = parse_stk_callback(payload)
 
         checkout_id = parsed.get("checkout_request_id", "")

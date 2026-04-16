@@ -94,9 +94,16 @@ POST /api/mpesa/stk-callback/
 {
   "invoice_id": 42,
   "phone": "0712345678",
-  "amount": 5000
+  "amount": 5000,
+  "payment_method": "mpesa"
 }
 ```
+
+**Validation enforced:**
+- `invoice_id` is **required** and must belong to the authenticated student
+- Invoice must not have `status = PAID`
+- `amount` must be > 0 and ≤ outstanding balance (`total_amount − paid_amount`)
+- Overpayment is rejected with a descriptive error
 
 **STK Push Response:**
 ```json
@@ -136,8 +143,9 @@ GET /api/student-portal/finance/mpesa-status/?ref=PAY-A1B2C3D4
 ### 4.1 ✅ PASS — Raw Webhook Logging
 **File:** `sms-backend/school/views.py` → `MpesaStkCallbackView.post()`
 
-All inbound Safaricom callbacks are stored in `PaymentGatewayWebhookEvent` **at the very start** of the handler, before any JSON parsing or business logic. This ensures:
-- No payload is ever lost, even if parsing fails
+The handler reads `request.body` (raw bytes) **before** any DRF JSON parsing occurs. The raw bytes are decoded to a UTF-8 string and stored in `PaymentGatewayWebhookEvent.payload["raw"]` along with the attempted parse result in `payload["parsed"]`. This ensures:
+- No payload is ever lost, even if `json.loads()` would fail on the body
+- The exact bytes received from Safaricom are preserved for replay and dispute resolution
 - Replaying failed callbacks is possible from the `PaymentGatewayWebhookEvent` table
 - Duplicate detection via `checkout_request_id`
 
@@ -149,10 +157,11 @@ Payment creation, invoice update, and `PaymentGatewayTransaction` status update 
 ### 4.3 ✅ PASS — Invoice Ownership Validation
 **File:** `sms-backend/parent_portal/student_portal_views.py` → `StudentFinancePayView.post()`
 
-The student finance pay endpoint validates that:
-1. The invoice belongs to the authenticated student's linked `Student` record
-2. The invoice is not already fully paid (`status != 'PAID'`)
-3. The amount doesn't exceed the outstanding balance
+`invoice_id` is a required field. The pay endpoint validates:
+1. `invoice_id` is provided; rejects with 400 if missing
+2. The invoice is fetched with `Invoice.objects.get(id=invoice_id, student=student)` — a student can never pay another student's invoice (returns 404 if mismatch)
+3. The invoice is not already fully paid (`status != 'PAID'`)
+4. `outstanding = total_amount − paid_amount` is computed and `amount` must be ≤ outstanding — overpayment is rejected with an explicit error message including both amounts
 
 ### 4.4 ✅ PASS — No Sensitive Data in Logs
 M-Pesa credentials (passkey, consumer key/secret) are loaded from environment variables only. No credentials are logged or included in error responses.
