@@ -45,12 +45,14 @@ print('  Done.')
 " 2>&1 | grep -v "^$" || true
 
 echo "[sms] Repairing diverged migration state for school_0058 (userprofile photo/bio)..."
+# Step 1: detect drifted schemas and clear their stale migration record.
+#         Writes the list of repaired schema names to /tmp/_repair_0058.txt,
+#         one per line (empty file = nothing to do).
 python3.11 manage.py shell -c "
 from django.db import connection
 from django_tenants.utils import get_public_schema_name
 
 PUBLIC = get_public_schema_name()
-
 connection.set_schema_to_public()
 with connection.cursor() as cur:
     cur.execute(\"SELECT schema_name FROM clients_tenant WHERE schema_name <> %s\", [PUBLIC])
@@ -60,35 +62,42 @@ repaired = []
 for schema in schemas:
     connection.set_schema(schema)
     with connection.cursor() as cur:
-        # Check whether the columns actually exist in the DB
         cur.execute(
-            \"\"\"
-            SELECT column_name
-            FROM information_schema.columns
-            WHERE table_schema = %s
-              AND table_name   = 'school_userprofile'
-              AND column_name IN ('photo', 'bio')
-            \"\"\",
+            \"SELECT column_name FROM information_schema.columns \"
+            \"WHERE table_schema=%s AND table_name='school_userprofile' \"
+            \"AND column_name IN ('photo','bio')\",
             [schema],
         )
         existing_cols = {r[0] for r in cur.fetchall()}
         if 'photo' in existing_cols and 'bio' in existing_cols:
-            continue  # columns present — nothing to repair
-
-        # Columns are missing. Remove the stale migration record so
-        # migrate_schemas will re-apply the real ALTER TABLE.
+            continue
+        # Remove stale record so the targeted migrate call can re-apply it.
         cur.execute(
             \"DELETE FROM django_migrations WHERE app='school' AND name='0058_userprofile_photo'\"
         )
         repaired.append(schema)
-        print(f'  [repair-0058] Cleared stale migration record on schema: {schema} (missing cols: {set([\"photo\",\"bio\"]) - existing_cols})')
+        missing = {'photo','bio'} - existing_cols
+        print(f'  [repair-0058] Cleared stale record on schema: {schema} (missing: {missing})')
 
 connection.set_schema_to_public()
-if not repaired:
-    print('  [repair-0058] All schemas OK — no drift detected.')
+if repaired:
+    print(f'  [repair-0058] Will re-migrate {len(repaired)} schema(s).')
+    with open('/tmp/_repair_0058.txt', 'w') as f:
+        f.write('\n'.join(repaired) + '\n')
 else:
-    print(f'  [repair-0058] Repaired {len(repaired)} schema(s): {repaired}')
+    print('  [repair-0058] All schemas OK — no drift detected.')
+    open('/tmp/_repair_0058.txt', 'w').close()
 " 2>&1 | grep -v "^$" || true
+
+# Step 2: for each drifted schema, run a targeted migration immediately
+#         so the ALTER TABLE executes before any seeding touches userprofile.
+if [ -s /tmp/_repair_0058.txt ]; then
+  while IFS= read -r _schema; do
+    [ -z "$_schema" ] && continue
+    echo "  [repair-0058] Applying migration to schema: $_schema"
+    python3.11 manage.py migrate_schemas --noinput --schema="$_schema" school 2>&1 | grep -v "^$" || true
+  done < /tmp/_repair_0058.txt
+fi
 
 echo "[sms] Running tenant migrations..."
 python3.11 manage.py migrate_schemas --noinput --fake-initial 2>&1 | grep -v "^$" || true
