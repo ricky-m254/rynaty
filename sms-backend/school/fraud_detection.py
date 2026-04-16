@@ -38,12 +38,31 @@ class FraudDetectionEngine:
     def __init__(self, user=None):
         self.user = user
 
+    def _student_for_user(self):
+        """
+        Resolve the Student record linked to self.user via UserProfile.admission_number.
+        Returns a Student instance or None.
+        Student has no direct user FK; the bridge is UserProfile.admission_number.
+        """
+        if not self.user:
+            return None
+        try:
+            from school.models import UserProfile, Student
+            profile = UserProfile.objects.filter(user=self.user).first()
+            if profile and profile.admission_number:
+                return Student.objects.filter(
+                    admission_number=profile.admission_number
+                ).first()
+        except Exception:
+            pass
+        return None
+
     def check_deposit_risk(self, amount, phone):
         """
         Calculate risk score for a deposit. Returns (score, action, factors).
-        Uses PaymentGatewayTransaction with provider='mpesa'.
+        Uses PaymentGatewayTransaction (velocity/phone) and LedgerEntry (per-user totals).
         """
-        from school.models import PaymentGatewayTransaction, RiskScoreLog
+        from school.models import PaymentGatewayTransaction, RiskScoreLog, LedgerEntry
 
         amount = Decimal(str(amount))
         score = 0
@@ -69,14 +88,19 @@ class FraudDetectionEngine:
         except Exception:
             pass
 
-        # Factor 3: New user
+        # Factor 3: New user — count via Student FK resolved through UserProfile bridge
         if self.user:
             try:
-                user_tx_count = PaymentGatewayTransaction.objects.filter(
-                    provider='mpesa',
-                    student__user=self.user,
-                    status='SUCCEEDED',
-                ).count()
+                student = self._student_for_user()
+                if student is not None:
+                    user_tx_count = PaymentGatewayTransaction.objects.filter(
+                        provider='mpesa',
+                        student=student,
+                        status='SUCCEEDED',
+                    ).count()
+                else:
+                    # No student record linked to this user — treat as first transaction
+                    user_tx_count = 0
                 if user_tx_count == 0:
                     score += 20
                     factors.append({'factor': 'new_user', 'weight': 20,
@@ -88,14 +112,14 @@ class FraudDetectionEngine:
             except Exception:
                 pass
 
-        # Factor 4: Daily volume
+        # Factor 4: Daily volume — use LedgerEntry (user FK, no Student bridge needed)
         if self.user:
             try:
-                daily_total = PaymentGatewayTransaction.objects.filter(
-                    provider='mpesa',
-                    student__user=self.user,
-                    status='SUCCEEDED',
+                daily_total = LedgerEntry.objects.filter(
+                    user=self.user,
+                    entry_type__in=['MPESA_DEPOSIT', 'DEPOSIT'],
                     created_at__date=timezone.now().date(),
+                    amount__gt=0,
                 ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
 
                 if daily_total + amount > self.MAX_DAILY_VOLUME:

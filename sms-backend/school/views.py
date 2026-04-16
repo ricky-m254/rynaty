@@ -8830,6 +8830,16 @@ class MpesaStkCallbackView(APIView):
                             except Exception as _bill_err:
                                 log.warning("Billing fee record error (non-fatal): %s", _bill_err)
 
+                            # ── Enterprise: Risk scoring (velocity, daily vol) ─────
+                            try:
+                                from school.fraud_detection import FraudDetectionEngine as _FDE2
+                                _risk_phone = parsed.get("phone") or ""
+                                _risk_amount = parsed.get("amount") or tx.amount
+                                _fde2 = _FDE2(user=_fraud_user)
+                                _fde2.check_deposit_risk(amount=_risk_amount, phone=_risk_phone)
+                            except Exception as _risk_err:
+                                log.warning("Risk scoring error (non-fatal): %s", _risk_err)
+
                             # ── Enterprise: Audit log ─────────────────────────
                             try:
                                 from school.models import FinanceAuditLog
