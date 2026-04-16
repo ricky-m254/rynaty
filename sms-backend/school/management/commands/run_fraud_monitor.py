@@ -1,7 +1,7 @@
 """
 Management command: run_fraud_monitor
-Runs fraud pattern checks for all users with recent transaction activity.
-Run cross-tenant: python manage.py run_fraud_monitor
+Scans users with recent ledger activity for suspicious transaction patterns.
+Runs across all tenant schemas.
 """
 from django.core.management.base import BaseCommand
 
@@ -19,8 +19,8 @@ class Command(BaseCommand):
 
         days = options["days"]
         Client = get_tenant_model()
-        schemas = Client.objects.exclude(schema_name='public').values_list('schema_name', flat=True)
-        self.stdout.write(f"Running fraud monitor for {schemas.count()} schemas (last {days} days)...")
+        schemas = list(Client.objects.exclude(schema_name='public').values_list('schema_name', flat=True))
+        self.stdout.write(f"Running fraud monitor for {len(schemas)} schemas (last {days} days)...")
 
         for schema in schemas:
             try:
@@ -36,7 +36,7 @@ class Command(BaseCommand):
         from django.utils import timezone
         from datetime import timedelta
         from school.fraud_detection import FraudDetectionEngine
-        from school.models import LedgerEntry, Wallet
+        from school.models import LedgerEntry, Wallet, FraudAlert
 
         User = get_user_model()
         cutoff = timezone.now() - timedelta(days=days)
@@ -55,20 +55,25 @@ class Command(BaseCommand):
         for user_id in recent_user_ids:
             try:
                 user = User.objects.get(pk=user_id)
-                wallet = Wallet.get_or_create_for_user(user)
+                try:
+                    wallet = user.wallet
+                except Wallet.DoesNotExist:
+                    continue
+
                 engine = FraudDetectionEngine(user=user)
-                engine.check_overdraft_attempt(amount=0, wallet=wallet)
-                score, action, factors = engine.check_deposit_risk(amount=0, phone="")
-                if action in ("FLAG", "BLOCK"):
+                open_alerts = FraudAlert.objects.filter(user=user, resolved=False).count()
+                if open_alerts > 0:
                     flagged += 1
                     self.stdout.write(
-                        self.style.WARNING(f"  {schema}: FLAGGED user={user.username} score={score}")
+                        self.style.WARNING(
+                            f"  {schema}: FLAGGED user={user.username} open_alerts={open_alerts}"
+                        )
                     )
             except Exception:
                 continue
 
         self.stdout.write(
             self.style.SUCCESS(
-                f"  {schema}: {len(recent_user_ids)} users scanned, {flagged} flagged"
+                f"  {schema}: {len(recent_user_ids)} users scanned, {flagged} with open alerts"
             )
         )
