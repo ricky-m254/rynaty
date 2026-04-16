@@ -29,7 +29,15 @@ def _role_name(user):
 
 
 def is_admin_like(user):
-    return _role_name(user) in {"ADMIN", "TENANT_SUPER_ADMIN"}
+    return _role_name(user) in {
+        "ADMIN",
+        "TENANT_SUPER_ADMIN",
+        "PRINCIPAL",
+        "DEPUTY_PRINCIPAL",
+        "DIRECTOR",
+        "BURSAR",
+        "FINANCE_MANAGER",
+    }
 
 
 def approval_threshold():
