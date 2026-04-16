@@ -8732,7 +8732,7 @@ class MpesaStkCallbackView(APIView):
                             from school.fraud_detection import FraudDetectionEngine
                             _fraud_user = tx.student.user if tx.student else None
                             _fde = FraudDetectionEngine(user=_fraud_user)
-                            if parsed["mpesa_receipt"] and _fde.check_duplicate_receipt(parsed["mpesa_receipt"]):
+                            if parsed["mpesa_receipt"] and _fde.check_duplicate_receipt(parsed["mpesa_receipt"], exclude_tx_id=tx.id):
                                 log.warning("MPesa callback: duplicate receipt %s blocked", parsed["mpesa_receipt"])
                                 tx.status = "FAILED"
                                 tx.payload.update({"error": "duplicate_receipt"})

@@ -2748,12 +2748,23 @@ class FinanceAuditLog(models.Model):
         ).hexdigest()
 
     def verify_integrity(self):
-        stored = self.entry_hash
-        self.entry_hash = ''
-        self._compute_hash()
-        recomputed = self.entry_hash
-        self.entry_hash = stored
-        return stored == recomputed
+        import hashlib
+        import json as _json
+        ts = self.created_at.isoformat() if self.created_at else ''
+        data = {
+            'user_id': str(self.user_id) if self.user_id else None,
+            'action': self.action,
+            'entity': self.entity,
+            'entity_id': self.entity_id,
+            'metadata': self.metadata,
+            'ip_address': str(self.ip_address) if self.ip_address else None,
+            'timestamp': ts,
+            'previous_hash': self.previous_hash,
+        }
+        recomputed = hashlib.sha256(
+            _json.dumps(data, sort_keys=True, separators=(',', ':')).encode()
+        ).hexdigest()
+        return recomputed == self.entry_hash
 
     @classmethod
     def log_action(cls, action, entity, entity_id, metadata=None, request=None, user=None):

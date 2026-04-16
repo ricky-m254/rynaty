@@ -2,12 +2,13 @@
 Fraud Detection Engine for SmartCampus.
 Rule-based risk scoring for M-Pesa transactions.
 Adapted for django-tenants: no school FK, uses tenant schema isolation.
+Uses PaymentGatewayTransaction (provider='mpesa') as the canonical M-Pesa record.
 """
 from decimal import Decimal
 from datetime import timedelta
 
 from django.utils import timezone
-from django.db.models import Sum, Count, Avg
+from django.db.models import Sum
 
 
 class FraudDetectionEngine:
@@ -19,8 +20,8 @@ class FraudDetectionEngine:
     - Rapid velocity (>5 tx/min from same phone): +30
     - New user (first tx): +20 / newish (<3): +10
     - Daily volume limit exceeded: +25
-    - Duplicate receipt: auto-block
-    - Overdraft attempt: auto-block
+    - Duplicate receipt: auto-block (CRITICAL alert)
+    - Overdraft attempt: auto-block (CRITICAL alert)
 
     Thresholds:
     - score >= 90 → BLOCK
@@ -29,7 +30,7 @@ class FraudDetectionEngine:
     """
 
     LARGE_AMOUNT_THRESHOLD = Decimal('100000')
-    RAPID_TX_THRESHOLD = 5  # per minute
+    RAPID_TX_THRESHOLD = 5
     HIGH_RISK_THRESHOLD = 70
     CRITICAL_RISK_THRESHOLD = 90
     MAX_DAILY_VOLUME = Decimal('300000')
@@ -40,8 +41,9 @@ class FraudDetectionEngine:
     def check_deposit_risk(self, amount, phone):
         """
         Calculate risk score for a deposit. Returns (score, action, factors).
+        Uses PaymentGatewayTransaction with provider='mpesa'.
         """
-        from school.models import MpesaTransaction, FraudAlert, RiskScoreLog
+        from school.models import PaymentGatewayTransaction, RiskScoreLog
 
         amount = Decimal(str(amount))
         score = 0
@@ -53,11 +55,12 @@ class FraudDetectionEngine:
             factors.append({'factor': 'large_amount', 'weight': 40,
                 'details': f'Amount {amount} > threshold {self.LARGE_AMOUNT_THRESHOLD}'})
 
-        # Factor 2: Velocity check
+        # Factor 2: Velocity — rapid transactions from same phone in last minute
         try:
-            recent_count = MpesaTransaction.objects.filter(
-                phone_number=phone,
-                created_at__gte=timezone.now() - timedelta(minutes=1)
+            recent_count = PaymentGatewayTransaction.objects.filter(
+                provider='mpesa',
+                payload__phone=phone,
+                created_at__gte=timezone.now() - timedelta(minutes=1),
             ).count()
             if recent_count > self.RAPID_TX_THRESHOLD:
                 score += 30
@@ -69,8 +72,10 @@ class FraudDetectionEngine:
         # Factor 3: New user
         if self.user:
             try:
-                user_tx_count = MpesaTransaction.objects.filter(
-                    user=self.user, status='SUCCESS'
+                user_tx_count = PaymentGatewayTransaction.objects.filter(
+                    provider='mpesa',
+                    student__user=self.user,
+                    status='SUCCEEDED',
                 ).count()
                 if user_tx_count == 0:
                     score += 20
@@ -86,10 +91,11 @@ class FraudDetectionEngine:
         # Factor 4: Daily volume
         if self.user:
             try:
-                daily_total = MpesaTransaction.objects.filter(
-                    user=self.user,
+                daily_total = PaymentGatewayTransaction.objects.filter(
+                    provider='mpesa',
+                    student__user=self.user,
+                    status='SUCCEEDED',
                     created_at__date=timezone.now().date(),
-                    status='SUCCESS'
                 ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
 
                 if daily_total + amount > self.MAX_DAILY_VOLUME:
@@ -110,7 +116,7 @@ class FraudDetectionEngine:
         elif score >= self.HIGH_RISK_THRESHOLD:
             action = 'FLAG'
             alert = self._create_alert('WARNING', 'ELEVATED_RISK_TRANSACTION',
-                f'Elevated risk transaction: score {score}',
+                f'Elevated risk transaction flagged: score {score}',
                 {'score': score, 'factors': factors, 'amount': str(amount)})
 
         # Log risk score
@@ -128,12 +134,23 @@ class FraudDetectionEngine:
 
         return score, action, factors
 
-    def check_duplicate_receipt(self, receipt):
-        """Returns True if duplicate receipt detected."""
+    def check_duplicate_receipt(self, receipt, exclude_tx_id=None):
+        """
+        Returns True if another PaymentGatewayTransaction with this M-Pesa receipt
+        already exists. Pass exclude_tx_id to exclude the current transaction from
+        the check (avoids self-detection after the receipt is already saved).
+        Receipt is stored as payload['mpesa_receipt'].
+        """
         if not receipt:
             return False
-        from school.models import MpesaTransaction
-        exists = MpesaTransaction.objects.filter(mpesa_receipt_number=receipt).exists()
+        from school.models import PaymentGatewayTransaction
+        qs = PaymentGatewayTransaction.objects.filter(
+            provider='mpesa',
+            payload__mpesa_receipt=receipt,
+        )
+        if exclude_tx_id:
+            qs = qs.exclude(pk=exclude_tx_id)
+        exists = qs.exists()
         if exists:
             self._create_alert('CRITICAL', 'DUPLICATE_RECEIPT',
                 f'Duplicate M-Pesa receipt: {receipt}', {'receipt': receipt})
@@ -141,7 +158,7 @@ class FraudDetectionEngine:
         return False
 
     def check_reconciliation_mismatch(self, mpesa_amount, db_amount, receipt):
-        """Detects amount mismatches between M-Pesa and DB."""
+        """Detects amount mismatches between M-Pesa confirmation and our DB record."""
         if Decimal(str(mpesa_amount)) != Decimal(str(db_amount)):
             self._create_alert('CRITICAL', 'RECONCILIATION_MISMATCH',
                 f'Amount mismatch for {receipt}: M-Pesa={mpesa_amount}, DB={db_amount}',
@@ -150,16 +167,16 @@ class FraudDetectionEngine:
         return False
 
     def check_overdraft_attempt(self, amount, wallet):
-        """Returns True if overdraft attempted."""
-        if Decimal(str(amount)) > wallet.balance:
+        """Returns True if the requested debit exceeds the available wallet balance."""
+        if Decimal(str(amount)) > wallet.available_balance:
             self._create_alert('CRITICAL', 'OVERDRAFT_ATTEMPT',
-                f'Overdraft attempt: {amount} > balance {wallet.balance}',
-                {'attempted_amount': str(amount), 'available_balance': str(wallet.balance)})
+                f'Overdraft attempt: {amount} > available balance {wallet.available_balance}',
+                {'attempted_amount': str(amount), 'available_balance': str(wallet.available_balance)})
             return True
         return False
 
     def is_whitelisted(self, phone=None, ip=None):
-        """Check if phone or IP is whitelisted."""
+        """Check if phone or IP is in the fraud whitelist."""
         from school.models import FraudWhitelist
         if phone:
             entry = FraudWhitelist.objects.filter(
