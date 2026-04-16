@@ -6,6 +6,7 @@ from django.contrib.auth import update_session_auth_hash
 from django.db.models import Avg, Q, Sum
 from django.utils import timezone
 from rest_framework import permissions, status
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -730,6 +731,8 @@ class StudentProfileView(StudentPortalAccessMixin, APIView):
     GET  /api/student-portal/profile/   — Full student profile
     PATCH /api/student-portal/profile/  — Update phone, email, photo, password
     """
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
     def get(self, request):
         student = _student_from_request(request.user)
         enrollment = _active_enrollment_for_student(student)

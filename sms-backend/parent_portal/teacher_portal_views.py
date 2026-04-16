@@ -24,6 +24,7 @@ from school.models import (
     TeacherAssignment,
     UserProfile,
 )
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from school.permissions import IsTeacher
 from timetable.models import TimetableSlot
 
@@ -671,6 +672,8 @@ class TeacherPortalProfileView(TeacherPortalAccessMixin, APIView):
     GET  /api/teacher-portal/profile/  — Teacher profile + assigned subjects/classes
     PATCH /api/teacher-portal/profile/ — Update first/last name, email, phone, bio, photo, password
     """
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
     def get(self, request):
         user = request.user
         profile = getattr(user, "userprofile", None)
