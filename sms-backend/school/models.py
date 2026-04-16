@@ -119,6 +119,17 @@ class UserProfile(models.Model):
         default=False,
         help_text="Require the user to change their password before continuing to the portal.",
     )
+    photo = models.ImageField(
+        upload_to='user_profiles/photos/',
+        blank=True,
+        null=True,
+        help_text="Profile photo for portal display.",
+    )
+    bio = models.TextField(
+        blank=True,
+        default="",
+        help_text="Short professional bio (teachers/staff).",
+    )
 
     def __str__(self):
         return f"{self.user.username} - {self.role.name}"

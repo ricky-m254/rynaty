@@ -8664,12 +8664,29 @@ class MpesaStkCallbackView(APIView):
 
     def post(self, request):
         from .mpesa import parse_stk_callback
-        from .models import PaymentGatewayTransaction, Payment
+        from .models import PaymentGatewayTransaction, Payment, PaymentGatewayWebhookEvent
         from django.utils import timezone as tz
+        from django.db import transaction as db_transaction
         import logging
+        import uuid
 
         log = logging.getLogger(__name__)
         payload = request.data if isinstance(request.data, dict) else {}
+
+        # ── 1. Log the raw payload immediately — before any processing ──────
+        # This creates a permanent, tamper-evident record of exactly what
+        # Safaricom sent, protecting against disputes and replay attacks.
+        try:
+            PaymentGatewayWebhookEvent.objects.create(
+                event_id=f"mpesa-stk-{uuid.uuid4().hex}",
+                provider="mpesa",
+                event_type="stk_callback",
+                payload=payload,
+            )
+        except Exception as raw_log_exc:
+            log.error("Failed to save raw M-Pesa callback payload: %s", raw_log_exc)
+
+        # ── 2. Parse and process ─────────────────────────────────────────────
         parsed = parse_stk_callback(payload)
 
         checkout_id = parsed.get("checkout_request_id", "")
@@ -8684,44 +8701,46 @@ class MpesaStkCallbackView(APIView):
 
             if tx:
                 if parsed["success"]:
-                    tx.status = "SUCCEEDED"
-                    tx.payload.update({
-                        "mpesa_receipt": parsed["mpesa_receipt"],
-                        "transaction_date": parsed["transaction_date"],
-                        "phone": parsed["phone"],
-                        "callback_result_desc": parsed["result_desc"],
-                    })
-                    tx.save(update_fields=["status", "payload", "updated_at"])
+                    # ── Atomic: update gateway transaction + create Payment ──
+                    with db_transaction.atomic():
+                        tx.status = "SUCCEEDED"
+                        tx.payload.update({
+                            "mpesa_receipt": parsed["mpesa_receipt"],
+                            "transaction_date": parsed["transaction_date"],
+                            "phone": parsed["phone"],
+                            "callback_result_desc": parsed["result_desc"],
+                        })
+                        tx.save(update_fields=["status", "payload", "updated_at"])
 
-                    # Create a Payment record if one doesn't already exist for this receipt
-                    if parsed["mpesa_receipt"] and not Payment.objects.filter(
-                        reference_number=parsed["mpesa_receipt"]
-                    ).exists():
-                        payment = FinanceService.record_payment(
-                            student=tx.student,
-                            amount=parsed["amount"] or tx.amount,
-                            payment_method="M-Pesa",
-                            reference_number=parsed["mpesa_receipt"],
-                            notes=f"M-Pesa STK Push | {parsed['phone']} | {parsed['transaction_date']}",
-                        )
-                        # Allocate against the specific invoice if known, otherwise auto-allocate
-                        try:
-                            if tx.invoice_id and tx.student:
-                                invoice = Invoice.objects.filter(
-                                    id=tx.invoice_id, student=tx.student, is_active=True
-                                ).exclude(status="VOID").first()
-                                if invoice and invoice.balance_due > 0:
-                                    alloc_amt = min(payment.amount, invoice.balance_due)
-                                    FinanceService.allocate_payment(payment, invoice, alloc_amt)
-                                else:
-                                    FinanceService.auto_allocate_payment(payment)
-                            elif tx.student:
-                                FinanceService.auto_allocate_payment(payment)
-                        except Exception as alloc_exc:
-                            log.warning(
-                                "MPesa callback: payment %s created but allocation failed: %s",
-                                payment.id, alloc_exc,
+                        # Create a Payment record if one doesn't already exist for this receipt
+                        if parsed["mpesa_receipt"] and not Payment.objects.filter(
+                            reference_number=parsed["mpesa_receipt"]
+                        ).exists():
+                            payment = FinanceService.record_payment(
+                                student=tx.student,
+                                amount=parsed["amount"] or tx.amount,
+                                payment_method="M-Pesa",
+                                reference_number=parsed["mpesa_receipt"],
+                                notes=f"M-Pesa STK Push | {parsed['phone']} | {parsed['transaction_date']}",
                             )
+                            # Allocate against the specific invoice if known, otherwise auto-allocate
+                            try:
+                                if tx.invoice_id and tx.student:
+                                    invoice = Invoice.objects.filter(
+                                        id=tx.invoice_id, student=tx.student, is_active=True
+                                    ).exclude(status="VOID").first()
+                                    if invoice and invoice.balance_due > 0:
+                                        alloc_amt = min(payment.amount, invoice.balance_due)
+                                        FinanceService.allocate_payment(payment, invoice, alloc_amt)
+                                    else:
+                                        FinanceService.auto_allocate_payment(payment)
+                                elif tx.student:
+                                    FinanceService.auto_allocate_payment(payment)
+                            except Exception as alloc_exc:
+                                log.warning(
+                                    "MPesa callback: payment %s created but allocation failed: %s",
+                                    payment.id, alloc_exc,
+                                )
                 else:
                     tx.status = "FAILED"
                     tx.payload.update({

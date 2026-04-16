@@ -1,6 +1,8 @@
+import uuid
 from datetime import timedelta
 from decimal import Decimal
 
+from django.contrib.auth import update_session_auth_hash
 from django.db.models import Avg, Q, Sum
 from django.utils import timezone
 from rest_framework import permissions, status
@@ -17,8 +19,10 @@ from school.models import (
     AttendanceRecord,
     CalendarEvent,
     Enrollment,
+    Guardian,
     Invoice,
     Payment,
+    PaymentGatewayTransaction,
     Student,
     TermResult,
     UserProfile,
@@ -557,3 +561,237 @@ class MyPaymentsView(StudentPortalAccessMixin, APIView):
             }
             for r in rows[:200]
         ])
+
+
+class StudentFinancePayView(StudentPortalAccessMixin, APIView):
+    """
+    POST /api/student-portal/finance/pay/
+    Student initiates an M-Pesa STK Push to pay their own outstanding fees.
+
+    Body:
+        phone           : str  — Kenyan mobile number e.g. 0712345678
+        amount          : decimal — amount in KES
+        invoice_id      : int  (optional) — specific invoice to pay against
+        payment_method  : str  — "mpesa" (only supported value for now)
+    """
+    def post(self, request):
+        student = _student_from_request(request.user)
+        if not student:
+            return Response(
+                {"error": "No student record linked to this account."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        amount_raw = request.data.get("amount")
+        try:
+            amount = Decimal(str(amount_raw or "0"))
+        except Exception:
+            amount = Decimal("0")
+        if amount <= 0:
+            return Response(
+                {"error": "Amount must be greater than zero."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        method = (request.data.get("payment_method") or "mpesa").strip().lower()
+        invoice_id = request.data.get("invoice_id")
+
+        if method not in ("mpesa", "m-pesa", "mobile money"):
+            return Response(
+                {"error": "Only M-Pesa payments are supported from the student portal."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        phone = (request.data.get("phone") or "").strip()
+        if not phone:
+            return Response(
+                {"error": "Phone number is required for M-Pesa payment."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        from school.mpesa import initiate_stk_push, MpesaError
+        callback_url = request.build_absolute_uri("/api/finance/mpesa/callback/")
+        reference = f"FEES-{uuid.uuid4().hex[:6].upper()}"
+
+        try:
+            result = initiate_stk_push(
+                phone=phone,
+                amount=amount,
+                account_ref=reference,
+                callback_url=callback_url,
+                description="School Fees",
+            )
+        except MpesaError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        tx = PaymentGatewayTransaction.objects.create(
+            provider="mpesa",
+            external_id=result["checkout_request_id"],
+            student=student,
+            invoice_id=invoice_id,
+            amount=amount,
+            currency="KES",
+            status="PENDING",
+            payload={
+                "checkout_request_id": result["checkout_request_id"],
+                "merchant_request_id": result["merchant_request_id"],
+                "phone": phone,
+                "reference": reference,
+                "source": "student_portal",
+                "initiated_by_user_id": request.user.id,
+                "initiated_by_username": request.user.username,
+            },
+        )
+        return Response(
+            {
+                "payment_id": tx.id,
+                "checkout_request_id": result["checkout_request_id"],
+                "reference_number": reference,
+                "payment_method": "M-Pesa",
+                "status": "PENDING",
+                "message": result.get("customer_message") or "STK push sent. Please check your phone and enter your M-Pesa PIN.",
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class StudentMpesaStatusView(StudentPortalAccessMixin, APIView):
+    """
+    GET /api/student-portal/finance/mpesa-status/?checkout_request_id=xxx
+    Student polls this after initiating an STK push to check payment status.
+    """
+    def get(self, request):
+        checkout_id = request.query_params.get("checkout_request_id", "").strip()
+        if not checkout_id:
+            return Response(
+                {"error": "checkout_request_id is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        student = _student_from_request(request.user)
+        tx = PaymentGatewayTransaction.objects.filter(
+            provider="mpesa",
+            external_id=checkout_id,
+            student=student,
+        ).first()
+        if not tx:
+            return Response(
+                {"error": "Transaction not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        return Response({
+            "transaction_id": tx.id,
+            "status": tx.status,
+            "amount": str(tx.amount),
+            "mpesa_receipt": tx.payload.get("mpesa_receipt"),
+            "message": (
+                "Payment confirmed." if tx.status == "SUCCEEDED"
+                else "Payment failed. Please try again." if tx.status == "FAILED"
+                else "Waiting for M-Pesa confirmation..."
+            ),
+            "updated_at": tx.updated_at,
+        })
+
+
+class StudentProfileView(StudentPortalAccessMixin, APIView):
+    """
+    GET  /api/student-portal/profile/   — Full student profile
+    PATCH /api/student-portal/profile/  — Update phone, email, photo, password
+    """
+    def get(self, request):
+        student = _student_from_request(request.user)
+        enrollment = _active_enrollment_for_student(student)
+        user = request.user
+        profile = getattr(user, "userprofile", None)
+
+        photo_url = None
+        if student and student.photo:
+            try:
+                photo_url = request.build_absolute_uri(student.photo.url)
+            except Exception:
+                pass
+        if not photo_url and profile and profile.photo:
+            try:
+                photo_url = request.build_absolute_uri(profile.photo.url)
+            except Exception:
+                pass
+
+        guardians = []
+        if student:
+            for g in Guardian.objects.filter(student=student).order_by("id"):
+                guardians.append({
+                    "name": g.name,
+                    "relationship": g.relationship,
+                    "phone": g.phone,
+                })
+
+        return Response({
+            "username": user.username,
+            "first_name": user.first_name or (student.first_name if student else ""),
+            "last_name": user.last_name or (student.last_name if student else ""),
+            "email": user.email,
+            "phone": profile.phone if profile else "",
+            "photo_url": photo_url,
+            "admission_number": student.admission_number if student else None,
+            "date_of_birth": student.date_of_birth if student else None,
+            "class_section": enrollment.school_class.name if enrollment else None,
+            "guardians": guardians,
+            "force_password_change": bool(getattr(profile, "force_password_change", False)),
+        })
+
+    def patch(self, request):
+        user = request.user
+        profile = getattr(user, "userprofile", None)
+
+        changed_user = False
+        changed_profile = False
+
+        if "email" in request.data:
+            user.email = (request.data["email"] or "").strip()
+            changed_user = True
+        if "first_name" in request.data:
+            user.first_name = (request.data["first_name"] or "").strip()
+            changed_user = True
+        if "last_name" in request.data:
+            user.last_name = (request.data["last_name"] or "").strip()
+            changed_user = True
+        if changed_user:
+            user.save(update_fields=[f for f in ["email", "first_name", "last_name"] if f in request.data])
+
+        if profile:
+            if "phone" in request.data:
+                profile.phone = (request.data.get("phone") or "").strip()
+                changed_profile = True
+            if "photo" in request.FILES:
+                profile.photo = request.FILES["photo"]
+                changed_profile = True
+            if changed_profile:
+                fields = []
+                if "phone" in request.data:
+                    fields.append("phone")
+                if "photo" in request.FILES:
+                    fields.append("photo")
+                profile.save(update_fields=fields)
+
+        if "current_password" in request.data and "new_password" in request.data:
+            current = request.data.get("current_password", "")
+            new_pw = request.data.get("new_password", "")
+            if not user.check_password(current):
+                return Response(
+                    {"error": "Current password is incorrect."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if len(new_pw) < 8:
+                return Response(
+                    {"error": "New password must be at least 8 characters."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            user.set_password(new_pw)
+            user.save(update_fields=["password"])
+            if profile and profile.force_password_change:
+                profile.force_password_change = False
+                profile.save(update_fields=["force_password_change"])
+            update_session_auth_hash(request, user)
+
+        return self.get(request)

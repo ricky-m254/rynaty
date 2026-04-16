@@ -1138,13 +1138,34 @@ class ParentLibraryHistoryView(ParentPortalAccessMixin, APIView):
 
 class ParentProfileView(ParentPortalAccessMixin, APIView):
     def get(self, request):
-        return Response(ParentProfileSerializer(request.user).data)
+        return Response(
+            ParentProfileSerializer(request.user, context={"request": request}).data
+        )
 
     def patch(self, request):
-        serializer = ParentProfileSerializer(request.user, data=request.data, partial=True)
+        user = request.user
+        profile = getattr(user, "userprofile", None)
+
+        serializer = ParentProfileSerializer(
+            user, data=request.data, partial=True, context={"request": request}
+        )
         serializer.is_valid(raise_exception=True)
         serializer.save()
-        return Response(serializer.data)
+
+        if profile:
+            profile_fields = []
+            if "phone" in request.data:
+                profile.phone = (request.data.get("phone") or "").strip()
+                profile_fields.append("phone")
+            if "photo" in request.FILES:
+                profile.photo = request.FILES["photo"]
+                profile_fields.append("photo")
+            if profile_fields:
+                profile.save(update_fields=profile_fields)
+
+        return Response(
+            ParentProfileSerializer(user, context={"request": request}).data
+        )
 
 
 class ParentChangePasswordView(ParentPortalAccessMixin, APIView):

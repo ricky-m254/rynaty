@@ -1,6 +1,7 @@
 from collections import defaultdict
 from decimal import Decimal, InvalidOperation
 
+from django.contrib.auth import update_session_auth_hash
 from django.db.models import Count
 from django.utils import timezone
 from rest_framework import status
@@ -14,11 +15,13 @@ from school.models import (
     Assessment,
     AssessmentGrade,
     AttendanceRecord,
+    Department,
     Enrollment,
     GradeBand,
     GradingScheme,
     SchoolClass,
     TeacherAssignment,
+    UserProfile,
 )
 from school.permissions import IsTeacher
 from timetable.models import TimetableSlot
@@ -660,3 +663,105 @@ class TeacherPortalTimetableView(TeacherPortalAccessMixin, APIView):
             }
             for row in rows
         ])
+
+
+class TeacherPortalProfileView(TeacherPortalAccessMixin, APIView):
+    """
+    GET  /api/teacher-portal/profile/  — Teacher profile + assigned subjects/classes
+    PATCH /api/teacher-portal/profile/ — Update first/last name, email, phone, bio, photo, password
+    """
+    def get(self, request):
+        user = request.user
+        profile = getattr(user, "userprofile", None)
+
+        photo_url = None
+        if profile and profile.photo:
+            try:
+                photo_url = request.build_absolute_uri(profile.photo.url)
+            except Exception:
+                pass
+
+        assignments = (
+            TeacherAssignment.objects.filter(teacher=user, is_active=True)
+            .select_related("subject", "class_section", "class_section__grade_level")
+            .order_by("class_section__grade_level__order", "subject__name")
+        )
+
+        subjects_seen = set()
+        classes_seen = set()
+        subject_list = []
+        class_list = []
+        for a in assignments:
+            if a.subject_id and a.subject_id not in subjects_seen:
+                subjects_seen.add(a.subject_id)
+                subject_list.append({
+                    "id": a.subject_id,
+                    "name": a.subject.name,
+                    "code": a.subject.code,
+                })
+            if a.class_section_id and a.class_section_id not in classes_seen:
+                classes_seen.add(a.class_section_id)
+                class_list.append({
+                    "id": a.class_section_id,
+                    "name": getattr(a.class_section, "display_name", a.class_section.name),
+                })
+
+        return Response({
+            "username": user.username,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "email": user.email,
+            "phone": profile.phone if profile else "",
+            "bio": profile.bio if profile else "",
+            "photo_url": photo_url,
+            "role": getattr(getattr(profile, "role", None), "name", "TEACHER"),
+            "subjects": subject_list,
+            "classes": class_list,
+            "force_password_change": bool(getattr(profile, "force_password_change", False)),
+        })
+
+    def patch(self, request):
+        user = request.user
+        profile = getattr(user, "userprofile", None)
+
+        user_fields_changed = []
+        for field in ("first_name", "last_name", "email"):
+            if field in request.data:
+                setattr(user, field, (request.data[field] or "").strip())
+                user_fields_changed.append(field)
+        if user_fields_changed:
+            user.save(update_fields=user_fields_changed)
+
+        if profile:
+            profile_fields_changed = []
+            for field in ("phone", "bio"):
+                if field in request.data:
+                    setattr(profile, field, (request.data[field] or "").strip())
+                    profile_fields_changed.append(field)
+            if "photo" in request.FILES:
+                profile.photo = request.FILES["photo"]
+                profile_fields_changed.append("photo")
+            if profile_fields_changed:
+                profile.save(update_fields=profile_fields_changed)
+
+        if "current_password" in request.data and "new_password" in request.data:
+            current = request.data.get("current_password", "")
+            new_pw = request.data.get("new_password", "")
+            if not user.check_password(current):
+                return Response(
+                    {"error": "Current password is incorrect."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if len(new_pw) < 8:
+                return Response(
+                    {"error": "New password must be at least 8 characters."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            user.set_password(new_pw)
+            user.save(update_fields=["password"])
+            if profile and profile.force_password_change:
+                profile.force_password_change = False
+                profile.save(update_fields=["force_password_change"])
+            update_session_auth_hash(request, user)
+
+        return self.get(request)

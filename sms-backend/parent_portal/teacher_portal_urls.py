@@ -5,6 +5,7 @@ from .teacher_portal_views import (
     TeacherPortalClassesView,
     TeacherPortalDashboardView,
     TeacherPortalGradebookView,
+    TeacherPortalProfileView,
     TeacherPortalResourceDetailView,
     TeacherPortalResourcesView,
     TeacherPortalTimetableView,
@@ -19,4 +20,5 @@ urlpatterns = [
     path("resources/", TeacherPortalResourcesView.as_view()),
     path("resources/<int:material_id>/", TeacherPortalResourceDetailView.as_view()),
     path("timetable/", TeacherPortalTimetableView.as_view()),
+    path("profile/", TeacherPortalProfileView.as_view()),
 ]
