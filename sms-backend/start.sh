@@ -44,8 +44,8 @@ connection.set_schema_to_public()
 print('  Done.')
 " 2>&1 | grep -v "^$" || true
 
-echo "[sms] Repairing diverged migration state (0058: photo/bio; 0059: wallet/ledger)..."
-# Step 1: per-schema detection of drift for migrations 0058 and 0059.
+echo "[sms] Repairing diverged migration state (0058: photo/bio; 0059: wallet/ledger; lib/0004: digital_url)..."
+# Step 1: per-schema detection of drift for known migrations.
 #         Each schema is wrapped in its own try/except so a failure on one
 #         schema never prevents the others from being processed.
 #         Writes schema names that need a targeted migrate to /tmp/_repair_drift.txt.
@@ -90,7 +90,6 @@ for schema in schemas:
             )
             wallet_exists = cur.fetchone() is not None
             if not wallet_exists:
-                # Only clear if 0059 is recorded as applied (stale record)
                 cur.execute(
                     \"SELECT 1 FROM django_migrations WHERE app='school' AND name='0059_wallet_ledger_fraud_audit' LIMIT 1\"
                 )
@@ -102,6 +101,21 @@ for schema in schemas:
                     print(f'  [repair-0059] {schema}: cleared stale 0059/0060 records (wallet table missing)')
                     if schema not in repaired:
                         repaired.append(schema)
+
+            # ── library/0004: check digital_url on library_libraryresource ─
+            cur.execute(
+                \"SELECT 1 FROM information_schema.columns \"
+                \"WHERE table_schema=%s AND table_name='library_libraryresource' \"
+                \"AND column_name='digital_url' LIMIT 1\",
+                [schema],
+            )
+            if not cur.fetchone():
+                cur.execute(
+                    \"DELETE FROM django_migrations WHERE app='library' AND name='0004_add_digital_url_to_resource'\"
+                )
+                print(f'  [repair-lib/0004] {schema}: cleared stale record (digital_url missing)')
+                if schema not in repaired:
+                    repaired.append(schema)
     except Exception as exc:
         print(f'  [repair] WARNING: schema {schema!r} check failed — {exc}', file=sys.stderr)
 
@@ -115,18 +129,50 @@ else:
     open('/tmp/_repair_drift.txt', 'w').close()
 " 2>&1 | grep -v "^$" || true
 
-# Step 2: for each drifted schema, run a targeted migration immediately
-#         so columns/tables exist before any seeding or login touches them.
+# Step 2: for each drifted schema, run targeted migrations for both apps
+#         immediately so columns/tables exist before seeding or login.
 if [ -s /tmp/_repair_drift.txt ]; then
   while IFS= read -r _schema; do
     [ -z "$_schema" ] && continue
-    echo "  [repair] Applying migrations to schema: $_schema"
+    echo "  [repair] Applying school migrations to schema: $_schema"
     python3.11 manage.py migrate_schemas --noinput --schema="$_schema" school 2>&1 | grep -v "^$" || true
+    echo "  [repair] Applying library migrations to schema: $_schema"
+    python3.11 manage.py migrate_schemas --noinput --schema="$_schema" library 2>&1 | grep -v "^$" || true
   done < /tmp/_repair_drift.txt
 fi
 
 echo "[sms] Running tenant migrations..."
 python3.11 manage.py migrate_schemas --noinput --fake-initial 2>&1 | grep -v "^$" || true
+
+# Step 3: Direct SQL safety net — add known columns IF NOT EXISTS on every
+#         tenant schema. This is idempotent and runs even if migrations failed,
+#         ensuring the production DB is never left in a state that breaks login.
+echo "[sms] Applying SQL safety-net for known column additions..."
+python3.11 manage.py shell -c "
+import sys
+from django.db import connection
+from django_tenants.utils import get_public_schema_name
+
+PUBLIC = get_public_schema_name()
+connection.set_schema_to_public()
+with connection.cursor() as cur:
+    cur.execute(\"SELECT schema_name FROM clients_tenant WHERE schema_name <> %s ORDER BY schema_name\", [PUBLIC])
+    schemas = [r[0] for r in cur.fetchall()]
+
+for schema in schemas:
+    try:
+        connection.set_schema(schema)
+        with connection.cursor() as cur:
+            cur.execute(\"ALTER TABLE school_userprofile ADD COLUMN IF NOT EXISTS photo varchar(100) NULL\")
+            cur.execute(\"ALTER TABLE school_userprofile ADD COLUMN IF NOT EXISTS bio text NOT NULL DEFAULT ''\")
+            cur.execute(\"ALTER TABLE library_libraryresource ADD COLUMN IF NOT EXISTS digital_url varchar(1000) NOT NULL DEFAULT ''\")
+        print(f'  [sql-net] {schema}: OK')
+    except Exception as exc:
+        print(f'  [sql-net] WARNING: {schema!r} — {exc}', file=sys.stderr)
+
+connection.set_schema_to_public()
+print('  [sql-net] Done.')
+" 2>&1 | grep -v "^$" || true
 
 echo "[sms] Collecting static files..."
 python3.11 manage.py collectstatic --noinput 2>/dev/null || true
