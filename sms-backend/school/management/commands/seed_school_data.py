@@ -65,11 +65,20 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         from clients.models import Tenant
 
+        self._mpesa_methods_seeded = 0
+        self._mpesa_settings_created = 0
+
         public = get_public_schema_name()
         if options["all_tenants"]:
             tenants = Tenant.objects.exclude(schema_name=public).order_by("schema_name")
             for tenant in tenants:
                 self._seed(tenant.schema_name, tenant_name=tenant.name)
+            self.stdout.write(
+                f"[seed_school_data] M-Pesa summary — "
+                f"payment_methods seeded: {self._mpesa_methods_seeded}, "
+                f"integrations.mpesa created: {self._mpesa_settings_created}, "
+                f"total tenants: {len(tenants)}"
+            )
         else:
             schema = options["schema_name"]
             tenant = Tenant.objects.filter(schema_name=schema).first()
@@ -122,6 +131,7 @@ class Command(BaseCommand):
             profile.accepted_payment_methods = ["Cash", "MPesa", "Bank Transfer"]
             profile.save(update_fields=["accepted_payment_methods"])
             self.stdout.write(f"{tag}   accepted_payment_methods: set to default (Cash, MPesa, Bank Transfer)")
+            self._mpesa_methods_seeded = getattr(self, "_mpesa_methods_seeded", 0) + 1
         else:
             methods = ", ".join(profile.accepted_payment_methods)
             self.stdout.write(f"{tag}   accepted_payment_methods: already set ({methods})")
@@ -144,6 +154,8 @@ class Command(BaseCommand):
         )
         action = "created stub" if created else "exists"
         self.stdout.write(f"{tag}   TenantSettings integrations.mpesa: {action}")
+        if created:
+            self._mpesa_settings_created = getattr(self, "_mpesa_settings_created", 0) + 1
 
     def _grade_levels(self, tag):
         from school.models import GradeLevel
