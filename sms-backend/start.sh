@@ -166,6 +166,7 @@ for schema in schemas:
             cur.execute(\"ALTER TABLE school_userprofile ADD COLUMN IF NOT EXISTS photo varchar(100) NULL\")
             cur.execute(\"ALTER TABLE school_userprofile ADD COLUMN IF NOT EXISTS bio text NOT NULL DEFAULT ''\")
             cur.execute(\"ALTER TABLE library_libraryresource ADD COLUMN IF NOT EXISTS digital_url varchar(1000) NOT NULL DEFAULT ''\")
+            cur.execute(\"ALTER TABLE curriculum_schemeofwork ADD COLUMN IF NOT EXISTS is_template boolean NOT NULL DEFAULT false\")
         print(f'  [sql-net] {schema}: OK')
     except Exception as exc:
         print(f'  [sql-net] WARNING: {schema!r} — {exc}', file=sys.stderr)

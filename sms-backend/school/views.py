@@ -8510,8 +8510,21 @@ class TenantSettingsView(APIView):
     GET  /settings/          → return all settings as {key: value} dict, grouped by category
     POST /settings/          → upsert one or many {key, value, description?, category?} entries
     DELETE /settings/{key}/  → delete a setting key
+
+    Access tiers:
+      - CanManageSystemSettings (admin/principal): full read + write of all keys
+      - IsAccountant (finance family): read/write restricted to finance + integrations categories
     """
-    permission_classes = [CanManageSystemSettings]
+    permission_classes = [CanManageSystemSettings | IsAccountant]
+
+    # Categories & key prefixes that finance-family users are allowed to read/write
+    _FINANCE_CATEGORIES = {"finance", "integrations"}
+    _FINANCE_KEY_PREFIXES = ("integrations.", "finance.")
+
+    def _is_full_admin(self, request):
+        """True when the user holds system-admin scope (not just finance scope)."""
+        from .role_scope import ADMIN_SCOPE_PROFILES, user_has_any_scope
+        return user_has_any_scope(request.user, ADMIN_SCOPE_PROFILES)
 
     def get(self, request):
         from .models import TenantSettings
@@ -8519,6 +8532,10 @@ class TenantSettingsView(APIView):
         qs = TenantSettings.objects.all()
         if category:
             qs = qs.filter(category=category)
+
+        # Finance-family users may only see finance/integrations settings
+        if not self._is_full_admin(request) and not category:
+            qs = qs.filter(category__in=self._FINANCE_CATEGORIES)
 
         # Return as flat dict AND grouped structure
         flat = {}
@@ -8540,6 +8557,7 @@ class TenantSettingsView(APIView):
     def post(self, request):
         from .models import TenantSettings, AuditLog
         data = request.data
+        is_admin = self._is_full_admin(request)
 
         # Accept a single dict OR a list
         if isinstance(data, dict) and 'key' in data:
@@ -8553,10 +8571,17 @@ class TenantSettingsView(APIView):
             return Response({'error': 'Expected a dict or list of {key, value} entries.'}, status=status.HTTP_400_BAD_REQUEST)
 
         upserted = []
+        skipped = []
         for entry in entries:
             key = str(entry.get('key', '')).strip()
             if not key:
                 continue
+            # Finance-family users may only write finance/integrations keys
+            if not is_admin:
+                allowed = any(key.startswith(p) for p in self._FINANCE_KEY_PREFIXES)
+                if not allowed:
+                    skipped.append(key)
+                    continue
             obj, _ = TenantSettings.objects.update_or_create(
                 key=key,
                 defaults={
@@ -8568,13 +8593,14 @@ class TenantSettingsView(APIView):
             )
             upserted.append(key)
 
-        AuditLog.objects.create(
-            user=request.user,
-            action='UPSERT',
-            model_name='TenantSettings',
-            object_id='bulk',
-            details=f"Updated keys: {', '.join(upserted[:20])}",
-        )
+        if upserted:
+            AuditLog.objects.create(
+                user=request.user,
+                action='UPSERT',
+                model_name='TenantSettings',
+                object_id='bulk',
+                details=f"Updated keys: {', '.join(upserted[:20])}",
+            )
         return Response({'upserted': upserted, 'count': len(upserted)})
 
 
@@ -8767,8 +8793,9 @@ class MpesaTestConnectionView(APIView):
     saved in TenantSettings (key "integrations.mpesa").
 
     No money is moved — only the OAuth handshake is tested.
+    Accessible to both system admins and finance-family roles (IsAccountant).
     """
-    permission_classes = [CanManageSystemSettings]
+    permission_classes = [CanManageSystemSettings | IsAccountant]
 
     _CACHE_TTL = 300  # seconds (5 minutes)
 
