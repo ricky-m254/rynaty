@@ -8653,6 +8653,67 @@ class MpesaStkPushView(APIView):
         )
 
 
+class MpesaTestConnectionView(APIView):
+    """
+    POST /api/finance/mpesa/test-connection/
+    Verifies M-Pesa Daraja OAuth credentials by attempting to fetch an access token.
+
+    Accepts credentials in the request body (consumer_key, consumer_secret, shortcode,
+    passkey, environment).  If any field is missing, falls back to the credentials
+    saved in TenantSettings (key "integrations.mpesa").
+
+    No money is moved — only the OAuth handshake is tested.
+    """
+    permission_classes = [CanManageSystemSettings]
+
+    def post(self, request):
+        from .mpesa import _get_access_token, MpesaError, SANDBOX_BASE, PRODUCTION_BASE
+
+        body = request.data
+        consumer_key = (body.get("consumer_key") or "").strip()
+        consumer_secret = (body.get("consumer_secret") or "").strip()
+        shortcode = str(body.get("shortcode") or "").strip()
+        passkey = (body.get("passkey") or "").strip()
+        environment = str(body.get("environment") or "sandbox").lower()
+
+        if all([consumer_key, consumer_secret, shortcode, passkey]):
+            base_url = PRODUCTION_BASE if environment == "production" else SANDBOX_BASE
+            creds = {
+                "consumer_key": consumer_key,
+                "consumer_secret": consumer_secret,
+                "shortcode": shortcode,
+                "passkey": passkey,
+                "base_url": base_url,
+                "environment": environment,
+            }
+        else:
+            from .mpesa import _get_credentials
+            try:
+                creds = _get_credentials()
+            except MpesaError as exc:
+                return Response(
+                    {"success": False, "error": str(exc)},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        try:
+            _get_access_token(creds)
+        except MpesaError as exc:
+            return Response(
+                {"success": False, "error": str(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response({
+            "success": True,
+            "message": (
+                f"Connected to Daraja {creds['environment']} — "
+                "OAuth token obtained successfully."
+            ),
+            "environment": creds["environment"],
+        })
+
+
 class MpesaStkCallbackView(APIView):
     """
     POST /api/finance/mpesa/callback/

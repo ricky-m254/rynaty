@@ -223,6 +223,13 @@ Uses Resend when `RESEND_API_KEY` is set; falls back to Django email backend. Ne
 Run via: `python manage.py tenant_command <cmd> --schema=demo_school`
 Or cross-tenant: `python manage.py run_compliance_checks` / `run_fraud_monitor`
 
+## M-Pesa Test Connection (Task #12 — completed)
+- **Endpoint**: `POST /api/finance/mpesa/test-connection/` (`MpesaTestConnectionView` in `school/views.py`)
+- **Auth**: `CanManageSystemSettings`
+- **Behavior**: Accepts `consumer_key`, `consumer_secret`, `shortcode`, `passkey`, `environment` in body; falls back to saved `TenantSettings["integrations.mpesa"]` if any field missing. Only performs Daraja OAuth handshake — no money moved.
+- **Frontend**: M-Pesa Integration card added to Finance Settings page (`sms-backend/frontend_build/assets/SettingsFinancePage-OY0Bm-mj.js`) with credential fields and "Test Connection" / "Save Credentials" buttons. Green/red result banner shown after test.
+- **Dependency**: `requests` Python package installed (was imported by `mpesa.py` but missing).
+
 ## Notes
 - f-strings: no backslashes inside expressions (Python 3.11)
 - Migrations: always `--fake-initial` to avoid conflicts with existing tables
