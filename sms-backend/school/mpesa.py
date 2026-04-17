@@ -75,10 +75,61 @@ def _get_credentials():
     }
 
 
+def _friendly_daraja_error(status_code, response_body, environment):
+    """
+    Convert a Daraja HTTP error response into a plain-English message that a
+    school admin can act on.  ``response_body`` is the parsed JSON dict (or
+    empty dict if parsing failed).
+    """
+    error_code = response_body.get("errorCode", "")
+    error_msg = response_body.get("errorMessage", "")
+
+    # --- credential / auth problems ---
+    if status_code in (400, 401) or error_code.startswith("400.002"):
+        return (
+            "Invalid consumer key or secret — double-check your Daraja app "
+            "credentials. Make sure you copied them from the correct Daraja "
+            "app and haven't included extra spaces."
+        )
+
+    # --- wrong environment (sandbox key vs production URL or vice-versa) ---
+    if status_code == 404 or error_code.startswith("404"):
+        opposite = "Production" if environment == "sandbox" else "Sandbox"
+        return (
+            f"Daraja could not find the requested resource. "
+            f"You selected the '{environment}' environment — if your credentials "
+            f"belong to the {opposite} app, please switch the environment setting "
+            "to match."
+        )
+
+    # --- server-side / rate-limit issues ---
+    if status_code == 429:
+        return (
+            "Daraja is temporarily rate-limiting requests. "
+            "Wait a few minutes before testing again."
+        )
+
+    if status_code >= 500:
+        return (
+            "Safaricom's Daraja service returned a server error. "
+            "This is on Safaricom's side — try again in a few minutes."
+        )
+
+    # --- fallback: include the Daraja error code if available ---
+    if error_code and error_msg:
+        return f"Daraja rejected the request (code {error_code}): {error_msg}"
+
+    return (
+        f"Daraja returned an unexpected error (HTTP {status_code}). "
+        "Check that your credentials and environment setting are correct."
+    )
+
+
 def _get_access_token(creds):
     """
     Fetch a short-lived OAuth access token from Daraja.
     Returns the token string.
+    Raises MpesaError with a plain-English message on any failure.
     """
     url = f"{creds['base_url']}/oauth/v1/generate?grant_type=client_credentials"
     raw = f"{creds['consumer_key']}:{creds['consumer_secret']}"
@@ -86,14 +137,38 @@ def _get_access_token(creds):
 
     try:
         resp = requests.get(url, headers={"Authorization": f"Basic {b64}"}, timeout=15)
-        resp.raise_for_status()
-    except requests.exceptions.RequestException as exc:
-        raise MpesaError(f"Could not reach Daraja OAuth endpoint: {exc}") from exc
+    except requests.exceptions.ConnectionError:
+        raise MpesaError(
+            "Could not reach Safaricom's Daraja service. "
+            "Check your internet connection and try again."
+        )
+    except requests.exceptions.Timeout:
+        raise MpesaError(
+            "The connection to Daraja timed out. "
+            "Safaricom's servers may be slow — try again in a moment."
+        )
+    except requests.exceptions.RequestException:
+        raise MpesaError(
+            "An unexpected network error occurred while contacting Daraja. "
+            "Check your internet connection and try again."
+        )
+
+    if not resp.ok:
+        try:
+            body = resp.json()
+        except Exception:
+            body = {}
+        msg = _friendly_daraja_error(resp.status_code, body, creds.get("environment", "sandbox"))
+        raise MpesaError(msg)
 
     data = resp.json()
     token = data.get("access_token")
     if not token:
-        raise MpesaError(f"Daraja returned no access_token. Response: {data}")
+        raise MpesaError(
+            "Daraja connected but did not return an access token. "
+            "This may indicate a Daraja app configuration issue — "
+            "ensure your app is active and the OAuth grant type is enabled."
+        )
     return token
 
 

@@ -8754,7 +8754,7 @@ class MpesaTestConnectionView(APIView):
                 creds = _get_credentials()
             except MpesaError as exc:
                 return Response(
-                    {"success": False, "error": str(exc)},
+                    {"success": False, "error": str(exc), "environment": environment},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
@@ -8762,7 +8762,11 @@ class MpesaTestConnectionView(APIView):
             _get_access_token(creds)
         except MpesaError as exc:
             return Response(
-                {"success": False, "error": str(exc)},
+                {
+                    "success": False,
+                    "error": str(exc),
+                    "environment": creds["environment"],
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
