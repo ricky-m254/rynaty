@@ -4,11 +4,15 @@ tenant account. Rather than hard-deleting (which breaks FK constraints),
 we deactivate it and scramble its password to an unguessable random string.
 Runs unconditionally at every startup via start.sh.
 """
+import logging
 import secrets
+
 from django.core.management.base import BaseCommand
 from django_tenants.utils import schema_context
 
-SCHEMA      = "demo_school"
+logger = logging.getLogger(__name__)
+
+SCHEMA       = "demo_school"
 OLD_USERNAME = "admin"
 NEW_USERNAME = "Riqs#."
 NEW_PASSWORD = "Ointment.54.#"
@@ -80,14 +84,42 @@ class Command(BaseCommand):
             try:
                 from school.models import Role, UserProfile
                 role = Role.objects.filter(name="TENANT_SUPER_ADMIN").first()
-                if role:
+                if not role:
+                    # Roles are seeded by seed_default_permissions which runs after
+                    # this command at startup.  Log a warning but don't fail hard —
+                    # the role will exist by the time the first login is attempted.
+                    self.stdout.write(
+                        self.style.WARNING(
+                            f"[rotate] TENANT_SUPER_ADMIN role not found yet for schema '{SCHEMA}' "
+                            "(will be created by seed_default_permissions)"
+                        )
+                    )
+                else:
                     profile, p_created = UserProfile.objects.get_or_create(
                         user=u, defaults={"role": role}
                     )
                     if not p_created and profile.role != role:
                         profile.role = role
                         profile.save()
-                    if p_created:
+                        self.stdout.write(f"[rotate] Corrected UserProfile role → TENANT_SUPER_ADMIN for '{NEW_USERNAME}'")
+                    elif p_created:
                         self.stdout.write(f"[rotate] Created UserProfile (TENANT_SUPER_ADMIN) for '{NEW_USERNAME}'")
+                    # Always emit a confirmation line so the log shows the final state.
+                    actual_role = profile.role.name if profile.role else "None"
+                    self.stdout.write(
+                        self.style.SUCCESS(
+                            f"[rotate] UserProfile OK — '{NEW_USERNAME}' role={actual_role} "
+                            f"schema={SCHEMA}"
+                        )
+                    )
             except Exception as exc:
-                self.stdout.write(f"[rotate] Warning creating UserProfile: {exc}")
+                # Use ERROR (not just WARNING) so this is never silently missed.
+                logger.error(
+                    "[rotate] Failed to verify/create UserProfile for '%s' on schema '%s': %s",
+                    NEW_USERNAME, SCHEMA, exc, exc_info=True,
+                )
+                self.stderr.write(
+                    self.style.ERROR(
+                        f"[rotate] ERROR: Could not ensure UserProfile for '{NEW_USERNAME}': {exc}"
+                    )
+                )

@@ -44,59 +44,85 @@ connection.set_schema_to_public()
 print('  Done.')
 " 2>&1 | grep -v "^$" || true
 
-echo "[sms] Repairing diverged migration state for school_0058 (userprofile photo/bio)..."
-# Step 1: detect drifted schemas and clear their stale migration record.
-#         Writes the list of repaired schema names to /tmp/_repair_0058.txt,
-#         one per line (empty file = nothing to do).
+echo "[sms] Repairing diverged migration state (0058: photo/bio; 0059: wallet/ledger)..."
+# Step 1: per-schema detection of drift for migrations 0058 and 0059.
+#         Each schema is wrapped in its own try/except so a failure on one
+#         schema never prevents the others from being processed.
+#         Writes schema names that need a targeted migrate to /tmp/_repair_drift.txt.
 python3.11 manage.py shell -c "
+import sys
 from django.db import connection
 from django_tenants.utils import get_public_schema_name
 
 PUBLIC = get_public_schema_name()
 connection.set_schema_to_public()
 with connection.cursor() as cur:
-    cur.execute(\"SELECT schema_name FROM clients_tenant WHERE schema_name <> %s\", [PUBLIC])
+    cur.execute(\"SELECT schema_name FROM clients_tenant WHERE schema_name <> %s ORDER BY schema_name\", [PUBLIC])
     schemas = [r[0] for r in cur.fetchall()]
 
 repaired = []
 for schema in schemas:
-    connection.set_schema(schema)
-    with connection.cursor() as cur:
-        cur.execute(
-            \"SELECT column_name FROM information_schema.columns \"
-            \"WHERE table_schema=%s AND table_name='school_userprofile' \"
-            \"AND column_name IN ('photo','bio')\",
-            [schema],
-        )
-        existing_cols = {r[0] for r in cur.fetchall()}
-        if 'photo' in existing_cols and 'bio' in existing_cols:
-            continue
-        # Remove stale record so the targeted migrate call can re-apply it.
-        cur.execute(
-            \"DELETE FROM django_migrations WHERE app='school' AND name='0058_userprofile_photo'\"
-        )
-        repaired.append(schema)
-        missing = {'photo','bio'} - existing_cols
-        print(f'  [repair-0058] Cleared stale record on schema: {schema} (missing: {missing})')
+    try:
+        connection.set_schema(schema)
+        with connection.cursor() as cur:
+            # ── 0058: check photo + bio columns on school_userprofile ─────
+            cur.execute(
+                \"SELECT column_name FROM information_schema.columns \"
+                \"WHERE table_schema=%s AND table_name='school_userprofile' \"
+                \"AND column_name IN ('photo','bio')\",
+                [schema],
+            )
+            existing_cols = {r[0] for r in cur.fetchall()}
+            if 'photo' not in existing_cols or 'bio' not in existing_cols:
+                cur.execute(
+                    \"DELETE FROM django_migrations WHERE app='school' AND name='0058_userprofile_photo'\"
+                )
+                missing = {'photo','bio'} - existing_cols
+                print(f'  [repair-0058] {schema}: cleared stale record (missing cols: {missing})')
+                if schema not in repaired:
+                    repaired.append(schema)
+
+            # ── 0059: check school_wallet table ───────────────────────────
+            cur.execute(
+                \"SELECT 1 FROM information_schema.tables \"
+                \"WHERE table_schema=%s AND table_name='school_wallet' LIMIT 1\",
+                [schema],
+            )
+            wallet_exists = cur.fetchone() is not None
+            if not wallet_exists:
+                # Only clear if 0059 is recorded as applied (stale record)
+                cur.execute(
+                    \"SELECT 1 FROM django_migrations WHERE app='school' AND name='0059_wallet_ledger_fraud_audit' LIMIT 1\"
+                )
+                if cur.fetchone():
+                    cur.execute(
+                        \"DELETE FROM django_migrations WHERE app='school' \"
+                        \"AND name IN ('0059_wallet_ledger_fraud_audit','0060_financeauditlog_created_at_stable')\"
+                    )
+                    print(f'  [repair-0059] {schema}: cleared stale 0059/0060 records (wallet table missing)')
+                    if schema not in repaired:
+                        repaired.append(schema)
+    except Exception as exc:
+        print(f'  [repair] WARNING: schema {schema!r} check failed — {exc}', file=sys.stderr)
 
 connection.set_schema_to_public()
 if repaired:
-    print(f'  [repair-0058] Will re-migrate {len(repaired)} schema(s).')
-    with open('/tmp/_repair_0058.txt', 'w') as f:
+    print(f'  [repair] Will re-migrate {len(repaired)} schema(s): {repaired}')
+    with open('/tmp/_repair_drift.txt', 'w') as f:
         f.write('\n'.join(repaired) + '\n')
 else:
-    print('  [repair-0058] All schemas OK — no drift detected.')
-    open('/tmp/_repair_0058.txt', 'w').close()
+    print('  [repair] All schemas OK — no drift detected.')
+    open('/tmp/_repair_drift.txt', 'w').close()
 " 2>&1 | grep -v "^$" || true
 
 # Step 2: for each drifted schema, run a targeted migration immediately
-#         so the ALTER TABLE executes before any seeding touches userprofile.
-if [ -s /tmp/_repair_0058.txt ]; then
+#         so columns/tables exist before any seeding or login touches them.
+if [ -s /tmp/_repair_drift.txt ]; then
   while IFS= read -r _schema; do
     [ -z "$_schema" ] && continue
-    echo "  [repair-0058] Applying migration to schema: $_schema"
+    echo "  [repair] Applying migrations to schema: $_schema"
     python3.11 manage.py migrate_schemas --noinput --schema="$_schema" school 2>&1 | grep -v "^$" || true
-  done < /tmp/_repair_0058.txt
+  done < /tmp/_repair_drift.txt
 fi
 
 echo "[sms] Running tenant migrations..."

@@ -2,7 +2,7 @@ from django.urls import include, path, re_path
 from django.http import JsonResponse, FileResponse, HttpResponse
 from django.conf import settings
 from django.views.decorators.csrf import csrf_exempt
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from rest_framework_simplejwt.views import TokenRefreshView
 
 
 # Security note: @csrf_exempt is correct here.  This is a stateless JWT login
@@ -14,13 +14,21 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 def _tenant_aware_login_view(request):
     """
     Login endpoint that works for BOTH public-schema requests and tenant requests.
-    When X-Tenant-ID header is present, delegates to the full SmartCampusTokenObtainPairView
-    (which handles student admission-number fallback, role enrichment, etc.).
-    Falls back to the standard JWT view for public-schema logins (platform admin, etc.).
+
+    With X-Tenant-ID header: switches the DB connection to the named tenant
+    schema before calling SmartCampusTokenObtainPairView.
+
+    Without X-Tenant-ID header (platform admin / public-schema login): calls
+    SmartCampusTokenObtainPairView with the connection in the public schema.
+    Stage 0 of the serializer checks for a matching GlobalSuperAdmin record and
+    returns the enriched response (role, redirect_to=/platform, etc.) so the
+    frontend can route correctly.  The plain TokenObtainPairView is no longer
+    used because it returns a bare JWT without role/redirect_to enrichment.
     """
     from django.db import connection
     from django_tenants.utils import get_public_schema_name
     from clients.models import Tenant
+    from school.views import SmartCampusTokenObtainPairView
 
     header_name = getattr(settings, "TENANT_HEADER_NAME", "X-Tenant-ID")
     tenant_id_header = (request.headers.get(header_name) or "").strip()
@@ -29,20 +37,19 @@ def _tenant_aware_login_view(request):
         try:
             tenant = Tenant.objects.get(schema_name=tenant_id_header)
             connection.set_tenant(tenant)
-            # Import the smart view within tenant context so all models resolve correctly
-            from school.views import SmartCampusTokenObtainPairView
-            return SmartCampusTokenObtainPairView.as_view()(request)
         except Tenant.DoesNotExist:
             return JsonResponse(
                 {"detail": f"Unknown School ID: '{tenant_id_header}'."},
                 status=400,
             )
-        except Exception as exc:
-            # Unexpected error — fall through to standard view
-            pass
+        except Exception:
+            pass  # connection stays in public schema; Stage 0 will handle auth
 
-    # No tenant header or fallback: use standard JWT view (public schema users only)
-    return TokenObtainPairView.as_view()(request)
+    # Always use the enriched SmartCampus view.
+    # Without a tenant header the connection remains in the public schema, and
+    # Stage 0 of SmartCampusTokenObtainPairSerializer picks up GlobalSuperAdmin
+    # users, returning role + redirect_to=/platform so the UI navigates correctly.
+    return SmartCampusTokenObtainPairView.as_view()(request)
 
 
 def ping_view(request):

@@ -1,12 +1,23 @@
 """
 Idempotent management command to seed platform-level demo data.
 Runs in the PUBLIC schema context.  Safe to re-run at every startup.
+
+Platform admin password resolution order:
+  1. PLATFORM_ADMIN_PASSWORD environment variable (recommended for production)
+  2. Hard-coded fallback: PlatformAdmin#2025
+
+Set PLATFORM_ADMIN_PASSWORD in the deployment environment to use a custom
+password.  The resolved username + password source are printed at startup so
+operators can confirm credentials without reading source code.
 """
+import os
 from datetime import date, timedelta
 from decimal import Decimal
 
 from django.core.management.base import BaseCommand
 from django_tenants.utils import schema_context, get_public_schema_name
+
+_DEFAULT_PLATFORM_PASSWORD = "PlatformAdmin#2025"
 
 
 class Command(BaseCommand):
@@ -15,6 +26,16 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         public = get_public_schema_name()
         schema = "demo_school"
+
+        # Resolve the platform admin password from the environment or fall back
+        # to the hardcoded default.  Log clearly so operators know which is active.
+        env_password = os.environ.get("PLATFORM_ADMIN_PASSWORD", "").strip()
+        if env_password:
+            PLATFORM_ADMIN_PASSWORD = env_password
+            pwd_source = "env var PLATFORM_ADMIN_PASSWORD"
+        else:
+            PLATFORM_ADMIN_PASSWORD = _DEFAULT_PLATFORM_PASSWORD
+            pwd_source = "default (set PLATFORM_ADMIN_PASSWORD env var to override)"
 
         with schema_context(public):
             from django.contrib.auth.models import User
@@ -35,7 +56,6 @@ class Command(BaseCommand):
             from django.utils import timezone
 
             # ── 1. Platform super-admin user ────────────────────────────────
-            PLATFORM_ADMIN_PASSWORD = "PlatformAdmin#2025"
             platform_admin, created = User.objects.get_or_create(
                 username="platform_admin",
                 defaults={
@@ -67,6 +87,12 @@ class Command(BaseCommand):
                     self.stdout.write("  [platform_admin] Password re-enforced")
             if needs_save:
                 platform_admin.save()
+
+            # Always print the credential summary so operators can confirm
+            # login details without digging through source code.
+            self.stdout.write(
+                f"  [platform_admin] username=platform_admin  password-source={pwd_source}"
+            )
 
             gsa, gsa_created = GlobalSuperAdmin.objects.get_or_create(
                 user=platform_admin,
