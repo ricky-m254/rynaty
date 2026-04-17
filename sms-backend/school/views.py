@@ -2,7 +2,8 @@ from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import ValidationError, APIException
+from django.db import OperationalError as _DbOperationalError, ProgrammingError as _DbProgrammingError
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.conf import settings
 from django.core.cache import cache
@@ -4784,6 +4785,14 @@ def _resolve_user_from_login_identifier(identifier):
     return None, None
 
 
+class _LoginDatabaseError(APIException):
+    """Raised when a database-level error occurs during login so that the
+    caller receives HTTP 503 instead of HTTP 400 (invalid credentials)."""
+    status_code = 503
+    default_detail = 'Service temporarily unavailable — please try again.'
+    default_code = 'service_unavailable'
+
+
 class SmartCampusTokenObtainPairSerializer(TokenObtainPairSerializer):
     """
     Custom JWT login serializer.
@@ -4932,6 +4941,18 @@ class SmartCampusTokenObtainPairSerializer(TokenObtainPairSerializer):
         portal_type = (self.initial_data.get('portal_type') or 'staff').strip().lower()
         attrs[self.username_field] = username
 
+        try:
+            return self._run_login_stages(attrs, username, password, portal_type)
+        except (ValidationError, APIException):
+            raise
+        except (_DbOperationalError, _DbProgrammingError) as _db_exc:
+            logger.error(
+                "Database error during login for '%s' — returning 503: %s",
+                username, _db_exc, exc_info=True,
+            )
+            raise _LoginDatabaseError()
+
+    def _run_login_stages(self, attrs, username, password, portal_type):
         from django_tenants.utils import schema_context, get_public_schema_name as _public_schema
         _current_schema = getattr(connection, 'schema_name', 'public')
         _is_public_request = _current_schema in {None, _public_schema()}
@@ -4954,6 +4975,8 @@ class SmartCampusTokenObtainPairSerializer(TokenObtainPairSerializer):
                         if gsa:
                             self.user = pub_user
                             return self._enrich_platform_admin(pub_user, gsa)
+            except (_DbOperationalError, _DbProgrammingError):
+                raise
             except Exception as _stage0_exc:
                 import logging as _log
                 _log.getLogger(__name__).warning(
@@ -4967,6 +4990,8 @@ class SmartCampusTokenObtainPairSerializer(TokenObtainPairSerializer):
             self._validate_portal_access(portal_type)
             return self._enrich(data, login_method='username')
         except ValidationError:
+            raise
+        except (_DbOperationalError, _DbProgrammingError):
             raise
         except Exception:
             logger.warning("Caught and logged", exc_info=True)
@@ -5024,6 +5049,8 @@ class SmartCampusTokenObtainPairSerializer(TokenObtainPairSerializer):
                 return self._enrich(data, login_method='student_username_admission_number')
         except Student.DoesNotExist:
             pass
+        except (_DbOperationalError, _DbProgrammingError):
+            raise
         except Exception:
             logger.warning("Caught and logged", exc_info=True)
 
