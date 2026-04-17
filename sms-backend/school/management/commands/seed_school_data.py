@@ -82,6 +82,7 @@ class Command(BaseCommand):
         try:
             with schema_context(schema_name):
                 self._school_profile(tag, tenant_name)
+                self._seed_mpesa_defaults(tag)
                 self._grade_levels(tag)
                 self._academic_year(tag)
                 self._departments_and_subjects(tag)
@@ -113,6 +114,36 @@ class Command(BaseCommand):
         )
         action = "created" if created else "exists"
         self.stdout.write(f"{tag}   SchoolProfile: {action} ({profile.school_name!r})")
+
+        # Ensure M-Pesa is listed as an accepted payment method.
+        # Only touch this field when it is empty so admin-customised lists
+        # are never overwritten.
+        if not profile.accepted_payment_methods:
+            profile.accepted_payment_methods = ["Cash", "MPesa", "Bank Transfer"]
+            profile.save(update_fields=["accepted_payment_methods"])
+            self.stdout.write(f"{tag}   accepted_payment_methods: set to default (Cash, MPesa, Bank Transfer)")
+        else:
+            methods = ", ".join(profile.accepted_payment_methods)
+            self.stdout.write(f"{tag}   accepted_payment_methods: already set ({methods})")
+
+    def _seed_mpesa_defaults(self, tag):
+        """
+        Ensure a TenantSettings row with key ``integrations.mpesa`` exists.
+        An empty dict is enough for the Finance Settings page to render its
+        M-Pesa configuration fields.  Real credentials are entered by the
+        admin via the UI — we never overwrite an existing entry.
+        """
+        from school.models import TenantSettings
+        _, created = TenantSettings.objects.get_or_create(
+            key="integrations.mpesa",
+            defaults={
+                "value": {},
+                "description": "M-Pesa STK Push credentials (Daraja 2.0)",
+                "category": "finance",
+            },
+        )
+        action = "created stub" if created else "exists"
+        self.stdout.write(f"{tag}   TenantSettings integrations.mpesa: {action}")
 
     def _grade_levels(self, tag):
         from school.models import GradeLevel
