@@ -8770,7 +8770,11 @@ class MpesaTestConnectionView(APIView):
     """
     permission_classes = [CanManageSystemSettings]
 
+    _CACHE_TTL = 300  # seconds (5 minutes)
+
     def post(self, request):
+        import hashlib
+        from django.core.cache import cache
         from .mpesa import _get_access_token, MpesaError, SANDBOX_BASE, PRODUCTION_BASE
 
         body = request.data
@@ -8800,24 +8804,50 @@ class MpesaTestConnectionView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
+        schema = getattr(request, "tenant", None)
+        schema_name = schema.schema_name if schema else "public"
+        cred_fingerprint = hashlib.sha256(
+            f"{creds['consumer_key']}:{creds['consumer_secret']}:"
+            f"{creds['shortcode']}:{creds['passkey']}:{creds['environment']}".encode()
+        ).hexdigest()[:16]
+        cache_key = f"mpesa_conn_check:{schema_name}:{cred_fingerprint}"
+
+        cached = cache.get(cache_key)
+        if cached is not None:
+            if cached["success"]:
+                return Response({
+                    "success": True,
+                    "message": cached["message"],
+                    "environment": creds["environment"],
+                    "cached": True,
+                })
+            return Response(
+                {"success": False, "error": cached["error"], "environment": creds["environment"], "cached": True},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         try:
             _get_access_token(creds)
         except MpesaError as exc:
+            error_msg = str(exc)
+            cache.set(cache_key, {"success": False, "error": error_msg}, self._CACHE_TTL)
             return Response(
                 {
                     "success": False,
-                    "error": str(exc),
+                    "error": error_msg,
                     "environment": creds["environment"],
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        success_msg = (
+            f"Connected to Daraja {creds['environment']} — "
+            "OAuth token obtained successfully."
+        )
+        cache.set(cache_key, {"success": True, "message": success_msg}, self._CACHE_TTL)
         return Response({
             "success": True,
-            "message": (
-                f"Connected to Daraja {creds['environment']} — "
-                "OAuth token obtained successfully."
-            ),
+            "message": success_msg,
             "environment": creds["environment"],
         })
 
