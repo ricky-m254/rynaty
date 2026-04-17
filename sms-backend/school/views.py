@@ -9049,6 +9049,7 @@ class MpesaStkCallbackView(APIView):
                             "transaction_date": parsed["transaction_date"],
                             "phone": parsed["phone"],
                             "callback_result_desc": parsed["result_desc"],
+                            "callback_friendly_message": parsed.get("friendly_message", ""),
                         })
                         tx.save(update_fields=["status", "payload", "updated_at"])
 
@@ -9233,6 +9234,7 @@ class MpesaStkCallbackView(APIView):
                     tx.payload.update({
                         "result_code": parsed["result_code"],
                         "result_desc": parsed["result_desc"],
+                        "callback_friendly_message": parsed.get("friendly_message", ""),
                     })
                     tx.save(update_fields=["status", "payload", "updated_at"])
             else:
@@ -9271,6 +9273,7 @@ class MpesaStkStatusView(APIView):
             "amount": str(tx.amount),
             "mpesa_receipt": tx.payload.get("mpesa_receipt"),
             "result_desc": tx.payload.get("callback_result_desc") or tx.payload.get("result_desc"),
+            "friendly_message": tx.payload.get("callback_friendly_message", ""),
             "updated_at": tx.updated_at,
         })
 

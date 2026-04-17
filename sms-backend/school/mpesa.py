@@ -75,6 +75,99 @@ def _get_credentials():
     }
 
 
+def _friendly_stk_result_code(result_code: int, raw_desc: str = "") -> str:
+    """
+    Convert a Daraja STK Push ResultCode (from callback or query) into a
+    plain-English message suitable for display to finance staff or students.
+
+    Common codes from Safaricom's STK Push documentation:
+        0    — Success (payment confirmed)
+        1    — Insufficient funds in customer account
+        17   — Risk limit exceeded; customer must try again later
+        20   — Exceeds transaction limit set by customer
+        26   — Safaricom system is temporarily busy
+        1001 — Wrong M-Pesa PIN entered; payment rejected
+        1019 — STK push timed out — customer did not respond in time
+        1032 — Customer cancelled the payment request on their phone
+        1037 — Customer's phone could not be reached (switched off / no signal)
+    """
+    messages = {
+        0: "Payment confirmed successfully.",
+        1: (
+            "The customer's M-Pesa account has insufficient funds. "
+            "Please ask the customer to top up and try again."
+        ),
+        17: (
+            "This transaction has been flagged by Safaricom's risk controls. "
+            "The customer should try again later or contact Safaricom."
+        ),
+        20: (
+            "The amount exceeds the customer's M-Pesa transaction limit. "
+            "The customer may need to increase their limit or pay in smaller amounts."
+        ),
+        26: (
+            "Safaricom's M-Pesa service is temporarily busy. "
+            "Please wait a minute and try again."
+        ),
+        1001: (
+            "The customer entered the wrong M-Pesa PIN. "
+            "Please ask the customer to try again with the correct PIN."
+        ),
+        1019: (
+            "The payment request timed out — the customer did not respond on their phone. "
+            "Please send a new payment request."
+        ),
+        1032: (
+            "The customer cancelled the payment request on their phone. "
+            "Please ask the customer to try again if this was a mistake."
+        ),
+        1037: (
+            "The customer's phone could not be reached (it may be switched off or out of network). "
+            "Please ask the customer to check their phone and try again."
+        ),
+    }
+    friendly = messages.get(result_code)
+    if friendly:
+        return friendly
+    if raw_desc:
+        return f"Payment was not completed: {raw_desc} (code {result_code})."
+    return f"Payment was not completed (Safaricom code {result_code}). Please try again or contact support."
+
+
+def _friendly_stk_push_response_code(response_code: str, description: str, environment: str) -> str:
+    """
+    Convert a Daraja STK Push initiation ResponseCode (from processrequest) into
+    a plain-English message.  ResponseCode "0" means success; any other value
+    means the push was rejected before it reached the customer's phone.
+
+    Common ResponseCode values:
+        "0"  — Success (push sent to customer's phone)
+        "1"  — Request rejected by Daraja (wrong shortcode, passkey, or payload)
+    """
+    if response_code == "1":
+        return (
+            "Daraja rejected the payment push request. "
+            "This usually means your Business Short Code or PassKey is incorrect. "
+            "Please check Settings → Integrations → M-Pesa and verify your credentials."
+        )
+    if response_code in ("400.002.02", "400.002.03", "404.001.03"):
+        opposite = "Production" if environment == "sandbox" else "Sandbox"
+        return (
+            f"Daraja could not process the request — you may be using {opposite} credentials "
+            f"in the '{environment}' environment. "
+            "Please check Settings → Integrations → M-Pesa and ensure the environment matches your credentials."
+        )
+    if description:
+        return (
+            f"Daraja rejected the payment push (code {response_code}): {description}. "
+            "Please check your M-Pesa settings and try again."
+        )
+    return (
+        f"Daraja rejected the payment push (code {response_code}). "
+        "Please check your M-Pesa settings and try again."
+    )
+
+
 def _friendly_daraja_error(status_code, response_body, environment):
     """
     Convert a Daraja HTTP error response into a plain-English message that a
@@ -250,17 +343,36 @@ def initiate_stk_push(phone: str, amount: Decimal, account_ref: str, callback_ur
             },
             timeout=20,
         )
-        resp.raise_for_status()
+    except requests.exceptions.ConnectionError:
+        raise MpesaError(
+            "Could not reach Safaricom's Daraja service to send the payment request. "
+            "Check your internet connection and try again."
+        )
+    except requests.exceptions.Timeout:
+        raise MpesaError(
+            "The payment request to Daraja timed out. "
+            "Safaricom's servers may be slow — please try again in a moment."
+        )
     except requests.exceptions.RequestException as exc:
-        raise MpesaError(f"STK push request failed: {exc}") from exc
+        raise MpesaError(
+            "An unexpected network error occurred while sending the payment request. "
+            "Check your internet connection and try again."
+        ) from exc
+
+    if not resp.ok:
+        try:
+            body = resp.json()
+        except Exception:
+            body = {}
+        msg = _friendly_daraja_error(resp.status_code, body, creds.get("environment", "sandbox"))
+        raise MpesaError(msg)
 
     data = resp.json()
     response_code = str(data.get("ResponseCode", ""))
     if response_code != "0":
-        raise MpesaError(
-            f"Daraja rejected the STK push. "
-            f"Code: {response_code} | Description: {data.get('ResponseDescription', data)}"
-        )
+        desc = data.get("ResponseDescription", "")
+        friendly = _friendly_stk_push_response_code(response_code, desc, creds.get("environment", "sandbox"))
+        raise MpesaError(friendly)
 
     return {
         "checkout_request_id": data["CheckoutRequestID"],
@@ -344,6 +456,7 @@ def query_stk_status(checkout_request_id: str) -> dict:
 
     result_desc = data.get("ResultDesc", data.get("errorMessage", ""))
     success = result_code == 0
+    friendly_message = _friendly_stk_result_code(result_code, result_desc)
 
     mpesa_receipt = data.get("MpesaReceiptNumber") or None
     amount_raw = data.get("Amount")
@@ -353,6 +466,7 @@ def query_stk_status(checkout_request_id: str) -> dict:
         "success": success,
         "result_code": result_code,
         "result_desc": result_desc,
+        "friendly_message": friendly_message,
         "mpesa_receipt": mpesa_receipt,
         "amount": amount,
         "checkout_request_id": checkout_request_id,
@@ -380,6 +494,7 @@ def parse_stk_callback(payload: dict) -> dict:
         merchant_id = body.get("MerchantRequestID", "")
         result_code = int(body.get("ResultCode", -1))
         result_desc = body.get("ResultDesc", "")
+        friendly_message = _friendly_stk_result_code(result_code, result_desc)
 
         amount = None
         mpesa_receipt = None
@@ -400,6 +515,7 @@ def parse_stk_callback(payload: dict) -> dict:
             "merchant_request_id": merchant_id,
             "result_code": result_code,
             "result_desc": result_desc,
+            "friendly_message": friendly_message,
             "amount": amount,
             "mpesa_receipt": mpesa_receipt,
             "phone": phone,
@@ -413,6 +529,7 @@ def parse_stk_callback(payload: dict) -> dict:
             "merchant_request_id": "",
             "result_code": -1,
             "result_desc": str(exc),
+            "friendly_message": "An unexpected error occurred while processing the payment callback.",
             "amount": None,
             "mpesa_receipt": None,
             "phone": None,
