@@ -25,11 +25,13 @@ def _tenant_aware_login_view(request):
     frontend can route correctly.  The plain TokenObtainPairView is no longer
     used because it returns a bare JWT without role/redirect_to enrichment.
     """
+    import logging as _logging
     from django.db import connection
     from django_tenants.utils import get_public_schema_name
     from clients.models import Tenant
     from school.views import SmartCampusTokenObtainPairView
 
+    _log = _logging.getLogger(__name__)
     header_name = getattr(settings, "TENANT_HEADER_NAME", "X-Tenant-ID")
     tenant_id_header = (request.headers.get(header_name) or "").strip()
 
@@ -42,8 +44,15 @@ def _tenant_aware_login_view(request):
                 {"detail": f"Unknown School ID: '{tenant_id_header}'."},
                 status=400,
             )
-        except Exception:
-            pass  # connection stays in public schema; Stage 0 will handle auth
+        except Exception as _exc:
+            # Unexpected error switching to tenant schema; log it so it is
+            # visible in monitoring and fall through with the connection in
+            # whatever schema it is currently in.  Stage 0 / standard auth
+            # will handle credentials from there.
+            _log.warning(
+                "Failed to set tenant schema for header '%s': %s",
+                tenant_id_header, _exc, exc_info=True,
+            )
 
     # Always use the enriched SmartCampus view.
     # Without a tenant header the connection remains in the public schema, and
