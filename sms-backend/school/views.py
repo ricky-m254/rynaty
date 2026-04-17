@@ -8625,13 +8625,48 @@ class MpesaStkPushView(APIView):
         invoice_id = request.data.get("invoice_id")
         description = (request.data.get("description") or "School Fees")[:13]
 
-        # Build callback URL — Safaricom requires HTTPS in production
-        callback_url = request.build_absolute_uri("/api/finance/mpesa/callback/")
+        # Build callback URL — Safaricom requires HTTPS in production.
+        # Priority: TenantSettings(system.callback_base_url) → SITE_BASE_URL env var
+        # → REPLIT_DOMAINS env var → request.build_absolute_uri() (last resort).
+        import logging
+        import os
+        from .models import TenantSettings
+
+        log = logging.getLogger(__name__)
+        base_url = ""
+
+        try:
+            cb_setting = TenantSettings.objects.filter(key="system.callback_base_url").first()
+            if cb_setting and cb_setting.value:
+                base_url = str(cb_setting.value).strip().rstrip("/")
+        except Exception as exc:
+            log.warning("Could not read system.callback_base_url from TenantSettings: %s", exc)
+
+        if not base_url:
+            base_url = os.environ.get("SITE_BASE_URL", "").strip().rstrip("/")
+
+        if not base_url:
+            replit_domains = os.environ.get("REPLIT_DOMAINS", "").strip()
+            if replit_domains:
+                first_domain = replit_domains.split(",")[0].strip()
+                if first_domain:
+                    base_url = f"https://{first_domain}"
+
+        if base_url:
+            callback_url = f"{base_url}/api/finance/mpesa/callback/"
+        else:
+            callback_url = request.build_absolute_uri("/api/finance/mpesa/callback/")
+            log.warning(
+                "MPesa: no configured callback base URL found; "
+                "falling back to request.build_absolute_uri: %s",
+                callback_url,
+            )
+
         if not callback_url.startswith("https://") and settings.DEBUG:
             # In sandbox mode Daraja accepts http; just log a warning
-            import logging
-            logging.getLogger(__name__).warning(
-                "MPesa callback URL is not HTTPS: %s. This is only acceptable in sandbox mode.", callback_url
+            log.warning(
+                "MPesa callback URL is not HTTPS: %s. This is only acceptable in sandbox mode.",
+                callback_url,
             )
 
         reference = f"FEES-{uuid.uuid4().hex[:6].upper()}"

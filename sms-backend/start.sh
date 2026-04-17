@@ -261,6 +261,28 @@ if [ "${BOOTSTRAP_DEMO_DATA:-false}" = "true" ]; then
   echo "[sms] Bootstrap complete."
 fi
 
+# ── M-Pesa callback URL auto-configuration ──────────────────────────────────
+# Runs AFTER all tenant creation/seeding so every schema (including ones just
+# created by seed_olom_tenant or seed_demo) receives the system.callback_base_url
+# setting.  The M-Pesa STK push view reads this key so Safaricom's callback always
+# reaches the correct publicly-accessible host regardless of deployment environment.
+echo "[sms] Configuring M-Pesa callback base URL for all tenants..."
+_mpesa_callback_base=""
+if [ -n "${SITE_BASE_URL:-}" ]; then
+  _mpesa_callback_base="${SITE_BASE_URL%/}"
+elif [ -n "${REPLIT_DOMAINS:-}" ]; then
+  _first_domain="$(echo "$REPLIT_DOMAINS" | cut -d',' -f1 | tr -d ' ')"
+  _mpesa_callback_base="https://${_first_domain}"
+fi
+
+if [ -n "$_mpesa_callback_base" ]; then
+  echo "[sms] M-Pesa callback URL: ${_mpesa_callback_base}/api/finance/mpesa/callback/"
+else
+  echo "[sms] WARNING: No SITE_BASE_URL or REPLIT_DOMAINS set — M-Pesa callbacks will fall back to request host."
+fi
+
+python3.11 manage.py configure_mpesa_callback 2>&1 | grep -E "^\[|Detected|Full callback|WARNING|Error" || true
+
 echo "[sms] Rotating insecure default admin credentials..."
 python3.11 manage.py rotate_admin_credentials 2>&1 || echo "[sms] Credential rotation skipped"
 
