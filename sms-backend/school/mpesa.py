@@ -271,6 +271,94 @@ def initiate_stk_push(phone: str, amount: Decimal, account_ref: str, callback_ur
     }
 
 
+def query_stk_status(checkout_request_id: str) -> dict:
+    """
+    Query the status of a previously initiated STK Push transaction using the
+    Daraja STK Push Query API (POST /mpesa/stkpushquery/v1/query).
+
+    Parameters
+    ----------
+    checkout_request_id : the CheckoutRequestID returned by initiate_stk_push
+
+    Returns
+    -------
+    dict with keys:
+        success            : bool  (True = payment confirmed by Safaricom)
+        result_code        : int
+        result_desc        : str
+        mpesa_receipt      : str | None
+        amount             : Decimal | None
+        checkout_request_id: str
+    Raises MpesaError if credentials are missing or the network call fails.
+    """
+    creds = _get_credentials()
+    token = _get_access_token(creds)
+
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    raw_password = f"{creds['shortcode']}{creds['passkey']}{timestamp}"
+    password = base64.b64encode(raw_password.encode()).decode()
+
+    payload = {
+        "BusinessShortCode": creds["shortcode"],
+        "Password": password,
+        "Timestamp": timestamp,
+        "CheckoutRequestID": checkout_request_id,
+    }
+
+    url = f"{creds['base_url']}/mpesa/stkpushquery/v1/query"
+    try:
+        resp = requests.post(
+            url,
+            json=payload,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            timeout=20,
+        )
+    except requests.exceptions.ConnectionError:
+        raise MpesaError(
+            "Could not reach Safaricom's Daraja service while querying transaction status."
+        )
+    except requests.exceptions.Timeout:
+        raise MpesaError(
+            "The connection to Daraja timed out while querying transaction status."
+        )
+    except requests.exceptions.RequestException as exc:
+        raise MpesaError(f"STK query request failed: {exc}") from exc
+
+    if not resp.ok:
+        try:
+            body = resp.json()
+        except Exception:
+            body = {}
+        msg = _friendly_daraja_error(resp.status_code, body, creds.get("environment", "sandbox"))
+        raise MpesaError(f"STK query failed: {msg}")
+
+    data = resp.json()
+    result_code_raw = data.get("ResultCode", data.get("errorCode", ""))
+    try:
+        result_code = int(result_code_raw)
+    except (TypeError, ValueError):
+        result_code = -1
+
+    result_desc = data.get("ResultDesc", data.get("errorMessage", ""))
+    success = result_code == 0
+
+    mpesa_receipt = data.get("MpesaReceiptNumber") or None
+    amount_raw = data.get("Amount")
+    amount = Decimal(str(amount_raw)) if amount_raw is not None else None
+
+    return {
+        "success": success,
+        "result_code": result_code,
+        "result_desc": result_desc,
+        "mpesa_receipt": mpesa_receipt,
+        "amount": amount,
+        "checkout_request_id": checkout_request_id,
+    }
+
+
 def parse_stk_callback(payload: dict) -> dict:
     """
     Parse the STK push callback payload sent by Daraja to the callback URL.

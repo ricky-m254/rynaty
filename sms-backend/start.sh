@@ -300,5 +300,16 @@ python3.11 manage.py check_trial_expiry 2>&1 || echo "[sms] Trial expiry check s
   done
 ) &
 
+# ── Background cron loop: reconcile pending M-Pesa transactions every 15 min ─
+# Queries Daraja for any PENDING PaymentGatewayTransactions older than 15 min
+# and reconciles them to SUCCEEDED or FAILED so no payment is ever lost.
+echo "[sms] Starting M-Pesa reconciliation loop (every 15 minutes)..."
+(
+  while true; do
+    sleep 900  # 15 minutes
+    python3.11 manage.py reconcile_mpesa_pending --all-tenants 2>&1 || true
+  done
+) &
+
 echo "[sms] Waiting for server process..."
 wait $SERVER_PID
