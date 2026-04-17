@@ -17,6 +17,7 @@ from .views import (
     TenantSettingsView, TenantSettingDeleteView,
     FinanceSettingsView, GeneralSettingsView,
     MpesaStkPushView, MpesaStkCallbackView, MpesaStkStatusView, MpesaTestConnectionView,
+    MpesaCallbackUrlView,
     WalletDetailView, WalletAdminAdjustView, LedgerEntryListView,
     FraudAlertListView, FraudAlertResolveView,
     FinanceAuditLogListView, AuditChainVerifyView, LedgerReconcileView,
@@ -404,6 +405,7 @@ urlpatterns = [
     path('finance/mpesa/callback/',         MpesaStkCallbackView.as_view(),     name='mpesa_stk_callback'),
     path('finance/mpesa/status/',           MpesaStkStatusView.as_view(),       name='mpesa_stk_status'),
     path('finance/mpesa/test-connection/',  MpesaTestConnectionView.as_view(),  name='mpesa_test_connection'),
+    path('finance/mpesa/callback-url/',     MpesaCallbackUrlView.as_view(),     name='mpesa_callback_url'),
 
     # ── Enterprise Finance: Wallet / Ledger / Fraud / Audit ─────────────────
     path('finance/wallet/',                         WalletDetailView.as_view(),         name='finance_wallet'),

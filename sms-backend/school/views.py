@@ -8822,6 +8822,132 @@ class MpesaTestConnectionView(APIView):
         })
 
 
+class MpesaCallbackUrlView(APIView):
+    """
+    GET  /api/finance/mpesa/callback-url/
+        Returns:
+          - callback_base_url  : the admin-set override stored in TenantSettings
+                                 (empty string if not set)
+          - effective_base_url : the base URL that STK push will actually use,
+                                 following the same precedence as MpesaStkPushView
+                                 (TenantSettings → SITE_BASE_URL → REPLIT_DOMAINS
+                                 → request.build_absolute_uri fallback)
+          - full_callback_url  : effective_base_url + /api/finance/mpesa/callback/
+                                 — the exact URL Safaricom will POST to
+          - source             : which source determined effective_base_url
+
+    PUT  /api/finance/mpesa/callback-url/
+        Body: { "callback_base_url": "https://your-domain.example.com" }
+        Saves the value to TenantSettings (key: system.callback_base_url).
+        Pass an empty string to clear the override; the STK push view will
+        then fall back to environment-variable detection.
+    """
+    permission_classes = [CanManageSystemSettings]
+
+    CALLBACK_PATH = "/api/finance/mpesa/callback/"
+    SETTING_KEY = "system.callback_base_url"
+
+    def _resolve_effective_base_url(self, request):
+        """
+        Resolve the base URL that MpesaStkPushView will actually use,
+        in the same precedence order, and return (base_url, source).
+        """
+        import logging
+        import os
+        from .models import TenantSettings
+
+        log = logging.getLogger(__name__)
+
+        try:
+            setting = TenantSettings.objects.filter(key=self.SETTING_KEY).first()
+            if setting and setting.value:
+                return setting.value.strip().rstrip("/"), "tenant_settings"
+        except Exception as exc:
+            log.warning(
+                "MpesaCallbackUrlView: could not read %s from TenantSettings: %s",
+                self.SETTING_KEY, exc,
+            )
+
+        site_base = os.environ.get("SITE_BASE_URL", "").strip().rstrip("/")
+        if site_base:
+            return site_base, "SITE_BASE_URL"
+
+        replit_domains = os.environ.get("REPLIT_DOMAINS", "").strip()
+        if replit_domains:
+            first_domain = replit_domains.split(",")[0].strip()
+            if first_domain:
+                return f"https://{first_domain}", "REPLIT_DOMAINS"
+
+        fallback = request.build_absolute_uri("/").rstrip("/")
+        return fallback, "request_fallback"
+
+    def _get_override(self):
+        from .models import TenantSettings
+        setting = TenantSettings.objects.filter(key=self.SETTING_KEY).first()
+        return (setting.value or "").strip().rstrip("/") if setting else ""
+
+    def get(self, request):
+        override = self._get_override()
+        effective_base, source = self._resolve_effective_base_url(request)
+        full_callback_url = f"{effective_base}{self.CALLBACK_PATH}" if effective_base else ""
+        return Response({
+            "callback_base_url": override,
+            "effective_base_url": effective_base,
+            "full_callback_url": full_callback_url,
+            "callback_path": self.CALLBACK_PATH,
+            "source": source,
+        })
+
+    def put(self, request):
+        from .models import TenantSettings, AuditLog
+
+        raw = (request.data.get("callback_base_url") or "").strip().rstrip("/")
+
+        if raw and not raw.startswith(("https://", "http://")):
+            return Response(
+                {"error": "callback_base_url must start with https:// (or http:// for local testing)."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if raw:
+            TenantSettings.objects.update_or_create(
+                key=self.SETTING_KEY,
+                defaults={
+                    "value": raw,
+                    "category": "system",
+                    "description": (
+                        "Public HTTPS base URL used for M-Pesa STK callback. "
+                        "Set manually by an admin to override auto-detection."
+                    ),
+                    "updated_by": request.user,
+                },
+            )
+            message = f"Callback base URL saved: {raw}"
+        else:
+            TenantSettings.objects.filter(key=self.SETTING_KEY).delete()
+            message = "Callback base URL cleared; STK push will fall back to auto-detection."
+
+        AuditLog.objects.create(
+            user=request.user,
+            action="UPDATE",
+            model_name="TenantSettings",
+            object_id=self.SETTING_KEY,
+            details=f"Admin set system.callback_base_url = {raw!r}",
+        )
+
+        effective_base, source = self._resolve_effective_base_url(request)
+        full_callback_url = f"{effective_base}{self.CALLBACK_PATH}" if effective_base else ""
+
+        return Response({
+            "callback_base_url": raw,
+            "effective_base_url": effective_base,
+            "full_callback_url": full_callback_url,
+            "callback_path": self.CALLBACK_PATH,
+            "source": source,
+            "message": message,
+        })
+
+
 class MpesaStkCallbackView(APIView):
     """
     POST /api/finance/mpesa/callback/

@@ -6,6 +6,14 @@ into TenantSettings (key: ``system.callback_base_url``) for every tenant schema.
 The M-Pesa STK push view reads this setting so Safaricom's callback reaches the
 correct host regardless of which deploy environment is active.
 
+DEFAULT BEHAVIOUR (safe for startup scripts)
+    Any tenant that already has a non-empty ``system.callback_base_url`` value is
+    skipped.  This preserves URLs that an admin has set manually via the
+    Settings → Integrations → M-Pesa UI.  Only schemas with no existing value
+    are written.
+
+Use ``--force`` to override all existing values (e.g. after a domain migration).
+
 Priority order for URL detection:
     1. SITE_BASE_URL environment variable (set manually by operator)
     2. First non-empty domain from REPLIT_DOMAINS environment variable
@@ -16,6 +24,7 @@ Usage:
     python manage.py configure_mpesa_callback
     python manage.py configure_mpesa_callback --schema demo_school
     python manage.py configure_mpesa_callback --all-tenants
+    python manage.py configure_mpesa_callback --force
 """
 import os
 
@@ -50,20 +59,35 @@ def _detect_base_url() -> str:
     return ""
 
 
-def _apply_to_schema(schema_name: str, base_url: str, stdout, style) -> None:
+def _apply_to_schema(
+    schema_name: str,
+    base_url: str,
+    stdout,
+    style,
+    force: bool = False,
+) -> None:
     """
     Write the base URL into TenantSettings for the given schema.
-    If base_url is empty, the existing stored value is preserved so that a
-    transient detection failure does not overwrite a previously valid setting.
+
+    Default (force=False):
+        Skip if the schema already has a non-empty system.callback_base_url,
+        preserving values set by admins via the Settings UI.
+        If base_url is also empty, keep the existing value (transient failure
+        protection).
+
+    force=True:
+        Overwrite any existing value unconditionally. Use only when
+        intentionally migrating to a new domain.
     """
     from school.models import TenantSettings
 
     try:
         with schema_context(schema_name):
+            existing = TenantSettings.objects.filter(
+                key="system.callback_base_url"
+            ).values_list("value", flat=True).first()
+
             if not base_url:
-                existing = TenantSettings.objects.filter(
-                    key="system.callback_base_url"
-                ).values_list("value", flat=True).first()
                 if existing:
                     stdout.write(
                         f"  [{schema_name}] No URL detected — keeping existing value: {existing!r}"
@@ -74,6 +98,13 @@ def _apply_to_schema(schema_name: str, base_url: str, stdout, style) -> None:
                             f"  [{schema_name}] No URL detected and no existing value — skipping."
                         )
                     )
+                return
+
+            if not force and existing:
+                stdout.write(
+                    f"  [{schema_name}] Skipped: existing value kept: {existing!r} "
+                    "(use --force to overwrite)"
+                )
                 return
 
             _, created = TenantSettings.objects.update_or_create(
@@ -102,7 +133,8 @@ def _apply_to_schema(schema_name: str, base_url: str, stdout, style) -> None:
 class Command(BaseCommand):
     help = (
         "Detect this deployment's public base URL and store it in TenantSettings "
-        "(key: system.callback_base_url) for use by the M-Pesa STK callback."
+        "(key: system.callback_base_url) for use by the M-Pesa STK callback. "
+        "Existing admin-set values are preserved by default (use --force to overwrite)."
     )
 
     def add_arguments(self, parser):
@@ -117,9 +149,18 @@ class Command(BaseCommand):
             action="store_true",
             help="Apply to all tenant schemas (default when neither --schema nor --all-tenants is given).",
         )
+        parser.add_argument(
+            "--force",
+            action="store_true",
+            help=(
+                "Overwrite any existing system.callback_base_url value, including those "
+                "set manually by an admin. Use only after an intentional domain migration."
+            ),
+        )
 
     def handle(self, *args, **options):
         base_url = _detect_base_url()
+        force = options.get("force", False)
 
         if base_url:
             self.stdout.write(
@@ -140,6 +181,18 @@ class Command(BaseCommand):
                 )
             )
 
+        if force:
+            self.stdout.write(
+                self.style.WARNING(
+                    "[mpesa-callback] --force is set: existing values will be overwritten."
+                )
+            )
+        else:
+            self.stdout.write(
+                "[mpesa-callback] Existing admin-set values will be preserved "
+                "(pass --force to override)."
+            )
+
         schema_name = options.get("schema")
         all_tenants = options.get("all_tenants", False)
 
@@ -150,7 +203,7 @@ class Command(BaseCommand):
             return
 
         if schema_name:
-            _apply_to_schema(schema_name, base_url, self.stdout, self.style)
+            _apply_to_schema(schema_name, base_url, self.stdout, self.style, force=force)
             return
 
         tenant_schemas = list(
@@ -166,10 +219,10 @@ class Command(BaseCommand):
             return
 
         for schema in tenant_schemas:
-            _apply_to_schema(schema, base_url, self.stdout, self.style)
+            _apply_to_schema(schema, base_url, self.stdout, self.style, force=force)
 
         self.stdout.write(
             self.style.SUCCESS(
-                f"[mpesa-callback] Done. Updated {len(tenant_schemas)} tenant schema(s)."
+                f"[mpesa-callback] Done. Processed {len(tenant_schemas)} tenant schema(s)."
             )
         )
