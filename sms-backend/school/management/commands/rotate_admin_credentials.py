@@ -81,17 +81,23 @@ class Command(BaseCommand):
                 self.stdout.write(f"[rotate] '{NEW_USERNAME}' already correct — no change needed")
 
             # ── Step 3: Ensure UserProfile with TENANT_SUPER_ADMIN role ─────
+            # Note: seed_default_permissions runs BEFORE rotate_admin_credentials
+            # in start.sh, so the TENANT_SUPER_ADMIN role must already exist at
+            # this point.  A missing role is a genuine error, not a timing issue.
             try:
                 from school.models import Role, UserProfile
                 role = Role.objects.filter(name="TENANT_SUPER_ADMIN").first()
                 if not role:
-                    # Roles are seeded by seed_default_permissions which runs after
-                    # this command at startup.  Log a warning but don't fail hard —
-                    # the role will exist by the time the first login is attempted.
-                    self.stdout.write(
-                        self.style.WARNING(
-                            f"[rotate] TENANT_SUPER_ADMIN role not found yet for schema '{SCHEMA}' "
-                            "(will be created by seed_default_permissions)"
+                    logger.error(
+                        "[rotate] TENANT_SUPER_ADMIN role not found in schema '%s' for user '%s'. "
+                        "seed_default_permissions should have created it before this command ran.",
+                        SCHEMA, NEW_USERNAME,
+                    )
+                    self.stderr.write(
+                        self.style.ERROR(
+                            f"[rotate] ERROR: TENANT_SUPER_ADMIN role missing from schema '{SCHEMA}' — "
+                            f"UserProfile for '{NEW_USERNAME}' cannot be assigned. "
+                            "Re-run seed_default_permissions manually to fix."
                         )
                     )
                 else:
