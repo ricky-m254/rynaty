@@ -28,6 +28,7 @@ from __future__ import annotations
 import uuid
 import logging
 
+from django.db import OperationalError as _DbOperationalError, ProgrammingError as _DbProgrammingError
 from rest_framework.views import exception_handler as drf_exception_handler
 from rest_framework.response import Response
 from rest_framework import status
@@ -95,7 +96,33 @@ def platform_exception_handler(exc, context) -> Response | None:
     Wraps all DRF exceptions into the standard SmartCampus error envelope.
     Falls back to DRF default for unhandled exceptions (Django will then
     return a 500 which Django REST Framework's default handler catches).
+
+    Database OperationalError and ProgrammingError are mapped to HTTP 503
+    so that infrastructure failures are never misread as application errors.
     """
+    # DB infrastructure errors → 503 SERVICE_UNAVAILABLE
+    if isinstance(exc, (_DbOperationalError, _DbProgrammingError)):
+        req_id = _request_id()
+        logger.error(
+            "[platform_exception_handler] Database error req_id=%s path=%s: %s",
+            req_id,
+            getattr(getattr(context.get("request"), "path", None), "__str__", lambda: "?")(),
+            exc,
+            exc_info=True,
+        )
+        return Response(
+            {
+                "success": False,
+                "error": {
+                    "code": "SERVICE_UNAVAILABLE",
+                    "message": "Service temporarily unavailable — please try again.",
+                    "details": {},
+                },
+                "request_id": req_id,
+            },
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+
     # Let DRF handle the exception first to get the response
     response = drf_exception_handler(exc, context)
 

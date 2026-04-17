@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from django.db import models
+from django.db import models, OperationalError as _DbOperationalError, ProgrammingError as _DbProgrammingError
 from .security_policy import normalize_allowed_ip_ranges
 from .models import (
     Expense, Student, Guardian, Enrollment,
@@ -1236,8 +1236,16 @@ class CrossTenantTransferSerializer(serializers.ModelSerializer):
                     e = Employee.objects.filter(id=obj.entity_id).first()
                     if e:
                         return f"{e.first_name} {e.last_name} ({e.employee_id})"
+                except (_DbOperationalError, _DbProgrammingError):
+                    raise
                 except Exception:
                     logger.warning("Caught and logged", exc_info=True)
+        except (_DbOperationalError, _DbProgrammingError) as _db_exc:
+            logger.error(
+                "Database error in get_entity_name for entity_id=%s — re-raising: %s",
+                obj.entity_id, _db_exc, exc_info=True,
+            )
+            raise
         except Exception:
             logger.warning("Caught and logged", exc_info=True)
         return f"Entity #{obj.entity_id}"

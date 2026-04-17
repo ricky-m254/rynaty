@@ -4815,6 +4815,8 @@ class SmartCampusTokenObtainPairSerializer(TokenObtainPairSerializer):
                 hasattr(user, 'userprofile') and user.userprofile and user.userprofile.role
             ) else None
             token['role'] = role
+        except (_DbOperationalError, _DbProgrammingError):
+            raise
         except Exception:
             token['role'] = None
         try:
@@ -4832,6 +4834,8 @@ class SmartCampusTokenObtainPairSerializer(TokenObtainPairSerializer):
                 force_password_change = bool(self.user.userprofile.force_password_change)
                 if self.user.userprofile.role:
                     role_name = self.user.userprofile.role.name
+        except (_DbOperationalError, _DbProgrammingError):
+            raise
         except Exception:
             logger.warning("Caught and logged", exc_info=True)
 
@@ -4854,6 +4858,11 @@ class SmartCampusTokenObtainPairSerializer(TokenObtainPairSerializer):
                     'login_method': login_method,
                     'force_password_change': force_password_change,
                 }),
+            )
+        except (_DbOperationalError, _DbProgrammingError) as _db_exc:
+            logger.error(
+                "Database error writing login AuditLog — DB may be unavailable: %s",
+                _db_exc, exc_info=True,
             )
         except Exception:
             logger.warning("Caught and logged", exc_info=True)
@@ -4907,6 +4916,8 @@ class SmartCampusTokenObtainPairSerializer(TokenObtainPairSerializer):
                 if hasattr(self.user, 'userprofile') and self.user.userprofile and self.user.userprofile.role
                 else None
             )
+        except (_DbOperationalError, _DbProgrammingError):
+            raise
         except Exception:
             role_name = None
 
@@ -5102,6 +5113,12 @@ class RoleSwitchView(APIView):
         try:
             if hasattr(user, 'userprofile') and user.userprofile and user.userprofile.role:
                 current_role = user.userprofile.role.name
+        except (_DbOperationalError, _DbProgrammingError) as _db_exc:
+            logger.error(
+                "Database error reading role in RoleSwitchView for user %s — returning 503: %s",
+                getattr(user, 'id', None), _db_exc, exc_info=True,
+            )
+            raise _LoginDatabaseError()
         except Exception:
             logger.warning("Caught and logged", exc_info=True)
 
@@ -5127,6 +5144,11 @@ class RoleSwitchView(APIView):
                     'to_role': requested_role,
                     'tenant_id': tenant_id,
                 }),
+            )
+        except (_DbOperationalError, _DbProgrammingError) as _db_exc:
+            logger.error(
+                "Database error writing role-switch AuditLog — DB may be unavailable: %s",
+                _db_exc, exc_info=True,
             )
         except Exception:
             logger.warning("Caught and logged", exc_info=True)
