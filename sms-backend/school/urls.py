@@ -3,7 +3,7 @@ from rest_framework.routers import SimpleRouter
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework_simplejwt.views import TokenRefreshView
-from .views import SmartCampusTokenObtainPairView, RoleSwitchView, LogoutView
+from .views import SmartCampusTokenObtainPairView, RoleSwitchView, LogoutView, db_health_check_view
 from .views import (
     StudentSearchForUserCreateView, StudentsByClassForUserCreateView,
     BulkCreateStudentUsersView,
@@ -214,6 +214,10 @@ router.register(r'student-transfers', StudentTransferViewSet, basename='student-
 # URL PATTERNS
 # ==========================================
 urlpatterns = [
+    # 0. DB health check (unauthenticated, lightweight)
+    path('health/', db_health_check_view, name='db_health_check'),
+    path('health', db_health_check_view),
+
     # 1. Authentication (JWT)
     path('auth/login/', SmartCampusTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),

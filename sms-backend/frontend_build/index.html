@@ -22,6 +22,68 @@
     <div id="root"></div>
     <script>
       (function() {
+        var HEALTH_URL = '/api/health/';
+        var POLL_INTERVAL_OK = 30000;
+        var POLL_INTERVAL_DOWN = 10000;
+        var bannerId = 'sc-db-health-banner';
+        var timer = null;
+
+        function showBanner() {
+          if (document.getElementById(bannerId)) return;
+          var bar = document.createElement('div');
+          bar.id = bannerId;
+          bar.setAttribute('role', 'alert');
+          bar.style.cssText = [
+            'position:fixed','top:0','left:0','right:0','z-index:99999',
+            'background:#b91c1c','color:#fff','text-align:center',
+            'padding:10px 16px','font-size:14px','font-family:system-ui,sans-serif',
+            'box-shadow:0 2px 8px rgba(0,0,0,0.3)','line-height:1.4'
+          ].join(';');
+          bar.innerHTML = [
+            '<strong>Service Unavailable</strong>',
+            ' \u2014 The database is temporarily unreachable.',
+            ' Login and other features may not work until the service is restored.'
+          ].join('');
+          document.body.insertBefore(bar, document.body.firstChild);
+          document.body.style.paddingTop = (parseInt(document.body.style.paddingTop || '0') + bar.offsetHeight) + 'px';
+        }
+
+        function hideBanner() {
+          var bar = document.getElementById(bannerId);
+          if (!bar) return;
+          var h = bar.offsetHeight;
+          bar.parentNode.removeChild(bar);
+          var cur = parseInt(document.body.style.paddingTop || '0');
+          document.body.style.paddingTop = Math.max(0, cur - h) + 'px';
+        }
+
+        function check() {
+          clearTimeout(timer);
+          fetch(HEALTH_URL, { cache: 'no-store' })
+            .then(function(r) {
+              if (r.ok) {
+                hideBanner();
+                timer = setTimeout(check, POLL_INTERVAL_OK);
+              } else {
+                showBanner();
+                timer = setTimeout(check, POLL_INTERVAL_DOWN);
+              }
+            })
+            .catch(function() {
+              showBanner();
+              timer = setTimeout(check, POLL_INTERVAL_DOWN);
+            });
+        }
+
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', check);
+        } else {
+          check();
+        }
+      })();
+    </script>
+    <script>
+      (function() {
         var btn = document.createElement('button');
         btn.id = 'global-print-btn';
         btn.title = 'Print this page';

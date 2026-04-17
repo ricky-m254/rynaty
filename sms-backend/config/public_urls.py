@@ -131,12 +131,22 @@ def _serve_react_app(request, path=""):
     )
 
 
+def _db_health_view(request):
+    """Public-schema DB health check — imported lazily to avoid startup ordering issues."""
+    from school.views import db_health_check_view as _view
+    return _view(request)
+
+
 urlpatterns = [
     # 1. System Health
     path("api/ping/", ping_view),
     path("api/ping", ping_view),
     path("health/", ping_view),
     path("health", ping_view),
+
+    # DB-aware health check (unauthenticated) — used by the login page banner
+    path("api/health/", _db_health_view),
+    path("api/health", _db_health_view),
 
     # 2. Authentication (Login + Refresh)
     path("api/auth/login/", _tenant_aware_login_view),

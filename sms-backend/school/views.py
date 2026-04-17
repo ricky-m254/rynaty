@@ -5058,6 +5058,26 @@ class SmartCampusTokenObtainPairSerializer(TokenObtainPairSerializer):
         raise ValidationError({'detail': 'No active account found with the given credentials.'})
 
 
+def db_health_check_view(request):
+    """
+    GET /api/health/
+    Unauthenticated lightweight health-check endpoint.
+    Runs a single cheap SELECT 1 to verify database connectivity.
+    Returns HTTP 200 when the DB is reachable, 503 when it is not.
+    """
+    from django.http import JsonResponse as _JsonResponse
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+    except Exception as exc:
+        logger.warning("Health check: DB unreachable — %s", exc)
+        return _JsonResponse(
+            {"status": "error", "db": "down", "detail": "Database unavailable"},
+            status=503,
+        )
+    return _JsonResponse({"status": "ok", "db": "up"})
+
+
 class SmartCampusTokenObtainPairView(_BaseTokenView):
     serializer_class = SmartCampusTokenObtainPairSerializer
 
