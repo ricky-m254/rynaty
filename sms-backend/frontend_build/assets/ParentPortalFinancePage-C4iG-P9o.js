@@ -1,218 +1,812 @@
-import{r,b as o,j as e}from"./index-D7ltaYVC.js";import{F as N}from"./file-text-BMGjGS-3.js";import{C as h}from"./circle-check-CyyLgyEu.js";import{C as b}from"./circle-alert-QkR7CaoT.js";import{C as v}from"./clock-Cjp0BcMI.js";import"./createLucideIcon-BLtbVmUp.js";
-const c={background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.07)"};
-const fmt=s=>s!=null?"KES "+Number(s).toLocaleString():"KES 0";
-const badge=s=>({PAID:"bg-emerald-500/15 text-emerald-400",PARTIAL:"bg-amber-500/15 text-amber-400",PENDING:"bg-sky-500/15 text-sky-400",OVERDUE:"bg-rose-500/15 text-rose-400"})[s?.toUpperCase()]??"bg-slate-500/15 text-slate-400";
-function E(){
-  const[sum,setSum]=r.useState({});
-  const[inv,setInv]=r.useState([]);
-  const[pay,setPay]=r.useState([]);
-  const[loading,setLoading]=r.useState(!0);
-  const[tab,setTab]=r.useState("invoices");
-  const[mpOpen,setMpOpen]=r.useState(!1);
-  const[mpPhone,setMpPhone]=r.useState("");
-  const[mpAmt,setMpAmt]=r.useState("");
-  const[mpStatus,setMpStatus]=r.useState(null);
-  const[mpErr,setMpErr]=r.useState(null);
-  const[mpBusy,setMpBusy]=r.useState(!1);
-  const[mpCheckout,setMpCheckout]=r.useState(null);
-  const[mpPolling,setMpPolling]=r.useState(!1);
-  const[mpResult,setMpResult]=r.useState(null);
-  const pollRef=r.useRef(null);
-  r.useEffect(()=>{
-    Promise.all([
-      o.get("/parent-portal/finance/summary/"),
-      o.get("/parent-portal/finance/invoices/"),
-      o.get("/parent-portal/finance/payments/")
-    ]).then(([a,b2,c2])=>{
-      setSum(a.data??{});
-      setInv(Array.isArray(b2.data)?b2.data:[]);
-      setPay(Array.isArray(c2.data)?c2.data:[]);
-    }).catch(()=>{}).finally(()=>setLoading(!1));
-  },[]);
-  r.useEffect(()=>{
-    return()=>{if(pollRef.current)clearInterval(pollRef.current);};
-  },[]);
-  const bal=Number(sum.outstanding_balance??0);
-  const openMpesa=()=>{
-    setMpOpen(!0);
-    setMpPhone("");
-    setMpAmt(bal>0?String(Math.ceil(bal)):"");
-    setMpErr(null);
-    setMpStatus(null);
-    setMpCheckout(null);
-    setMpResult(null);
-  };
-  const closeMpesa=()=>{
-    if(pollRef.current)clearInterval(pollRef.current);
-    setMpOpen(!1);
-    setMpBusy(!1);
-    setMpPolling(!1);
-  };
-  const startPoll=checkout=>{
-    setMpPolling(!0);
-    setMpStatus("Waiting for M-Pesa PIN prompt on your phone…");
-    let tries=0;
-    pollRef.current=setInterval(async()=>{
-      tries++;
-      try{
-        const res=await o.get("/parent-portal/finance/mpesa-status/?checkout_request_id="+checkout);
-        const d=res.data;
-        if(d.result_code==="0"||d.status==="completed"){
-          clearInterval(pollRef.current);
-          setMpPolling(!1);
-          setMpResult("success");
-          setMpStatus("Payment successful! Your account has been updated.");
-          o.get("/parent-portal/finance/summary/").then(r2=>setSum(r2.data??{}));
-          o.get("/parent-portal/finance/payments/").then(r2=>setPay(Array.isArray(r2.data)?r2.data:[]));
-        } else if(d.result_code&&d.result_code!=="0"){
-          clearInterval(pollRef.current);
-          setMpPolling(!1);
-          setMpResult("failed");
-          setMpStatus("Payment failed: "+(d.result_desc||"Transaction not completed."));
-        }
-      }catch(err){}
-      if(tries>=20){
-        clearInterval(pollRef.current);
-        setMpPolling(!1);
-        setMpStatus("M-Pesa confirmation is taking longer than expected. Check your payments list shortly.");
-      }
-    },4000);
-  };
-  const initiateMpesa=async()=>{
-    if(!mpPhone.trim()||!mpAmt.trim())return;
-    setMpBusy(!0);
-    setMpErr(null);
-    setMpStatus(null);
-    try{
-      const res=await o.post("/parent-portal/finance/pay/",{payment_method:"mpesa",phone:mpPhone.trim(),amount:mpAmt.trim()});
-      const d=res.data;
-      const chk=d.checkout_request_id||d.CheckoutRequestID;
-      if(chk){
-        setMpCheckout(chk);
-        startPoll(chk);
-      } else {
-        setMpStatus("STK push sent. Please check your phone for the M-Pesa prompt.");
-      }
-    }catch(err){
-      const msg=err?.response?.data?.error||err?.response?.data?.detail||"Failed to initiate M-Pesa payment.";
-      setMpErr(msg);
-    }finally{
-      setMpBusy(!1);
+import { r as React, b as api, j as jsxRuntime } from "./index-D7ltaYVC.js";
+import { F as FileText } from "./file-text-BMGjGS-3.js";
+import { C as CircleCheck } from "./circle-check-CyyLgyEu.js";
+import { C as CircleAlert } from "./circle-alert-QkR7CaoT.js";
+import { C as Clock } from "./clock-Cjp0BcMI.js";
+import { C as CreditCard } from "./credit-card-pJ6qZy3c.js";
+import "./createLucideIcon-BLtbVmUp.js";
+
+const { jsx, jsxs } = jsxRuntime;
+
+const panelStyle = {
+  background: "rgba(255,255,255,0.025)",
+  border: "1px solid rgba(255,255,255,0.07)",
+};
+
+const modalStyle = {
+  background: "#0f172a",
+  border: "1px solid rgba(148,163,184,0.22)",
+  boxShadow: "0 32px 80px rgba(15,23,42,0.55)",
+};
+
+function formatCurrency(value) {
+  return `KES ${Number(value ?? 0).toLocaleString()}`;
+}
+
+function formatDate(value) {
+  if (!value) return "--";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString();
+}
+
+function toAmountInput(value) {
+  const amount = Number(value ?? 0);
+  if (!Number.isFinite(amount) || amount <= 0) return "";
+  return Number.isInteger(amount) ? String(amount) : amount.toFixed(2);
+}
+
+function normalizeStatus(value) {
+  return String(value || "").toUpperCase();
+}
+
+function invoiceBadgeClass(status) {
+  return (
+    {
+      PAID: "bg-emerald-500/15 text-emerald-300",
+      PARTIAL: "bg-amber-500/15 text-amber-300",
+      PARTIALLY_PAID: "bg-amber-500/15 text-amber-300",
+      PENDING: "bg-sky-500/15 text-sky-300",
+      OVERDUE: "bg-rose-500/15 text-rose-300",
+    }[normalizeStatus(status)] ?? "bg-slate-500/15 text-slate-300"
+  );
+}
+
+function flashClass(tone) {
+  return (
+    {
+      success: "border-emerald-500/30 bg-emerald-500/10 text-emerald-200",
+      warning: "border-amber-500/30 bg-amber-500/10 text-amber-200",
+      error: "border-rose-500/30 bg-rose-500/10 text-rose-200",
+      info: "border-sky-500/30 bg-sky-500/10 text-sky-200",
+    }[tone] ?? "border-white/10 bg-white/[0.04] text-slate-200"
+  );
+}
+
+function SummaryCard({ label, value, icon: Icon, color, background }) {
+  return jsxs("div", {
+    className: "flex items-center gap-4 rounded-2xl p-5",
+    style: panelStyle,
+    children: [
+      jsx("div", {
+        className: "flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl",
+        style: { background },
+        children: jsx(Icon, { size: 18, style: { color } }),
+      }),
+      jsxs("div", {
+        children: [
+          jsx("p", {
+            className: "text-[10px] uppercase tracking-wider text-slate-500",
+            children: label,
+          }),
+          jsx("p", {
+            className: "text-lg font-bold font-mono",
+            style: { color },
+            children: value,
+          }),
+        ],
+      }),
+    ],
+  });
+}
+
+function ParentPortalFinancePage() {
+  const [summary, setSummary] = React.useState({});
+  const [invoices, setInvoices] = React.useState([]);
+  const [payments, setPayments] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [tab, setTab] = React.useState("invoices");
+  const [flash, setFlash] = React.useState(null);
+  const [paymentOpen, setPaymentOpen] = React.useState(false);
+  const [paymentMethod, setPaymentMethod] = React.useState("stripe");
+  const [selectedInvoiceId, setSelectedInvoiceId] = React.useState("");
+  const [paymentAmount, setPaymentAmount] = React.useState("");
+  const [phone, setPhone] = React.useState("");
+  const [paymentError, setPaymentError] = React.useState(null);
+  const [paymentStatus, setPaymentStatus] = React.useState(null);
+  const [paymentResult, setPaymentResult] = React.useState(null);
+  const [submitting, setSubmitting] = React.useState(false);
+  const [polling, setPolling] = React.useState(false);
+  const pollRef = React.useRef(null);
+
+  const refreshFinance = async () => {
+    try {
+      const [summaryResponse, invoiceResponse, paymentResponse] = await Promise.all([
+        api.get("/parent-portal/finance/summary/"),
+        api.get("/parent-portal/finance/invoices/"),
+        api.get("/parent-portal/finance/payments/"),
+      ]);
+      setSummary(summaryResponse.data ?? {});
+      setInvoices(Array.isArray(invoiceResponse.data) ? invoiceResponse.data : []);
+      setPayments(Array.isArray(paymentResponse.data) ? paymentResponse.data : []);
+    } catch (error) {
+      setFlash((current) => current ?? { tone: "error", message: "Unable to load finance records right now." });
+    } finally {
+      setLoading(false);
     }
   };
-  return e.jsxs("div",{className:"space-y-6",children:[
-    e.jsxs("div",{children:[
-      e.jsx("p",{className:"text-[10px] font-bold uppercase tracking-widest text-amber-400 mb-1",children:"FINANCE"}),
-      e.jsx("h1",{className:"text-2xl font-display font-bold text-white",children:"Financial Information"}),
-      e.jsx("p",{className:"text-slate-500 text-sm mt-1",children:"Fees, invoices and payment history for your child"})
-    ]}),
-    e.jsx("div",{className:"grid grid-cols-1 gap-3 sm:grid-cols-3",children:[
-      {label:"Total Billed",value:fmt(sum.total_billed),icon:N,color:"#38bdf8",bg:"rgba(14,165,233,0.1)"},
-      {label:"Total Paid",value:fmt(sum.total_paid),icon:h,color:"#10b981",bg:"rgba(16,185,129,0.1)"},
-      {label:"Outstanding Balance",value:fmt(bal),icon:bal>0?b:h,color:bal>0?"#f59e0b":"#10b981",bg:bal>0?"rgba(245,158,11,0.1)":"rgba(16,185,129,0.1)"}
-    ].map(t=>e.jsxs("div",{className:"rounded-2xl p-5 flex items-center gap-4",style:c,children:[
-      e.jsx("div",{className:"w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0",style:{background:t.bg},children:e.jsx(t.icon,{size:18,style:{color:t.color}})}),
-      e.jsxs("div",{children:[
-        e.jsx("p",{className:"text-[10px] text-slate-500 uppercase tracking-wider",children:t.label}),
-        e.jsx("p",{className:"text-lg font-bold font-mono",style:{color:t.color},children:t.value})
-      ]})
-    ]},t.label))}),
-    bal>0&&e.jsxs("div",{className:"rounded-2xl px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-4",style:{background:"rgba(245,158,11,0.06)",border:"1px solid rgba(245,158,11,0.22)"},children:[
-      e.jsxs("div",{className:"flex items-start gap-3 flex-1",children:[
-        e.jsx(b,{size:18,className:"text-amber-400 flex-shrink-0 mt-0.5"}),
-        e.jsxs("p",{className:"text-sm text-amber-200",children:["Your child has an outstanding balance of ",e.jsx("strong",{children:fmt(bal)}),". Settle via M-Pesa STK Push directly from this portal."]})
-      ]}),
-      e.jsxs("button",{
-        onClick:openMpesa,
-        className:"flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold transition-all flex-shrink-0",
-        style:{background:"linear-gradient(135deg,#1a7a4a,#16a34a)",color:"#fff",border:"1px solid rgba(16,163,74,0.5)"},
-        children:[
-          e.jsx("span",{style:{fontSize:16},children:"💳"}),
-          "Pay via M-Pesa"
-        ]
-      })
-    ]}),
-    mpOpen&&e.jsx("div",{className:"fixed inset-0 z-50 flex items-center justify-center p-4",style:{background:"rgba(0,0,0,0.75)"},children:
-      e.jsxs("div",{className:"rounded-2xl p-6 w-full max-w-md space-y-5",style:{background:"#0d1a13",border:"1px solid rgba(16,185,129,0.25)"},children:[
-        e.jsxs("div",{className:"flex items-center justify-between",children:[
-          e.jsxs("div",{children:[
-            e.jsx("h2",{className:"text-lg font-bold text-white",children:"M-Pesa STK Push"}),
-            e.jsx("p",{className:"text-xs text-slate-400 mt-0.5",children:"You will receive a PIN prompt on your phone"})
-          ]}),
-          e.jsx("button",{onClick:closeMpesa,className:"text-slate-500 hover:text-slate-300 text-xl font-bold",children:"×"})
-        ]}),
-        !mpCheckout&&!mpResult&&e.jsxs("div",{className:"space-y-3",children:[
-          e.jsxs("div",{children:[
-            e.jsx("label",{className:"text-xs text-slate-400 mb-1 block",children:"Safaricom Phone Number"}),
-            e.jsx("input",{
-              type:"tel",
-              value:mpPhone,
-              onChange:ev=>setMpPhone(ev.target.value),
-              placeholder:"e.g. 0712345678",
-              className:"w-full rounded-xl border border-white/[0.09] bg-slate-900 px-4 py-2.5 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-emerald-500/50"
-            })
-          ]}),
-          e.jsxs("div",{children:[
-            e.jsx("label",{className:"text-xs text-slate-400 mb-1 block",children:"Amount (KES)"}),
-            e.jsx("input",{
-              type:"number",
-              value:mpAmt,
-              onChange:ev=>setMpAmt(ev.target.value),
-              min:1,
-              className:"w-full rounded-xl border border-white/[0.09] bg-slate-900 px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500/50"
-            })
-          ]}),
-          mpErr&&e.jsx("div",{className:"rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-2.5 text-xs text-rose-300",children:mpErr}),
-          e.jsxs("button",{
-            onClick:initiateMpesa,
-            disabled:mpBusy||!mpPhone.trim()||!mpAmt.trim(),
-            className:"w-full rounded-xl py-3 text-sm font-bold transition-all disabled:opacity-50",
-            style:{background:"linear-gradient(135deg,#1a7a4a,#16a34a)",color:"#fff"},
-            children:mpBusy?"Sending STK Push…":"Send M-Pesa Request"
+
+  const clearPolling = () => {
+    if (pollRef.current) {
+      window.clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  };
+
+  React.useEffect(() => {
+    setLoading(true);
+    refreshFinance();
+    return () => {
+      clearPolling();
+    };
+  }, []);
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+
+    const params = new URLSearchParams(window.location.search);
+    const stripeState = params.get("stripe");
+    if (!stripeState) return undefined;
+
+    let refreshTimer = null;
+    if (stripeState === "success") {
+      setFlash({
+        tone: "success",
+        message: "Stripe checkout completed. If your balance does not refresh immediately, give it a moment and refresh.",
+      });
+      refreshTimer = window.setTimeout(() => {
+        refreshFinance();
+      }, 2500);
+    } else if (stripeState === "cancel") {
+      setFlash({
+        tone: "warning",
+        message: "Stripe checkout was canceled before payment completed.",
+      });
+    }
+
+    params.delete("stripe");
+    params.delete("session_id");
+    const nextQuery = params.toString();
+    const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}${window.location.hash || ""}`;
+    window.history.replaceState({}, document.title, nextUrl);
+
+    return () => {
+      if (refreshTimer) {
+        window.clearTimeout(refreshTimer);
+      }
+    };
+  }, []);
+
+  const outstandingBalance = Number(summary.outstanding_balance ?? 0);
+  const outstandingInvoices = invoices.filter((invoice) => Number(invoice.balance_due ?? 0) > 0);
+  const selectedInvoice =
+    outstandingInvoices.find((invoice) => String(invoice.id) === String(selectedInvoiceId)) ?? null;
+
+  const openPaymentModal = (invoice = null, preferredMethod = "stripe") => {
+    clearPolling();
+    setPaymentMethod(preferredMethod);
+    setSelectedInvoiceId(invoice ? String(invoice.id) : "");
+    setPaymentAmount(toAmountInput(invoice ? invoice.balance_due : outstandingBalance));
+    setPhone("");
+    setPaymentError(null);
+    setPaymentStatus(null);
+    setPaymentResult(null);
+    setSubmitting(false);
+    setPolling(false);
+    setPaymentOpen(true);
+  };
+
+  const closePaymentModal = () => {
+    clearPolling();
+    setPaymentOpen(false);
+    setSubmitting(false);
+    setPolling(false);
+  };
+
+  const startMpesaPolling = (checkoutRequestId) => {
+    clearPolling();
+    setPolling(true);
+    setPaymentResult("pending");
+    let attempts = 0;
+
+    pollRef.current = window.setInterval(async () => {
+      attempts += 1;
+      try {
+        const response = await api.get(
+          `/parent-portal/finance/mpesa-status/?checkout_request_id=${encodeURIComponent(checkoutRequestId)}`,
+        );
+        const status = normalizeStatus(response.data?.status);
+        if (status === "SUCCEEDED" || status === "COMPLETED") {
+          clearPolling();
+          setPolling(false);
+          setPaymentResult("success");
+          setPaymentStatus(response.data?.message || "Payment confirmed.");
+          await refreshFinance();
+          return;
+        }
+        if (status === "FAILED" || status === "CANCELLED" || status === "CANCELED") {
+          clearPolling();
+          setPolling(false);
+          setPaymentResult("failed");
+          setPaymentStatus(response.data?.message || "Payment failed. Please try again.");
+          return;
+        }
+        setPaymentStatus(response.data?.message || "Waiting for M-Pesa confirmation...");
+      } catch (pollError) {
+        if (attempts >= 20) {
+          clearPolling();
+          setPolling(false);
+          setPaymentResult("pending");
+          setPaymentStatus("M-Pesa confirmation is taking longer than expected. Check your payment history shortly.");
+        }
+        return;
+      }
+
+      if (attempts >= 20) {
+        clearPolling();
+        setPolling(false);
+        setPaymentResult("pending");
+        setPaymentStatus("M-Pesa confirmation is taking longer than expected. Check your payment history shortly.");
+      }
+    }, 4000);
+  };
+
+  const submitPayment = async () => {
+    const numericAmount = Number(paymentAmount);
+    const maximumAmount = selectedInvoice ? Number(selectedInvoice.balance_due ?? 0) : outstandingBalance;
+
+    if (!paymentAmount || Number.isNaN(numericAmount) || numericAmount <= 0) {
+      setPaymentError("Enter a valid amount.");
+      return;
+    }
+    if (numericAmount > maximumAmount) {
+      setPaymentError("Amount cannot exceed the selected outstanding balance.");
+      return;
+    }
+    if (paymentMethod === "mpesa" && !phone.trim()) {
+      setPaymentError("Phone number is required for M-Pesa payment.");
+      return;
+    }
+
+    setSubmitting(true);
+    setPaymentError(null);
+    setPaymentStatus(null);
+    setPaymentResult(null);
+
+    try {
+      const requestedPaymentMethod = paymentMethod === "bank" ? "Bank Transfer" : paymentMethod;
+      const payload = {
+        amount: paymentAmount,
+        payment_method: requestedPaymentMethod,
+      };
+
+      if (selectedInvoiceId) {
+        payload.invoice_id = Number(selectedInvoiceId);
+      }
+
+      if (paymentMethod === "mpesa") {
+        payload.phone = phone.trim();
+      } else if (paymentMethod === "stripe") {
+        payload.success_url = "/modules/parent-portal/finance?stripe=success&session_id={CHECKOUT_SESSION_ID}";
+        payload.cancel_url = "/modules/parent-portal/finance?stripe=cancel";
+      }
+
+      const response = await api.post("/parent-portal/finance/pay/", payload);
+      if (paymentMethod === "stripe") {
+        const checkoutUrl = response.data?.checkout_url;
+        if (checkoutUrl && typeof window !== "undefined") {
+          window.location.assign(checkoutUrl);
+          return;
+        }
+        setPaymentResult("pending");
+        setPaymentStatus("Stripe checkout link created, but the redirect URL was not returned.");
+        return;
+      }
+
+      if (paymentMethod === "bank") {
+        setPaymentResult("success");
+        setPaymentStatus(
+          response.data?.message ||
+            `Bank transfer initiated. Use reference ${response.data?.reference_number || "from the portal"} when sending funds.`,
+        );
+        return;
+      }
+
+      const checkoutRequestId = response.data?.checkout_request_id;
+      setPaymentStatus(response.data?.message || "STK push sent. Please confirm the payment on your phone.");
+      if (checkoutRequestId) {
+        startMpesaPolling(checkoutRequestId);
+      }
+    } catch (submitError) {
+      setPaymentError(
+        submitError?.response?.data?.error ||
+          submitError?.response?.data?.detail ||
+          "Unable to initiate payment right now.",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return jsxs("div", {
+    className: "space-y-6",
+    children: [
+      jsxs("div", {
+        children: [
+          jsx("p", {
+            className: "mb-1 text-[10px] font-bold uppercase tracking-widest text-amber-400",
+            children: "FINANCE",
+          }),
+          jsx("h1", { className: "text-2xl font-display font-bold text-white", children: "Financial Information" }),
+          jsx("p", {
+            className: "mt-1 text-sm text-slate-500",
+            children: "Fees, invoices, payment history, and live portal payment options for your child.",
+          }),
+        ],
+      }),
+      flash &&
+        jsx("div", {
+          className: `flex items-start gap-2 rounded-xl border px-4 py-3 text-sm ${flashClass(flash.tone)}`,
+          children: jsxs(React.Fragment, {
+            children: [
+              jsx(CircleAlert, { size: 16, className: "mt-0.5 flex-shrink-0" }),
+              jsx("span", { children: flash.message }),
+            ],
+          }),
+        }),
+      jsx("div", {
+        className: "grid grid-cols-1 gap-3 sm:grid-cols-3",
+        children: [
+          {
+            label: "Total Billed",
+            value: formatCurrency(summary.total_billed),
+            icon: FileText,
+            color: "#38bdf8",
+            background: "rgba(14,165,233,0.1)",
+          },
+          {
+            label: "Total Paid",
+            value: formatCurrency(summary.total_paid),
+            icon: CircleCheck,
+            color: "#10b981",
+            background: "rgba(16,185,129,0.1)",
+          },
+          {
+            label: "Outstanding Balance",
+            value: formatCurrency(outstandingBalance),
+            icon: outstandingBalance > 0 ? CircleAlert : CircleCheck,
+            color: outstandingBalance > 0 ? "#f59e0b" : "#10b981",
+            background: outstandingBalance > 0 ? "rgba(245,158,11,0.1)" : "rgba(16,185,129,0.1)",
+          },
+        ].map((card) =>
+          jsx(
+            SummaryCard,
+            {
+              label: card.label,
+              value: card.value,
+              icon: card.icon,
+              color: card.color,
+              background: card.background,
+            },
+            card.label,
+          ),
+        ),
+      }),
+      outstandingBalance > 0 &&
+        jsxs("div", {
+          className: "flex flex-col gap-4 rounded-2xl px-5 py-4 sm:flex-row sm:items-center",
+          style: { background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.22)" },
+          children: [
+            jsxs("div", {
+              className: "flex flex-1 items-start gap-3",
+              children: [
+                jsx(CreditCard, { size: 18, className: "mt-0.5 flex-shrink-0 text-amber-400" }),
+                jsxs("div", {
+                  children: [
+                    jsx("p", {
+                      className: "text-sm font-semibold text-amber-100",
+                      children: "Portal payments are ready",
+                    }),
+                    jsxs("p", {
+                      className: "text-sm text-amber-200",
+                      children: [
+                        "Your child has an outstanding balance of ",
+                        jsx("strong", { children: formatCurrency(outstandingBalance) }),
+                        ". Choose M-Pesa, bank transfer, or continue to Stripe Checkout from this portal.",
+                      ],
+                    }),
+                  ],
+                }),
+              ],
+            }),
+            jsx("button", {
+              type: "button",
+              onClick: () => openPaymentModal(null, "stripe"),
+              className:
+                "rounded-xl border border-emerald-400/40 bg-emerald-400/12 px-5 py-2.5 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-400/18",
+              children: "Pay balance",
+            }),
+          ],
+        }),
+      jsx("div", {
+        className: "flex gap-2",
+        children: ["invoices", "payments"].map((section) =>
+          jsx(
+            "button",
+            {
+              type: "button",
+              onClick: () => setTab(section),
+              className: `rounded-xl px-4 py-2 text-sm font-medium transition-all ${
+                tab === section ? "bg-amber-500/20 text-amber-300" : "text-slate-500 hover:text-slate-300"
+              }`,
+              children:
+                section === "invoices" ? `Invoices (${invoices.length})` : `Payments (${payments.length})`,
+            },
+            section,
+          ),
+        ),
+      }),
+      loading
+        ? jsx("div", {
+            className: "py-12 text-center text-sm text-slate-500",
+            children: "Loading financial records...",
           })
-        ]}),
-        mpStatus&&e.jsxs("div",{className:"rounded-xl px-4 py-3 text-sm flex items-start gap-3",style:{background:mpResult==="success"?"rgba(16,185,129,0.1)":mpResult==="failed"?"rgba(239,68,68,0.1)":"rgba(14,165,233,0.1)",border:mpResult==="success"?"1px solid rgba(16,185,129,0.3)":mpResult==="failed"?"1px solid rgba(239,68,68,0.3)":"1px solid rgba(14,165,233,0.3)"},children:[
-          mpPolling&&e.jsx("span",{className:"animate-spin",children:"⟳"}),
-          e.jsx("span",{className:mpResult==="success"?"text-emerald-300":mpResult==="failed"?"text-red-300":"text-sky-300",children:mpStatus})
-        ]}),
-        mpResult&&e.jsx("button",{onClick:closeMpesa,className:"w-full rounded-xl py-2.5 text-sm font-semibold text-slate-300 border border-white/[0.09] hover:bg-white/[0.04] transition",children:"Close"})
-      ]})
-    }),
-    e.jsx("div",{className:"flex gap-2",children:["invoices","payments"].map(t=>e.jsx("button",{onClick:()=>setTab(t),className:"rounded-xl px-4 py-2 text-sm font-medium transition-all "+(tab===t?"bg-amber-500/20 text-amber-300":"text-slate-500 hover:text-slate-300"),children:t==="invoices"?"Invoices ("+inv.length+")":"Payments ("+pay.length+")"},t))}),
-    loading?e.jsx("div",{className:"py-12 text-center text-slate-500 text-sm",children:"Loading financial records…"}):tab==="invoices"
-      ?e.jsx("div",{className:"space-y-3",children:inv.length===0?e.jsx("div",{className:"rounded-2xl p-10 text-center text-sm text-slate-500",style:c,children:"No invoices found."}):inv.map(t=>e.jsx("div",{className:"rounded-2xl p-5",style:c,children:
-        e.jsxs("div",{className:"flex items-start justify-between gap-4",children:[
-          e.jsxs("div",{className:"flex-1 min-w-0",children:[
-            e.jsxs("div",{className:"flex items-center gap-2 mb-1",children:[
-              e.jsx("span",{className:"px-2 py-0.5 rounded-full text-[10px] font-bold "+badge(t.status),children:t.status}),
-              e.jsx("span",{className:"text-xs text-slate-500 font-mono",children:t.invoice_number})
-            ]}),
-            e.jsx("p",{className:"font-semibold text-slate-200 truncate",children:t.description||"School Fees"}),
-            e.jsxs("div",{className:"flex flex-wrap gap-3 mt-1.5 text-xs text-slate-500",children:[
-              t.term&&e.jsxs("span",{children:["Term: ",t.term]}),
-              t.academic_year&&e.jsxs("span",{children:["Year: ",t.academic_year]}),
-              t.due_date&&e.jsxs("span",{className:"flex items-center gap-1",children:[e.jsx(v,{size:10}),"Due: ",new Date(t.due_date).toLocaleDateString()]})
-            ]})
-          ]}),
-          e.jsxs("div",{className:"text-right flex-shrink-0",children:[
-            e.jsx("p",{className:"text-sm font-bold text-white",children:fmt(t.amount)}),
-            t.amount_paid>0&&e.jsxs("p",{className:"text-xs text-emerald-400",children:["Paid: ",fmt(t.amount_paid)]}),
-            Number(t.balance)>0&&e.jsxs("p",{className:"text-xs text-amber-400",children:["Due: ",fmt(t.balance)]})
-          ]})
-        ]})
-      },t.id))})
-      :e.jsx("div",{className:"rounded-2xl overflow-hidden",style:c,children:pay.length===0
-        ?e.jsx("p",{className:"py-10 text-center text-sm text-slate-500",children:"No payments recorded."})
-        :e.jsxs("table",{className:"w-full text-sm",children:[
-          e.jsx("thead",{children:e.jsx("tr",{className:"border-b border-white/[0.07]",children:["Date","Amount","Method","Reference"].map(t=>e.jsx("th",{className:"px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500",children:t},t))})}),
-          e.jsx("tbody",{className:"divide-y divide-white/[0.04]",children:pay.map((t,idx)=>e.jsxs("tr",{className:"hover:bg-white/[0.015] "+(idx%2!==0?"bg-white/[0.008]":""),children:[
-            e.jsx("td",{className:"px-4 py-3 text-slate-400",children:t.payment_date?new Date(t.payment_date).toLocaleDateString():"—"}),
-            e.jsx("td",{className:"px-4 py-3 font-semibold text-emerald-300",children:fmt(t.amount)}),
-            e.jsx("td",{className:"px-4 py-3 text-slate-400 capitalize",children:t.payment_method?.replace(/_/g," ")??"—"}),
-            e.jsx("td",{className:"px-4 py-3 text-slate-500 font-mono text-xs",children:t.reference_number||t.transaction_reference||"—"})
-          ]},t.id))})
-        ]})
-      })
-  ]});
+        : tab === "invoices"
+          ? jsx("div", {
+              className: "space-y-3",
+              children:
+                invoices.length === 0
+                  ? jsx("div", {
+                      className: "rounded-2xl p-10 text-center text-sm text-slate-500",
+                      style: panelStyle,
+                      children: "No invoices found.",
+                    })
+                  : invoices.map((invoice) => {
+                      const balanceDue = Number(invoice.balance_due ?? 0);
+                      return jsx(
+                        "div",
+                        {
+                          className: "rounded-2xl p-5",
+                          style: panelStyle,
+                          children: jsxs("div", {
+                            className: "flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between",
+                            children: [
+                              jsxs("div", {
+                                className: "min-w-0 flex-1",
+                                children: [
+                                  jsxs("div", {
+                                    className: "mb-1 flex flex-wrap items-center gap-2",
+                                    children: [
+                                      jsx("span", {
+                                        className: `rounded-full px-2 py-0.5 text-[10px] font-bold ${invoiceBadgeClass(
+                                          invoice.status,
+                                        )}`,
+                                        children: invoice.status || "PENDING",
+                                      }),
+                                      jsx("span", {
+                                        className: "font-mono text-xs text-slate-500",
+                                        children: `Invoice #${invoice.id}`,
+                                      }),
+                                    ],
+                                  }),
+                                  jsx("p", {
+                                    className: "font-semibold text-slate-200",
+                                    children: `School Fees Invoice #${invoice.id}`,
+                                  }),
+                                  jsxs("div", {
+                                    className: "mt-1.5 flex flex-wrap gap-3 text-xs text-slate-500",
+                                    children: [
+                                      jsx("span", { children: `Issued: ${formatDate(invoice.invoice_date)}` }),
+                                      jsx("span", {
+                                        className: "flex items-center gap-1",
+                                        children: [jsx(Clock, { size: 10 }), `Due: ${formatDate(invoice.due_date)}`],
+                                      }),
+                                    ],
+                                  }),
+                                ],
+                              }),
+                              jsxs("div", {
+                                className: "flex flex-col gap-3 lg:items-end",
+                                children: [
+                                  jsxs("div", {
+                                    className: "text-left lg:text-right",
+                                    children: [
+                                      jsx("p", {
+                                        className: "text-sm font-bold text-white",
+                                        children: formatCurrency(invoice.total_amount),
+                                      }),
+                                      jsx("p", {
+                                        className: "text-xs text-emerald-400",
+                                        children: `Paid: ${formatCurrency(
+                                          Number(invoice.total_amount ?? 0) - balanceDue,
+                                        )}`,
+                                      }),
+                                      balanceDue > 0 &&
+                                        jsx("p", {
+                                          className: "text-xs text-amber-400",
+                                          children: `Due: ${formatCurrency(balanceDue)}`,
+                                        }),
+                                    ],
+                                  }),
+                                  jsxs("div", {
+                                    className: "flex flex-wrap gap-2",
+                                    children: [
+                                      invoice.download_url &&
+                                        jsx("a", {
+                                          href: invoice.download_url,
+                                          target: "_blank",
+                                          rel: "noreferrer",
+                                          className:
+                                            "rounded-xl border border-white/[0.1] px-4 py-2 text-xs font-semibold text-slate-300 transition hover:bg-white/[0.04]",
+                                          children: "Download",
+                                        }),
+                                      balanceDue > 0 &&
+                                        jsx("button", {
+                                          type: "button",
+                                          onClick: () => openPaymentModal(invoice, "stripe"),
+                                          className:
+                                            "rounded-xl border border-emerald-400/35 bg-emerald-400/10 px-4 py-2 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-400/15",
+                                          children: "Pay invoice",
+                                        }),
+                                    ],
+                                  }),
+                                ],
+                              }),
+                            ],
+                          }),
+                        },
+                        invoice.id,
+                      );
+                    }),
+            })
+          : jsx("div", {
+              className: "overflow-hidden rounded-2xl",
+              style: panelStyle,
+              children:
+                payments.length === 0
+                  ? jsx("p", {
+                      className: "py-10 text-center text-sm text-slate-500",
+                      children: "No payments recorded.",
+                    })
+                  : jsxs("table", {
+                      className: "w-full text-sm",
+                      children: [
+                        jsx("thead", {
+                          children: jsx("tr", {
+                            className: "border-b border-white/[0.07]",
+                            children: ["Date", "Amount", "Method", "Reference"].map((label) =>
+                              jsx(
+                                "th",
+                                {
+                                  className: "px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500",
+                                  children: label,
+                                },
+                                label,
+                              ),
+                            ),
+                          }),
+                        }),
+                        jsx("tbody", {
+                          className: "divide-y divide-white/[0.04]",
+                          children: payments.map((payment, index) =>
+                            jsxs(
+                              "tr",
+                              {
+                                className: `hover:bg-white/[0.015] ${index % 2 !== 0 ? "bg-white/[0.008]" : ""}`,
+                                children: [
+                                  jsx("td", {
+                                    className: "px-4 py-3 text-slate-400",
+                                    children: formatDate(payment.payment_date),
+                                  }),
+                                  jsx("td", {
+                                    className: "px-4 py-3 font-semibold text-emerald-300",
+                                    children: formatCurrency(payment.amount),
+                                  }),
+                                  jsx("td", {
+                                    className: "px-4 py-3 capitalize text-slate-400",
+                                    children: payment.payment_method?.replace(/_/g, " ") ?? "--",
+                                  }),
+                                  jsx("td", {
+                                    className: "px-4 py-3 font-mono text-xs text-slate-500",
+                                    children: payment.reference_number || "--",
+                                  }),
+                                ],
+                              },
+                              payment.id,
+                            ),
+                          ),
+                        }),
+                      ],
+                    }),
+            }),
+      paymentOpen &&
+        jsx("div", {
+          className: "fixed inset-0 z-50 flex items-center justify-center p-4",
+          style: { background: "rgba(2,6,23,0.78)" },
+          children: jsx("div", {
+            className: "w-full max-w-lg rounded-3xl p-6",
+            style: modalStyle,
+            children: jsxs("div", {
+              className: "space-y-5",
+              children: [
+                jsxs("div", {
+                  className: "flex items-start justify-between gap-4",
+                  children: [
+                    jsxs("div", {
+                      children: [
+                        jsx("h2", { className: "text-lg font-semibold text-white", children: "Make a payment" }),
+                        jsx("p", {
+                          className: "mt-1 text-xs text-slate-400",
+                          children: selectedInvoice
+                            ? `Invoice #${selectedInvoice.id} | Outstanding ${formatCurrency(selectedInvoice.balance_due)}`
+                            : `Apply a payment against the overall outstanding balance of ${formatCurrency(outstandingBalance)}.`,
+                        }),
+                      ],
+                    }),
+                    jsx("button", {
+                      type: "button",
+                      onClick: closePaymentModal,
+                      className: "text-xl text-slate-500 transition hover:text-slate-300",
+                      children: "x",
+                    }),
+                  ],
+                }),
+                jsx("div", {
+                  className: "grid grid-cols-3 gap-2 rounded-2xl bg-slate-900/70 p-1",
+                  children: [
+                    { id: "stripe", label: "Card / Stripe" },
+                    { id: "mpesa", label: "M-Pesa" },
+                    { id: "bank", label: "Bank transfer" },
+                  ].map((method) =>
+                    jsx(
+                      "button",
+                      {
+                        type: "button",
+                        onClick: () => {
+                          setPaymentMethod(method.id);
+                          setPaymentError(null);
+                        },
+                        className: `rounded-xl px-3 py-2 text-sm font-semibold transition ${
+                          paymentMethod === method.id
+                            ? "bg-emerald-400/15 text-emerald-100"
+                            : "text-slate-400 hover:text-slate-200"
+                        }`,
+                        children: method.label,
+                      },
+                      method.id,
+                    ),
+                  ),
+                }),
+                outstandingInvoices.length > 0 &&
+                  jsxs("label", {
+                    className: "block text-sm",
+                    children: [
+                      jsx("span", {
+                        className: "mb-1 block text-xs text-slate-400",
+                        children: "Apply to invoice",
+                      }),
+                      jsx("select", {
+                        value: selectedInvoiceId,
+                        onChange: (event) => {
+                          const nextId = event.target.value;
+                          const nextInvoice =
+                            outstandingInvoices.find((invoice) => String(invoice.id) === String(nextId)) ?? null;
+                          setSelectedInvoiceId(nextId);
+                          setPaymentAmount(toAmountInput(nextInvoice ? nextInvoice.balance_due : outstandingBalance));
+                          setPaymentError(null);
+                        },
+                        className:
+                          "w-full rounded-xl border border-white/[0.08] bg-slate-950 px-4 py-2.5 text-sm text-white outline-none focus:border-emerald-400/40",
+                        children: [
+                          jsx("option", { value: "", children: "Overall outstanding balance" }),
+                          ...outstandingInvoices.map((invoice) =>
+                            jsx(
+                              "option",
+                              {
+                                value: invoice.id,
+                                children: `Invoice #${invoice.id} | ${formatCurrency(invoice.balance_due)}`,
+                              },
+                              invoice.id,
+                            ),
+                          ),
+                        ],
+                      }),
+                    ],
+                  }),
+                jsxs("label", {
+                  className: "block text-sm",
+                  children: [
+                    jsx("span", { className: "mb-1 block text-xs text-slate-400", children: "Amount (KES)" }),
+                    jsx("input", {
+                      type: "number",
+                      min: "1",
+                      max: selectedInvoice ? selectedInvoice.balance_due : outstandingBalance,
+                      value: paymentAmount,
+                      onChange: (event) => {
+                        setPaymentAmount(event.target.value);
+                        setPaymentError(null);
+                      },
+                      className:
+                        "w-full rounded-xl border border-white/[0.08] bg-slate-950 px-4 py-2.5 text-sm text-white outline-none focus:border-emerald-400/40",
+                    }),
+                  ],
+                }),
+                paymentMethod === "mpesa" &&
+                  jsxs("label", {
+                    className: "block text-sm",
+                    children: [
+                      jsx("span", { className: "mb-1 block text-xs text-slate-400", children: "Safaricom phone number" }),
+                      jsx("input", {
+                        type: "tel",
+                        value: phone,
+                        onChange: (event) => {
+                          setPhone(event.target.value);
+                          setPaymentError(null);
+                        },
+                        placeholder: "e.g. 0712345678",
+                        className:
+                          "w-full rounded-xl border border-white/[0.08] bg-slate-950 px-4 py-2.5 text-sm text-white outline-none focus:border-emerald-400/40",
+                      }),
+                    ],
+                  }),
+                paymentMethod === "bank" &&
+                  jsx("div", {
+                    className: "rounded-xl border border-sky-500/25 bg-sky-500/10 px-4 py-3 text-xs text-sky-100",
+                    children:
+                      "Create a bank-transfer reference here, then include it in your transfer narration or deposit slip. The balance updates after reconciliation.",
+                  }),
+                paymentError &&
+                  jsx("div", {
+                    className: "rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200",
+                    children: paymentError,
+                  }),
+                paymentStatus &&
+                  jsx("div", {
+                    className: `rounded-xl border px-4 py-3 text-sm ${flashClass(
+                      paymentResult === "success"
+                        ? "success"
+                        : paymentResult === "failed"
+                          ? "error"
+                          : "info",
+                    )}`,
+                    children: paymentStatus,
+                  }),
+                jsxs("div", {
+                  className: "flex flex-col gap-2 sm:flex-row",
+                  children: [
+                    jsx("button", {
+                      type: "button",
+                      onClick: submitPayment,
+                      disabled: submitting || polling,
+                      className:
+                        "flex-1 rounded-xl bg-emerald-400 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60",
+                      children:
+                        paymentMethod === "stripe"
+                          ? submitting
+                            ? "Preparing checkout..."
+                            : "Continue to Stripe"
+                          : paymentMethod === "bank"
+                            ? submitting
+                              ? "Creating transfer reference..."
+                              : "Create bank reference"
+                            : submitting
+                              ? "Sending STK push..."
+                              : "Send M-Pesa prompt",
+                    }),
+                    jsx("button", {
+                      type: "button",
+                      onClick: closePaymentModal,
+                      className:
+                        "rounded-xl border border-white/[0.1] px-4 py-2.5 text-sm font-semibold text-slate-300 transition hover:bg-white/[0.04]",
+                      children: paymentResult === "success" ? "Close" : "Cancel",
+                    }),
+                  ],
+                }),
+              ],
+            }),
+          }),
+        }),
+    ],
+  });
 }
-export{E as default};
+
+export { ParentPortalFinancePage as default };

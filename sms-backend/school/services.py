@@ -1,4 +1,7 @@
-from django.db import transaction, models
+import hashlib
+import json
+
+from django.db import transaction, models, connection
 from django.db.models import Sum
 from django.utils import timezone
 from .models import (
@@ -9,6 +12,7 @@ from .models import (
     , AccountingPeriod, ChartOfAccount, JournalEntry, JournalLine
     , CashbookEntry, PaymentGatewayTransaction, PaymentGatewayWebhookEvent, BankStatementLine
     , Module, TenantModule, ModuleSetting, FeeStructure, BalanceCarryForward
+    , SchoolProfile
 )
 from .events import (
     invoice_created, payment_recorded, payment_allocated,
@@ -18,6 +22,202 @@ from decimal import Decimal
 from datetime import timedelta
 
 class FinanceService:
+    @staticmethod
+    def resolve_public_base_url(request=None):
+        import logging
+        import os
+
+        from django_tenants.utils import get_public_schema_name, schema_context
+
+        from clients.models import Domain
+
+        log = logging.getLogger(__name__)
+        base_url = ""
+
+        try:
+            from .models import TenantSettings
+
+            setting = TenantSettings.objects.filter(key="system.callback_base_url").first()
+            if setting and setting.value:
+                base_url = str(setting.value).strip().rstrip("/")
+                if base_url:
+                    return base_url, "tenant_settings"
+        except Exception as exc:
+            log.warning("Could not read system.callback_base_url from TenantSettings: %s", exc)
+
+        site_base = os.environ.get("SITE_BASE_URL", "").strip().rstrip("/")
+        if site_base:
+            return site_base, "SITE_BASE_URL"
+
+        replit_domains = os.environ.get("REPLIT_DOMAINS", "").strip()
+        if replit_domains:
+            first_domain = replit_domains.split(",")[0].strip()
+            if first_domain:
+                return f"https://{first_domain}", "REPLIT_DOMAINS"
+
+        schema_name = getattr(getattr(request, "tenant", None), "schema_name", None) or getattr(connection, "schema_name", None)
+        if schema_name and schema_name != get_public_schema_name():
+            try:
+                with schema_context(get_public_schema_name()):
+                    domain = (
+                        Domain.objects.filter(tenant__schema_name=schema_name, is_primary=True)
+                        .values_list("domain", flat=True)
+                        .first()
+                    ) or (
+                        Domain.objects.filter(tenant__schema_name=schema_name)
+                        .values_list("domain", flat=True)
+                        .first()
+                    )
+                if domain:
+                    normalized_domain = str(domain).strip().rstrip("/")
+                    if normalized_domain:
+                        if normalized_domain.startswith(("http://", "https://")):
+                            return normalized_domain, "tenant_domain"
+                        return f"https://{normalized_domain}", "tenant_domain"
+            except Exception as exc:
+                log.warning("Could not resolve primary domain for schema %s: %s", schema_name, exc)
+
+        if request is not None:
+            return request.build_absolute_uri("/").rstrip("/"), "request_fallback"
+
+        return "", "unresolved"
+
+    @staticmethod
+    def resolve_public_url(path, request=None):
+        base_url, source = FinanceService.resolve_public_base_url(request=request)
+        normalized_path = str(path or "").strip()
+        if not normalized_path.startswith("/"):
+            normalized_path = f"/{normalized_path}"
+        if base_url:
+            return f"{base_url.rstrip('/')}{normalized_path}", source
+        return normalized_path, source
+
+    @staticmethod
+    def create_stripe_checkout_transaction(
+        *,
+        request,
+        student,
+        amount,
+        initiated_by,
+        invoice=None,
+        source="finance",
+        currency="",
+        notes="",
+        description="",
+        reference="",
+        success_url="",
+        cancel_url="",
+        customer_email="",
+        extra_payload=None,
+    ):
+        import uuid
+
+        from .stripe import create_checkout_session
+
+        if not student:
+            raise ValueError("Student is required for Stripe checkout.")
+
+        amount_value = Decimal(str(amount or "0"))
+        if amount_value <= 0:
+            raise ValueError("Amount must be greater than zero.")
+
+        if invoice and invoice.student_id != student.id:
+            raise ValueError("Invoice does not belong to the selected student.")
+
+        profile = SchoolProfile.objects.filter(is_active=True).first()
+        currency_code = str(currency or getattr(profile, "currency", "KES") or "KES").upper()
+        notes_text = str(notes or "").strip()
+        description_text = str(
+            description
+            or notes_text
+            or f"School fee payment for {student.first_name} {student.last_name}"
+        ).strip()
+        reference_value = str(reference or f"STR-{uuid.uuid4().hex[:8].upper()}").strip()
+
+        def _to_absolute_url(url_value):
+            value = str(url_value or "").strip()
+            if not value:
+                return ""
+            if value.startswith(("http://", "https://")):
+                return value
+            if value.startswith("/"):
+                return request.build_absolute_uri(value)
+            raise ValueError(
+                "Stripe redirect URLs must be absolute or start with '/'."
+            )
+
+        success_value = _to_absolute_url(success_url) or _to_absolute_url(
+            "/modules/finance/payments?stripe=success&session_id={CHECKOUT_SESSION_ID}"
+        )
+        cancel_value = _to_absolute_url(cancel_url) or _to_absolute_url(
+            "/modules/finance/payments/new?stripe=cancel"
+        )
+
+        customer_email_value = str(customer_email or "").strip()
+        if not customer_email_value:
+            customer_email_value = (
+                student.guardians.exclude(email="").values_list("email", flat=True).first() or ""
+            )
+
+        metadata = {
+            "student_id": student.id,
+            "invoice_id": invoice.id if invoice else "",
+            "amount": str(amount_value),
+            "currency": currency_code,
+            "reference": reference_value,
+            "customer_email": customer_email_value,
+            "source": source,
+        }
+
+        session = create_checkout_session(
+            amount=amount_value,
+            currency=currency_code,
+            description=description_text,
+            success_url=success_value,
+            cancel_url=cancel_value,
+            metadata=metadata,
+            client_reference_id=reference_value,
+            customer_email=customer_email_value,
+        )
+
+        payload = {
+            "checkout_session_id": session.get("id"),
+            "checkout_url": session.get("url"),
+            "payment_status": session.get("payment_status"),
+            "status": session.get("status"),
+            "payment_intent_id": session.get("payment_intent"),
+            "reference": reference_value,
+            "configured_mode": session.get("configured_mode"),
+            "customer_email": customer_email_value,
+            "description": description_text,
+            "source": source,
+            "success_url": success_value,
+            "cancel_url": cancel_value,
+            "initiated_by_user_id": getattr(initiated_by, "id", None),
+            "initiated_by_username": getattr(initiated_by, "username", ""),
+        }
+        if extra_payload:
+            payload.update(extra_payload)
+
+        tx, _ = PaymentGatewayTransaction.objects.update_or_create(
+            external_id=session["id"],
+            defaults={
+                "provider": "stripe",
+                "student": student,
+                "invoice": invoice,
+                "amount": amount_value,
+                "currency": currency_code,
+                "status": "PENDING",
+                "payload": payload,
+                "is_reconciled": False,
+            },
+        )
+        return {
+            "transaction": tx,
+            "session": session,
+            "reference": reference_value,
+        }
+
     @staticmethod
     def post_library_fine_accrual(*, fine_id: int, amount, entry_date=None, posted_by=None):
         amount_value = Decimal(str(amount or 0))
@@ -166,6 +366,16 @@ class FinanceService:
     @staticmethod
     @transaction.atomic
     def ingest_gateway_webhook(provider, event_id, event_type, signature, payload):
+        provider = str(provider or "").strip().lower()
+        if provider == "stripe":
+            return FinanceService.ingest_stripe_webhook(
+                provider=provider,
+                event_id=event_id,
+                event_type=event_type,
+                signature=signature,
+                payload=payload,
+            )
+
         event, created = PaymentGatewayWebhookEvent.objects.get_or_create(
             event_id=event_id,
             defaults={
@@ -235,22 +445,633 @@ class FinanceService:
         return event, True
 
     @staticmethod
+    def build_mpesa_callback_event_id(parsed, raw_body=""):
+        identity = {
+            "checkout_request_id": parsed.get("checkout_request_id") or "",
+            "merchant_request_id": parsed.get("merchant_request_id") or "",
+            "result_code": parsed.get("result_code"),
+            "mpesa_receipt": parsed.get("mpesa_receipt") or "",
+            "transaction_date": parsed.get("transaction_date") or "",
+        }
+        if any(value not in ("", None) for value in identity.values()):
+            basis = json.dumps(identity, sort_keys=True, default=str)
+        else:
+            basis = raw_body or ""
+        digest = hashlib.sha256(basis.encode("utf-8")).hexdigest()
+        return f"mpesa-stk-{digest}"
+
+    @staticmethod
+    def upsert_mpesa_callback_event(raw_body, payload):
+        from .mpesa import parse_stk_callback
+
+        parsed = parse_stk_callback(payload or {})
+        event_payload = json.loads(
+            json.dumps(
+                {
+                    "raw": raw_body,
+                    "parsed": payload or {},
+                    "normalized": parsed,
+                },
+                default=str,
+            )
+        )
+        event, created = PaymentGatewayWebhookEvent.objects.get_or_create(
+            event_id=FinanceService.build_mpesa_callback_event_id(parsed, raw_body),
+            defaults={
+                "provider": "mpesa",
+                "event_type": "stk_callback",
+                "payload": event_payload,
+            },
+        )
+        if not created and not event.payload:
+            event.payload = event_payload
+            event.save(update_fields=["payload"])
+        return event, created, parsed
+
+    @staticmethod
+    @transaction.atomic
+    def finalize_gateway_success(
+        tx,
+        *,
+        payment_method,
+        reference_number,
+        amount=None,
+        notes="",
+        payload_updates=None,
+    ):
+        reference_number = (reference_number or "").strip()
+        tx_payload = dict(tx.payload or {})
+        if payload_updates:
+            tx_payload.update(payload_updates)
+
+        payment = Payment.objects.filter(reference_number=reference_number).first() if reference_number else None
+        payment_created = False
+        payment_amount = Decimal(str(amount if amount is not None else tx.amount or "0.00"))
+
+        if not payment and not tx.student_id:
+            raise ValueError("Gateway transaction is not linked to a student.")
+        if not payment and not reference_number:
+            raise ValueError("A payment reference is required to finalize the gateway transaction.")
+
+        tx.status = "SUCCEEDED"
+        tx.payload = tx_payload
+        tx.save(update_fields=["status", "payload", "updated_at"])
+
+        if not payment:
+            payment = FinanceService.record_payment(
+                student=tx.student,
+                amount=payment_amount,
+                payment_method=payment_method,
+                reference_number=reference_number,
+                notes=notes,
+            )
+            payment_created = True
+
+        current_allocated = payment.allocations.aggregate(total=Sum("amount_allocated"))["total"] or Decimal("0.00")
+        if current_allocated <= 0:
+            if tx.invoice_id and tx.student:
+                invoice = Invoice.objects.filter(
+                    id=tx.invoice_id,
+                    student=tx.student,
+                    is_active=True,
+                ).exclude(status="VOID").first()
+                if invoice and invoice.balance_due > 0:
+                    alloc_amount = min(Decimal(str(payment.amount or "0.00")), Decimal(str(invoice.balance_due or "0.00")))
+                    if alloc_amount > 0:
+                        FinanceService.allocate_payment(payment, invoice, alloc_amount)
+                else:
+                    FinanceService.auto_allocate_payment(payment)
+            elif tx.student:
+                FinanceService.auto_allocate_payment(payment)
+
+        tx_payload.update(
+            {
+                "payment_id": payment.id,
+                "payment_reference": payment.reference_number,
+                "payment_receipt_number": payment.receipt_number,
+                "payment_created": payment_created,
+                "gateway_finalized_at": timezone.now().isoformat(),
+            }
+        )
+        tx.payload = tx_payload
+        tx.is_reconciled = True
+        tx.save(update_fields=["payload", "is_reconciled", "updated_at"])
+
+        return {
+            "payment": payment,
+            "payment_created": payment_created,
+        }
+
+    @staticmethod
+    def process_mpesa_callback_event(event):
+        payload = dict(event.payload or {})
+        normalized = payload.get("normalized")
+        parsed = normalized if isinstance(normalized, dict) else payload.get("parsed") or {}
+
+        checkout_id = str(parsed.get("checkout_request_id") or "").strip()
+        if not checkout_id:
+            event.processed = False
+            event.processed_at = None
+            event.error = "Missing checkout_request_id in M-Pesa callback payload."
+            event.save(update_fields=["processed", "processed_at", "error"])
+            return {"processed": False, "error": event.error, "payment": None, "payment_created": False}
+
+        tx = PaymentGatewayTransaction.objects.filter(
+            provider="mpesa",
+            external_id=checkout_id,
+        ).first()
+        if not tx:
+            event.processed = False
+            event.processed_at = None
+            event.error = f"Unknown M-Pesa checkout_request_id: {checkout_id}"
+            event.save(update_fields=["processed", "processed_at", "error"])
+            return {"processed": False, "error": event.error, "payment": None, "payment_created": False}
+
+        payload_updates = {
+            "mpesa_receipt": parsed.get("mpesa_receipt"),
+            "transaction_date": parsed.get("transaction_date"),
+            "phone": parsed.get("phone"),
+            "callback_result_code": parsed.get("result_code"),
+            "callback_result_desc": parsed.get("result_desc"),
+            "callback_friendly_message": parsed.get("friendly_message", ""),
+        }
+
+        if parsed.get("success"):
+            receipt = str(parsed.get("mpesa_receipt") or "").strip()
+            if not receipt:
+                tx.status = "SUCCEEDED"
+                tx.payload = {**dict(tx.payload or {}), **payload_updates}
+                tx.save(update_fields=["status", "payload", "updated_at"])
+                event.processed = False
+                event.processed_at = None
+                event.error = "Successful M-Pesa callback did not include a receipt number."
+                event.save(update_fields=["processed", "processed_at", "error"])
+                return {"processed": False, "error": event.error, "payment": None, "payment_created": False}
+
+            try:
+                from school.fraud_detection import FraudDetectionEngine
+                from school.models import UserProfile
+
+                fraud_user = None
+                if tx.student and tx.student.admission_number:
+                    fraud_profile = UserProfile.objects.filter(
+                        admission_number=tx.student.admission_number
+                    ).select_related("user").first()
+                    if fraud_profile:
+                        fraud_user = fraud_profile.user
+                engine = FraudDetectionEngine(user=fraud_user)
+                if engine.check_duplicate_receipt(receipt, exclude_tx_id=tx.id):
+                    tx.status = "FAILED"
+                    tx.payload = {
+                        **dict(tx.payload or {}),
+                        **payload_updates,
+                        "error": "duplicate_receipt",
+                    }
+                    tx.is_reconciled = False
+                    tx.save(update_fields=["status", "payload", "is_reconciled", "updated_at"])
+                    event.processed = False
+                    event.processed_at = None
+                    event.error = f"Duplicate M-Pesa receipt blocked: {receipt}"
+                    event.save(update_fields=["processed", "processed_at", "error"])
+                    return {"processed": False, "error": event.error, "payment": None, "payment_created": False}
+            except Exception:
+                pass
+
+            try:
+                result = FinanceService.finalize_gateway_success(
+                    tx,
+                    payment_method="M-Pesa",
+                    reference_number=receipt,
+                    amount=parsed.get("amount") or tx.amount,
+                    notes=f"M-Pesa STK Push | {parsed.get('phone') or ''} | {parsed.get('transaction_date') or ''}",
+                    payload_updates=payload_updates,
+                )
+            except Exception as exc:
+                event.processed = False
+                event.processed_at = None
+                event.error = str(exc)
+                event.save(update_fields=["processed", "processed_at", "error"])
+                return {"processed": False, "error": event.error, "payment": None, "payment_created": False}
+
+            event.processed = True
+            event.processed_at = timezone.now()
+            event.error = ""
+            event.save(update_fields=["processed", "processed_at", "error"])
+            return {
+                "processed": True,
+                "error": "",
+                "payment": result["payment"],
+                "payment_created": result["payment_created"],
+                "transaction": tx,
+            }
+
+        tx.status = "FAILED"
+        tx.payload = {**dict(tx.payload or {}), **payload_updates}
+        tx.is_reconciled = False
+        tx.save(update_fields=["status", "payload", "is_reconciled", "updated_at"])
+        event.processed = True
+        event.processed_at = timezone.now()
+        event.error = ""
+        event.save(update_fields=["processed", "processed_at", "error"])
+        return {
+            "processed": True,
+            "error": "",
+            "payment": None,
+            "payment_created": False,
+            "transaction": tx,
+        }
+
+    @staticmethod
+    def _stripe_amount_from_minor_units(amount_total, currency):
+        from .stripe import ZERO_DECIMAL_CURRENCIES
+
+        try:
+            minor_amount = Decimal(str(amount_total))
+        except Exception:
+            return Decimal("0.00")
+
+        currency_code = str(currency or "KES").upper()
+        if currency_code in ZERO_DECIMAL_CURRENCIES:
+            return minor_amount.quantize(Decimal("1"))
+        return (minor_amount / Decimal("100")).quantize(Decimal("0.01"))
+
+    @staticmethod
+    def ingest_stripe_webhook(provider, event_id, event_type, signature, payload):
+        event, created = PaymentGatewayWebhookEvent.objects.get_or_create(
+            event_id=event_id,
+            defaults={
+                "provider": provider,
+                "event_type": event_type,
+                "signature": signature or "",
+                "payload": payload or {},
+            },
+        )
+        if not created:
+            return event, False
+
+        try:
+            FinanceService.process_stripe_webhook_event(event)
+        except Exception as exc:
+            event.processed = False
+            event.processed_at = None
+            event.error = str(exc)
+            event.save(update_fields=["processed", "processed_at", "error"])
+        return event, True
+
+    @staticmethod
+    def process_stripe_webhook_event(event):
+        payload = dict(event.payload or {})
+        event_type = str(payload.get("type") or event.event_type or "").strip()
+        data = payload.get("data") or {}
+        data_object = data.get("object") if isinstance(data, dict) else {}
+        if not isinstance(data_object, dict):
+            data_object = {}
+
+        session_id = str(data_object.get("id") or "").strip()
+        if not session_id and event_type.startswith("checkout.session"):
+            event.processed = False
+            event.processed_at = None
+            event.error = "Missing Stripe checkout session id in webhook payload."
+            event.save(update_fields=["processed", "processed_at", "error"])
+            return {"processed": False, "error": event.error, "payment": None, "payment_created": False}
+
+        metadata = data_object.get("metadata") or {}
+        if not isinstance(metadata, dict):
+            metadata = {}
+
+        payment_intent_id = str(data_object.get("payment_intent") or "").strip()
+        payment_status = str(data_object.get("payment_status") or "").strip().lower()
+        checkout_status = str(data_object.get("status") or "").strip().lower()
+        currency = str(data_object.get("currency") or metadata.get("currency") or "KES").upper()
+        customer_details = data_object.get("customer_details") or {}
+        if not isinstance(customer_details, dict):
+            customer_details = {}
+        customer_email = str(
+            customer_details.get("email")
+            or data_object.get("customer_email")
+            or metadata.get("customer_email")
+            or ""
+        ).strip()
+
+        amount = Decimal(str(metadata.get("amount") or "0.00"))
+        if data_object.get("amount_total") not in (None, ""):
+            amount = FinanceService._stripe_amount_from_minor_units(data_object.get("amount_total"), currency)
+        elif metadata.get("amount_minor") not in (None, ""):
+            amount = FinanceService._stripe_amount_from_minor_units(metadata.get("amount_minor"), currency)
+
+        tx = PaymentGatewayTransaction.objects.filter(
+            provider="stripe",
+            external_id=session_id,
+        ).first() if session_id else None
+
+        if not tx and session_id:
+            student_id = metadata.get("student_id") or None
+            invoice_id = metadata.get("invoice_id") or None
+            if student_id or invoice_id:
+                tx_defaults = {
+                    "provider": "stripe",
+                    "student_id": int(student_id) if student_id else None,
+                    "invoice_id": int(invoice_id) if invoice_id else None,
+                    "amount": amount if amount > 0 else Decimal("0.00"),
+                    "currency": currency,
+                    "status": "PENDING",
+                    "payload": {"recovered_from_webhook": True},
+                }
+                tx, _ = PaymentGatewayTransaction.objects.update_or_create(
+                    external_id=session_id,
+                    defaults=tx_defaults,
+                )
+
+        if not tx and event_type.startswith("checkout.session"):
+            event.processed = False
+            event.processed_at = None
+            event.error = f"Unknown Stripe checkout session id: {session_id}"
+            event.save(update_fields=["processed", "processed_at", "error"])
+            return {"processed": False, "error": event.error, "payment": None, "payment_created": False}
+
+        payload_updates = {
+            "stripe_event_id": event.event_id,
+            "stripe_event_type": event_type,
+            "stripe_checkout_session_id": session_id,
+            "stripe_payment_intent_id": payment_intent_id,
+            "stripe_payment_status": payment_status,
+            "stripe_status": checkout_status,
+            "stripe_customer_email": customer_email,
+            "stripe_currency": currency,
+            "stripe_mode": "live" if payload.get("livemode") else "test",
+            "stripe_client_reference_id": data_object.get("client_reference_id"),
+            "stripe_amount_total": str(amount),
+        }
+
+        success_event = event_type in {
+            "checkout.session.completed",
+            "checkout.session.async_payment_succeeded",
+        }
+        failure_event = event_type in {
+            "checkout.session.async_payment_failed",
+            "checkout.session.expired",
+        }
+
+        if success_event and payment_status in {"paid", "no_payment_required"}:
+            reference_number = payment_intent_id or session_id
+            try:
+                result = FinanceService.finalize_gateway_success(
+                    tx,
+                    payment_method="Stripe",
+                    reference_number=reference_number,
+                    amount=amount if amount > 0 else tx.amount,
+                    notes=f"Stripe Checkout | {customer_email or 'no-email'} | {session_id}",
+                    payload_updates=payload_updates,
+                )
+            except Exception as exc:
+                event.processed = False
+                event.processed_at = None
+                event.error = str(exc)
+                event.save(update_fields=["processed", "processed_at", "error"])
+                return {"processed": False, "error": event.error, "payment": None, "payment_created": False}
+
+            if result["payment_created"]:
+                FinanceService.record_platform_transaction_fee(
+                    tx=tx,
+                    payment=result["payment"],
+                    provider="stripe",
+                    reference_number=reference_number,
+                    metadata={
+                        "event_id": event.event_id,
+                        "event_type": event_type,
+                        "currency": currency,
+                        "checkout_session_id": session_id,
+                        "customer_email": customer_email,
+                    },
+                )
+            event.processed = True
+            event.processed_at = timezone.now()
+            event.error = ""
+            event.save(update_fields=["processed", "processed_at", "error"])
+            return {
+                "processed": True,
+                "error": "",
+                "payment": result["payment"],
+                "payment_created": result["payment_created"],
+                "transaction": tx,
+            }
+
+        if failure_event:
+            tx.status = "FAILED"
+            tx.payload = {**dict(tx.payload or {}), **payload_updates}
+            tx.is_reconciled = False
+            tx.save(update_fields=["status", "payload", "is_reconciled", "updated_at"])
+            event.processed = True
+            event.processed_at = timezone.now()
+            event.error = ""
+            event.save(update_fields=["processed", "processed_at", "error"])
+            return {
+                "processed": True,
+                "error": "",
+                "payment": None,
+                "payment_created": False,
+                "transaction": tx,
+            }
+
+        if tx:
+            tx.payload = {**dict(tx.payload or {}), **payload_updates}
+            if success_event and payment_status not in {"paid", "no_payment_required"}:
+                tx.status = "PENDING"
+                tx.save(update_fields=["status", "payload", "updated_at"])
+            else:
+                tx.save(update_fields=["payload", "updated_at"])
+
+        event.processed = True
+        event.processed_at = timezone.now()
+        event.error = ""
+        event.save(update_fields=["processed", "processed_at", "error"])
+        return {
+            "processed": True,
+            "error": "",
+            "payment": None,
+            "payment_created": False,
+            "transaction": tx,
+        }
+
+    @staticmethod
+    def record_platform_transaction_fee(*, tx, payment, provider, reference_number="", metadata=None):
+        try:
+            from clients.billing_engine import BillingEngine
+            from clients.models import RevenueLog, Tenant
+        except Exception:
+            return None
+
+        schema_name = getattr(connection, "schema_name", "") or "public"
+        school_name = schema_name
+        try:
+            tenant = Tenant.objects.filter(schema_name=schema_name).first()
+            if tenant and tenant.name:
+                school_name = tenant.name
+        except Exception:
+            tenant = None
+
+        revenue_reference = str(
+            reference_number
+            or getattr(payment, "reference_number", "")
+            or getattr(tx, "external_id", "")
+            or f"{provider}-{getattr(tx, 'id', '')}"
+        ).strip()[:50]
+
+        existing = RevenueLog.objects.filter(
+            schema_name=schema_name,
+            source="TRANSACTION_FEE",
+            mpesa_receipt=revenue_reference,
+        ).first()
+        if existing:
+            return existing
+
+        payload = {
+            "gateway_provider": str(provider or "").lower(),
+            "gateway_transaction_id": tx.id,
+            "gateway_external_id": tx.external_id,
+            "payment_id": payment.id,
+            "payment_amount": str(payment.amount),
+        }
+        if metadata:
+            payload.update(metadata)
+
+        billing = BillingEngine.for_tenant(schema_name=schema_name, school_name=school_name)
+        return billing.record_transaction_fee(
+            amount=payment.amount,
+            mpesa_receipt=revenue_reference,
+            metadata=payload,
+        )
+
+    @staticmethod
+    def _pick_unique_match(queryset):
+        candidates = list(queryset[:2])
+        if len(candidates) == 1:
+            return candidates[0]
+        return None
+
+    @staticmethod
+    def _gateway_reference_values(tx):
+        payload = tx.payload if isinstance(tx.payload, dict) else {}
+        values = [
+            tx.external_id,
+            payload.get("reference"),
+            payload.get("payment_reference"),
+            payload.get("checkout_session_id"),
+            payload.get("payment_intent_id"),
+            payload.get("stripe_checkout_session_id"),
+            payload.get("stripe_payment_intent_id"),
+            payload.get("stripe_client_reference_id"),
+            payload.get("mpesa_receipt"),
+        ]
+        normalized = []
+        seen = set()
+        for value in values:
+            text = str(value or "").strip()
+            if not text:
+                continue
+            key = text.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            normalized.append(text)
+        return normalized
+
+    @staticmethod
+    def _pick_unique_gateway_reference_match(queryset, needle):
+        needle = str(needle or "").strip().lower()
+        if not needle:
+            return None
+
+        matches = []
+        for tx in queryset[:25]:
+            values = FinanceService._gateway_reference_values(tx)
+            if any(
+                needle == value.lower()
+                or needle in value.lower()
+                or value.lower() in needle
+                for value in values
+            ):
+                matches.append(tx)
+                if len(matches) > 1:
+                    return None
+        return matches[0] if matches else None
+
+    @staticmethod
     def reconcile_bank_line(line):
         if line.status not in {"UNMATCHED", "MATCHED"}:
             return line
 
+        reference = (line.reference or "").strip()
+        narration = (line.narration or "").strip()
+
         if not line.matched_payment:
-            ref = (line.reference or "").strip()
-            if ref:
-                payment = Payment.objects.filter(reference_number__iexact=ref, is_active=True).first()
+            if reference:
+                payment = Payment.objects.filter(reference_number__iexact=reference, is_active=True).first()
                 if payment:
                     line.matched_payment = payment
                     line.status = "MATCHED"
 
         if not line.matched_gateway_transaction:
-            ref = (line.reference or "").strip()
-            if ref:
-                tx = PaymentGatewayTransaction.objects.filter(external_id__iexact=ref).first()
+            if reference:
+                tx = FinanceService._pick_unique_gateway_reference_match(
+                    PaymentGatewayTransaction.objects.all().order_by("-updated_at", "id"),
+                    reference,
+                )
+                if tx:
+                    line.matched_gateway_transaction = tx
+                    if line.status == "UNMATCHED":
+                        line.status = "MATCHED"
+
+        anchor_date = line.value_date or line.statement_date
+        window_start = anchor_date - timedelta(days=3)
+        window_end = anchor_date + timedelta(days=3)
+
+        if not line.matched_payment:
+            payment_candidates = Payment.objects.filter(
+                amount=line.amount,
+                is_active=True,
+                payment_date__date__gte=window_start,
+                payment_date__date__lte=window_end,
+            ).order_by("payment_date", "id")
+            if reference:
+                payment = FinanceService._pick_unique_match(
+                    payment_candidates.filter(
+                        models.Q(reference_number__icontains=reference)
+                        | models.Q(notes__icontains=reference)
+                    )
+                )
+                if payment:
+                    line.matched_payment = payment
+                    line.status = "MATCHED"
+            if not line.matched_payment and narration:
+                payment = FinanceService._pick_unique_match(
+                    payment_candidates.filter(notes__icontains=narration)
+                )
+                if payment:
+                    line.matched_payment = payment
+                    line.status = "MATCHED"
+            if not line.matched_payment:
+                payment = FinanceService._pick_unique_match(payment_candidates)
+                if payment:
+                    line.matched_payment = payment
+                    line.status = "MATCHED"
+
+        if not line.matched_gateway_transaction:
+            tx_candidates = PaymentGatewayTransaction.objects.filter(
+                amount=line.amount,
+                status="SUCCEEDED",
+            ).filter(
+                models.Q(created_at__date__gte=window_start, created_at__date__lte=window_end)
+                | models.Q(updated_at__date__gte=window_start, updated_at__date__lte=window_end)
+            ).order_by("updated_at", "id")
+            if reference:
+                tx = FinanceService._pick_unique_gateway_reference_match(tx_candidates, reference)
+                if tx:
+                    line.matched_gateway_transaction = tx
+                    if line.status == "UNMATCHED":
+                        line.status = "MATCHED"
+            if not line.matched_gateway_transaction:
+                tx = FinanceService._pick_unique_match(tx_candidates)
                 if tx:
                     line.matched_gateway_transaction = tx
                     if line.status == "UNMATCHED":
@@ -258,6 +1079,7 @@ class FinanceService:
 
         line.save()
         return line
+
     @staticmethod
     def _ensure_open_period(entry_date):
         period = AccountingPeriod.objects.filter(

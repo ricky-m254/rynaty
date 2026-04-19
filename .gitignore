@@ -47,6 +47,7 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+.config/
 
 # Python
 __pycache__/
@@ -76,3 +77,6 @@ sms-backend/var/backups/
 sms-backend/debug_*.py
 sms-backend/check_*.py
 sms-backend/reproduce_*.py
+
+# Local verification artifacts
+artifacts/temp_pg_mpesa_ui*/

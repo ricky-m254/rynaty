@@ -144,17 +144,18 @@ class FraudDetectionEngine:
                 {'score': score, 'factors': factors, 'amount': str(amount)})
 
         # Log risk score
-        try:
-            RiskScoreLog.objects.create(
-                user=self.user,
-                transaction_amount=amount,
-                risk_score=score,
-                factors=factors,
-                action_taken=action,
-                alert=alert,
-            )
-        except Exception:
-            pass
+        if self.user is not None:
+            try:
+                RiskScoreLog.objects.create(
+                    user=self.user,
+                    transaction_amount=amount,
+                    risk_score=score,
+                    factors=factors,
+                    action_taken=action,
+                    alert=alert,
+                )
+            except Exception:
+                pass
 
         return score, action, factors
 

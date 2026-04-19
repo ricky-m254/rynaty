@@ -16,6 +16,7 @@ from .views import (
     ImportTemplateDownloadView, StudentsBulkImportView, StaffBulkImportView,
     TenantSettingsView, TenantSettingDeleteView,
     FinanceSettingsView, GeneralSettingsView,
+    FinanceLaunchReadinessView, StripeCheckoutSessionView, StripeTestConnectionView,
     MpesaStkPushView, MpesaStkCallbackView, MpesaStkStatusView, MpesaTestConnectionView,
     MpesaCallbackUrlView,
     WalletDetailView, WalletAdminAdjustView, LedgerEntryListView,
@@ -399,6 +400,11 @@ urlpatterns = [
     path('settings/domain/request/',        SchoolDomainRequestView.as_view(),  name='school_domain_request'),
     path('settings/domain/verify/',         SchoolDomainVerifyView.as_view(),   name='school_domain_verify'),
     # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    # ── Stripe Checkout ───────────────────────────────────────────────────────
+    path('finance/launch-readiness/',        FinanceLaunchReadinessView.as_view(),  name='finance_launch_readiness'),
+    path('finance/stripe/checkout-session/',  StripeCheckoutSessionView.as_view(), name='stripe_checkout_session'),
+    path('finance/stripe/test-connection/',   StripeTestConnectionView.as_view(),  name='stripe_test_connection'),
 
     # ── M-Pesa STK Push ──────────────────────────────────────────────────────
     path('finance/mpesa/push/',             MpesaStkPushView.as_view(),         name='mpesa_stk_push'),

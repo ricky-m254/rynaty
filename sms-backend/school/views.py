@@ -2446,6 +2446,48 @@ class PaymentGatewayWebhookEventViewSet(viewsets.ReadOnlyModelViewSet):
                 queryset = queryset.filter(processed=False)
         return queryset.order_by('-received_at', '-id')
 
+    @action(detail=True, methods=['post'], url_path='reprocess')
+    def reprocess(self, request, pk=None):
+        event = self.get_object()
+        provider = str(event.provider or "").strip().lower()
+        event_type = str(event.event_type or "").strip().lower()
+        supports_mpesa = provider == "mpesa" and event_type == "stk_callback"
+        supports_stripe = provider == "stripe" and event_type.startswith("checkout.session")
+        if not supports_mpesa and not supports_stripe:
+            return Response(
+                {"error": "Manual reprocess currently supports M-Pesa STK callbacks and Stripe Checkout events."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if event.processed and not event.error:
+            return Response(
+                {
+                    "id": event.id,
+                    "event_id": event.event_id,
+                    "processed": True,
+                    "error": "",
+                    "already_processed": True,
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        result = (
+            FinanceService.process_stripe_webhook_event(event)
+            if supports_stripe
+            else FinanceService.process_mpesa_callback_event(event)
+        )
+        response_status = status.HTTP_200_OK if result["processed"] else status.HTTP_409_CONFLICT
+        return Response(
+            {
+                "id": event.id,
+                "event_id": event.event_id,
+                "processed": result["processed"],
+                "error": result["error"],
+                "payment_id": getattr(result.get("payment"), "id", None),
+                "payment_created": result.get("payment_created", False),
+            },
+            status=response_status,
+        )
+
 
 class FinanceGatewayWebhookView(APIView):
     permission_classes = [permissions.AllowAny]
@@ -2462,11 +2504,42 @@ class FinanceGatewayWebhookView(APIView):
 
     @staticmethod
     def _extract_signature(request):
-        signature = request.headers.get('X-Webhook-Signature', '') or request.headers.get('X-Signature', '')
+        signature = (
+            request.headers.get('X-Webhook-Signature', '')
+            or request.headers.get('X-Signature', '')
+            or request.headers.get('Stripe-Signature', '')
+        )
         return signature.strip()
 
     @staticmethod
-    def _verify_request(request, raw_body):
+    def _verify_stripe_request(request, raw_body):
+        from .models import TenantSettings
+        from .stripe import verify_webhook_signature
+
+        strict_mode = bool(getattr(settings, "FINANCE_WEBHOOK_STRICT_MODE", True))
+        stripe_setting = TenantSettings.objects.filter(key="integrations.stripe").first()
+        stripe_cfg = stripe_setting.value if stripe_setting and isinstance(stripe_setting.value, dict) else {}
+        webhook_secret = str(stripe_cfg.get("webhook_secret") or "").strip()
+
+        if not webhook_secret:
+            if strict_mode:
+                return False, "Stripe webhook secret is not configured."
+            return True, ""
+
+        tolerance = int(getattr(settings, "STRIPE_WEBHOOK_TOLERANCE_SECONDS", 300))
+        return verify_webhook_signature(
+            raw_body,
+            request.headers.get("Stripe-Signature", ""),
+            webhook_secret,
+            tolerance=tolerance,
+        )
+
+    @staticmethod
+    def _verify_request(request, raw_body, provider):
+        provider = str(provider or "").strip().lower()
+        if provider == "stripe":
+            return FinanceGatewayWebhookView._verify_stripe_request(request, raw_body)
+
         expected_token = getattr(settings, "FINANCE_WEBHOOK_TOKEN", "")
         expected_secret = getattr(settings, "FINANCE_WEBHOOK_SHARED_SECRET", "")
         strict_mode = bool(getattr(settings, "FINANCE_WEBHOOK_STRICT_MODE", True))
@@ -2495,13 +2568,32 @@ class FinanceGatewayWebhookView(APIView):
 
         return True, ""
 
+    @staticmethod
+    def _parse_payload(request, raw_body):
+        try:
+            payload = request.data
+        except Exception:
+            payload = None
+
+        if isinstance(payload, dict):
+            return payload
+        if not raw_body:
+            return {}
+
+        try:
+            parsed = json.loads(raw_body.decode("utf-8", errors="replace"))
+        except Exception:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+
     def post(self, request, provider):
+        provider = str(provider or "").strip().lower()
         raw_body = request.body or b""
-        ok, error = self._verify_request(request, raw_body)
+        ok, error = self._verify_request(request, raw_body, provider)
         if not ok:
             return Response({"error": error}, status=status.HTTP_401_UNAUTHORIZED)
 
-        payload = request.data if isinstance(request.data, dict) else {}
+        payload = self._parse_payload(request, raw_body)
         event_id = (
             payload.get("event_id")
             or payload.get("id")
@@ -8657,6 +8749,131 @@ class FinanceSettingsView(APIView):
         return Response({'detail': 'Finance settings updated.', **data})
 
 
+class StripeCheckoutSessionView(APIView):
+    """
+    POST /api/finance/stripe/checkout-session/
+    Create a hosted Stripe Checkout session and persist a pending gateway transaction.
+    """
+    permission_classes = [permissions.IsAuthenticated, HasModuleAccess]
+    module_key = "FINANCE"
+
+    def post(self, request):
+        from decimal import Decimal, InvalidOperation
+
+        from .stripe import StripeError
+
+        student_id = request.data.get("student_id") or request.data.get("student")
+        if not student_id:
+            return Response({"error": "student_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        student = Student.objects.filter(id=student_id, is_active=True).first()
+        if not student:
+            return Response({"error": "Student not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            amount = Decimal(str(request.data.get("amount") or "0"))
+        except InvalidOperation:
+            return Response({"error": "Invalid amount."}, status=status.HTTP_400_BAD_REQUEST)
+        if amount <= 0:
+            return Response({"error": "Amount must be greater than zero."}, status=status.HTTP_400_BAD_REQUEST)
+
+        invoice = None
+        invoice_id = request.data.get("invoice_id")
+        if invoice_id:
+            invoice = Invoice.objects.filter(id=invoice_id, is_active=True).exclude(status="VOID").first()
+            if not invoice:
+                return Response({"error": "Invoice not found."}, status=status.HTTP_404_NOT_FOUND)
+            if invoice.student_id != student.id:
+                return Response(
+                    {"error": "Invoice does not belong to the selected student."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        notes = str(request.data.get("notes") or "").strip()
+        try:
+            checkout = FinanceService.create_stripe_checkout_transaction(
+                request=request,
+                student=student,
+                amount=amount,
+                initiated_by=request.user,
+                invoice=invoice,
+                source="finance",
+                currency=request.data.get("currency"),
+                notes=notes,
+                description=request.data.get("description"),
+                reference=request.data.get("reference"),
+                success_url=request.data.get("success_url"),
+                cancel_url=request.data.get("cancel_url"),
+                customer_email=request.data.get("customer_email"),
+            )
+        except (StripeError, ValueError) as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        tx = checkout["transaction"]
+        session = checkout["session"]
+        reference = checkout["reference"]
+
+        return Response(
+            {
+                "transaction_id": tx.id,
+                "checkout_session_id": session.get("id"),
+                "checkout_url": session.get("url"),
+                "reference": reference,
+                "status": tx.status,
+                "payment_status": session.get("payment_status"),
+                "configured_mode": session.get("configured_mode"),
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class StripeTestConnectionView(APIView):
+    """
+    POST /api/finance/stripe/test-connection/
+    Validate Stripe secret key reachability with a lightweight account lookup.
+    """
+    permission_classes = [CanManageSystemSettings | IsAccountant]
+
+    _CACHE_TTL = 300
+
+    def post(self, request):
+        from .stripe import StripeError, test_connection
+
+        secret_key = str(request.data.get("secret_key") or "").strip()
+        schema = getattr(request, "tenant", None)
+        schema_name = schema.schema_name if schema else "public"
+        fingerprint = hashlib.sha256((secret_key or "tenant").encode("utf-8")).hexdigest()[:16]
+        cache_key = f"stripe_conn_check:{schema_name}:{fingerprint}"
+
+        cached = cache.get(cache_key)
+        if cached is not None:
+            if cached["success"]:
+                return Response({**cached, "cached": True})
+            return Response({**cached, "cached": True}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            result = test_connection({"secret_key": secret_key}) if secret_key else test_connection()
+        except StripeError as exc:
+            error_payload = {"success": False, "error": str(exc)}
+            cache.set(cache_key, error_payload, self._CACHE_TTL)
+            return Response(error_payload, status=status.HTTP_400_BAD_REQUEST)
+
+        message = (
+            f"Connected to Stripe {result['mode']} mode as "
+            f"{result['display_name']}."
+        )
+        success_payload = {
+            "success": True,
+            "message": message,
+            "account_id": result["account_id"],
+            "display_name": result["display_name"],
+            "mode": result["mode"],
+            "livemode": result["livemode"],
+        }
+        cache.set(cache_key, success_payload, self._CACHE_TTL)
+        return Response(success_payload)
+
+
 class MpesaStkPushView(APIView):
     """
     POST /api/finance/mpesa/push/
@@ -8697,33 +8914,13 @@ class MpesaStkPushView(APIView):
         # Priority: TenantSettings(system.callback_base_url) → SITE_BASE_URL env var
         # → REPLIT_DOMAINS env var → request.build_absolute_uri() (last resort).
         import logging
-        import os
-        from .models import TenantSettings
 
         log = logging.getLogger(__name__)
-        base_url = ""
-
-        try:
-            cb_setting = TenantSettings.objects.filter(key="system.callback_base_url").first()
-            if cb_setting and cb_setting.value:
-                base_url = str(cb_setting.value).strip().rstrip("/")
-        except Exception as exc:
-            log.warning("Could not read system.callback_base_url from TenantSettings: %s", exc)
-
-        if not base_url:
-            base_url = os.environ.get("SITE_BASE_URL", "").strip().rstrip("/")
-
-        if not base_url:
-            replit_domains = os.environ.get("REPLIT_DOMAINS", "").strip()
-            if replit_domains:
-                first_domain = replit_domains.split(",")[0].strip()
-                if first_domain:
-                    base_url = f"https://{first_domain}"
-
-        if base_url:
-            callback_url = f"{base_url}/api/finance/mpesa/callback/"
-        else:
-            callback_url = request.build_absolute_uri("/api/finance/mpesa/callback/")
+        callback_url, callback_source = FinanceService.resolve_public_url(
+            "/api/finance/mpesa/callback/",
+            request=request,
+        )
+        if callback_source == "request_fallback":
             log.warning(
                 "MPesa: no configured callback base URL found; "
                 "falling back to request.build_absolute_uri: %s",
@@ -8909,34 +9106,7 @@ class MpesaCallbackUrlView(APIView):
         Resolve the base URL that MpesaStkPushView will actually use,
         in the same precedence order, and return (base_url, source).
         """
-        import logging
-        import os
-        from .models import TenantSettings
-
-        log = logging.getLogger(__name__)
-
-        try:
-            setting = TenantSettings.objects.filter(key=self.SETTING_KEY).first()
-            if setting and setting.value:
-                return setting.value.strip().rstrip("/"), "tenant_settings"
-        except Exception as exc:
-            log.warning(
-                "MpesaCallbackUrlView: could not read %s from TenantSettings: %s",
-                self.SETTING_KEY, exc,
-            )
-
-        site_base = os.environ.get("SITE_BASE_URL", "").strip().rstrip("/")
-        if site_base:
-            return site_base, "SITE_BASE_URL"
-
-        replit_domains = os.environ.get("REPLIT_DOMAINS", "").strip()
-        if replit_domains:
-            first_domain = replit_domains.split(",")[0].strip()
-            if first_domain:
-                return f"https://{first_domain}", "REPLIT_DOMAINS"
-
-        fallback = request.build_absolute_uri("/").rstrip("/")
-        return fallback, "request_fallback"
+        return FinanceService.resolve_public_base_url(request=request)
 
     def _get_override(self):
         from .models import TenantSettings
@@ -9005,6 +9175,229 @@ class MpesaCallbackUrlView(APIView):
         })
 
 
+class FinanceLaunchReadinessView(APIView):
+    """
+    GET /api/finance/launch-readiness/
+    Summarize whether the current tenant has the minimum payment settings and
+    operating-state checks in place to launch Stripe, M-Pesa, and bank imports.
+    """
+    permission_classes = [CanManageSystemSettings | IsAccountant]
+
+    STRIPE_WEBHOOK_PATH = "/api/finance/gateway/webhooks/stripe/"
+    MPESA_CALLBACK_PATH = "/api/finance/mpesa/callback/"
+    BANK_IMPORT_REQUIRED_COLUMNS = ["statement_date", "amount"]
+    BANK_IMPORT_OPTIONAL_COLUMNS = ["value_date", "reference", "narration", "source"]
+
+    @staticmethod
+    def _build_public_url(base_url, path):
+        normalized = str(base_url or "").strip().rstrip("/")
+        return f"{normalized}{path}" if normalized else path
+
+    def _base_url_context(self, request):
+        helper = MpesaCallbackUrlView()
+        effective_base_url, source = helper._resolve_effective_base_url(request)
+        return {
+            "callback_base_url": helper._get_override(),
+            "effective_base_url": effective_base_url,
+            "source": source,
+        }
+
+    def _stripe_readiness(self, base_url_context):
+        from .models import TenantSettings
+
+        setting = TenantSettings.objects.filter(key="integrations.stripe").first()
+        config = setting.value if setting and isinstance(setting.value, dict) else {}
+        secret_key = str(config.get("secret_key") or "").strip()
+        webhook_secret = str(config.get("webhook_secret") or "").strip()
+        webhook_url = self._build_public_url(base_url_context["effective_base_url"], self.STRIPE_WEBHOOK_PATH)
+
+        mode = "unconfigured"
+        if secret_key.startswith("sk_live_"):
+            mode = "live"
+        elif secret_key.startswith("sk_test_"):
+            mode = "test"
+        elif secret_key:
+            mode = "configured"
+
+        blocking_issues = []
+        warnings = []
+        if not secret_key:
+            blocking_issues.append("Configure integrations.stripe.secret_key for this tenant.")
+        if not webhook_secret:
+            blocking_issues.append("Configure integrations.stripe.webhook_secret for this tenant.")
+        if base_url_context["source"] == "request_fallback":
+            blocking_issues.append(
+                "Set system.callback_base_url or SITE_BASE_URL so Stripe webhook URLs do not depend on the incoming request host."
+            )
+        if webhook_url and not webhook_url.startswith("https://"):
+            blocking_issues.append("Stripe webhook URL must be HTTPS before launch.")
+
+        return {
+            "configured": bool(secret_key and webhook_secret),
+            "mode": mode,
+            "has_secret_key": bool(secret_key),
+            "has_webhook_secret": bool(webhook_secret),
+            "webhook_path": self.STRIPE_WEBHOOK_PATH,
+            "webhook_url": webhook_url,
+            "blocking_issues": blocking_issues,
+            "warnings": warnings,
+        }
+
+    def _mpesa_readiness(self, base_url_context):
+        from .models import TenantSettings
+
+        setting = TenantSettings.objects.filter(key="integrations.mpesa").first()
+        config = setting.value if setting and isinstance(setting.value, dict) else {}
+        enabled = config.get("enabled", True) is not False
+        environment = str(config.get("environment") or "sandbox").lower()
+        callback_url = self._build_public_url(base_url_context["effective_base_url"], self.MPESA_CALLBACK_PATH)
+
+        blocking_issues = []
+        warnings = []
+        required_fields = {
+            "consumer_key": bool(str(config.get("consumer_key") or "").strip()),
+            "consumer_secret": bool(str(config.get("consumer_secret") or "").strip()),
+            "shortcode": bool(str(config.get("shortcode") or "").strip()),
+            "passkey": bool(str(config.get("passkey") or "").strip()),
+        }
+
+        if not config:
+            blocking_issues.append("Configure integrations.mpesa for this tenant.")
+        if config and not enabled:
+            blocking_issues.append("Enable the tenant's M-Pesa integration before launch.")
+        missing_fields = [field for field, present in required_fields.items() if not present]
+        if missing_fields:
+            blocking_issues.append(
+                f"M-Pesa configuration is incomplete. Missing: {', '.join(missing_fields)}."
+            )
+        if base_url_context["source"] == "request_fallback":
+            blocking_issues.append(
+                "Set system.callback_base_url or SITE_BASE_URL so M-Pesa callbacks use a stable public URL."
+            )
+        if callback_url and not callback_url.startswith("https://"):
+            if environment == "production":
+                blocking_issues.append("M-Pesa callback URL must be HTTPS in production.")
+            else:
+                warnings.append("M-Pesa callback URL is not HTTPS. Sandbox can tolerate this, production cannot.")
+
+        return {
+            "configured": bool(config) and enabled and not missing_fields,
+            "enabled": enabled,
+            "environment": environment,
+            "has_consumer_key": required_fields["consumer_key"],
+            "has_consumer_secret": required_fields["consumer_secret"],
+            "has_shortcode": required_fields["shortcode"],
+            "has_passkey": required_fields["passkey"],
+            "callback_base_url": base_url_context["callback_base_url"],
+            "callback_source": base_url_context["source"],
+            "callback_path": self.MPESA_CALLBACK_PATH,
+            "callback_url": callback_url,
+            "blocking_issues": blocking_issues,
+            "warnings": warnings,
+        }
+
+    @staticmethod
+    def _operations_snapshot():
+        unprocessed_events = PaymentGatewayWebhookEvent.objects.filter(processed=False)
+        reprocessable_events = unprocessed_events.filter(
+            models.Q(provider__iexact="mpesa", event_type__iexact="stk_callback")
+            | models.Q(provider__iexact="stripe", event_type__istartswith="checkout.session")
+        )
+        unmatched_bank_lines = BankStatementLine.objects.filter(status="UNMATCHED").count()
+        matched_bank_lines = BankStatementLine.objects.filter(status="MATCHED").count()
+        imported_csv_lines = BankStatementLine.objects.filter(source__iexact="csv").count()
+        pending_gateway_transactions = PaymentGatewayTransaction.objects.filter(status="PENDING").count()
+
+        warnings = []
+        if unprocessed_events.exists():
+            warnings.append(
+                f"{unprocessed_events.count()} webhook event(s) are still unprocessed. Review and reprocess recoverable failures before launch."
+            )
+        if unmatched_bank_lines:
+            warnings.append(
+                f"{unmatched_bank_lines} bank statement line(s) remain unmatched. Resolve or document the backlog before launch."
+            )
+        if matched_bank_lines:
+            warnings.append(
+                f"{matched_bank_lines} bank statement line(s) are matched but not yet cleared."
+            )
+        if imported_csv_lines == 0:
+            warnings.append(
+                "No bank CSV imports have been recorded yet. Validate at least one real statement file in staging before launch."
+            )
+
+        return {
+            "unprocessed_webhook_events": unprocessed_events.count(),
+            "reprocessable_webhook_events": reprocessable_events.count(),
+            "unmatched_bank_lines": unmatched_bank_lines,
+            "matched_bank_lines_pending_clear": matched_bank_lines,
+            "imported_csv_lines": imported_csv_lines,
+            "pending_gateway_transactions": pending_gateway_transactions,
+            "warnings": warnings,
+        }
+
+    @staticmethod
+    def _next_actions(stripe, mpesa, operations):
+        actions = []
+        if stripe["blocking_issues"]:
+            actions.append("Complete Stripe secret-key and webhook-secret setup, then rerun the readiness check.")
+        if mpesa["blocking_issues"]:
+            actions.append("Complete M-Pesa credentials and public callback base URL setup, then rerun the readiness check.")
+        if operations["unprocessed_webhook_events"]:
+            actions.append("Review /api/finance/gateway/events/?processed=false and reprocess recoverable Stripe or M-Pesa events.")
+        if operations["unmatched_bank_lines"] or operations["matched_bank_lines_pending_clear"]:
+            actions.append("Work through /api/finance/reconciliation/bank-lines/ until unmatched lines are understood and matched lines are cleared.")
+        if operations["imported_csv_lines"] == 0:
+            actions.append("Import one real bank CSV in staging and verify auto-match plus manual clear on at least one line.")
+        actions.append("Run the Stripe and M-Pesa test-connection checks from the finance settings UI before go-live.")
+        return list(dict.fromkeys(actions))
+
+    def get(self, request):
+        base_url_context = self._base_url_context(request)
+        stripe = self._stripe_readiness(base_url_context)
+        mpesa = self._mpesa_readiness(base_url_context)
+        operations = self._operations_snapshot()
+
+        blocking_issues = list(dict.fromkeys(stripe["blocking_issues"] + mpesa["blocking_issues"]))
+        warnings = list(dict.fromkeys(stripe["warnings"] + mpesa["warnings"] + operations["warnings"]))
+
+        tenant = getattr(request, "tenant", None)
+        return Response(
+            {
+                "ready": not blocking_issues,
+                "checked_at": timezone.now().isoformat(),
+                "tenant_schema": getattr(tenant, "schema_name", "public"),
+                "tenant_name": getattr(tenant, "name", "Public"),
+                "public_base_url": base_url_context["effective_base_url"],
+                "blocking_issues": blocking_issues,
+                "warnings": warnings,
+                "stripe": stripe,
+                "mpesa": mpesa,
+                "bank_import": {
+                    "required_columns": self.BANK_IMPORT_REQUIRED_COLUMNS,
+                    "optional_columns": self.BANK_IMPORT_OPTIONAL_COLUMNS,
+                },
+                "operations": operations,
+                "reprocess": {
+                    "supported_event_types": [
+                        "mpesa:stk_callback",
+                        "stripe:checkout.session.*",
+                    ],
+                    "events_path": "/api/finance/gateway/events/",
+                },
+                "validation_paths": {
+                    "stripe_test_connection": "/api/finance/stripe/test-connection/",
+                    "mpesa_test_connection": "/api/finance/mpesa/test-connection/",
+                    "mpesa_callback_url": "/api/finance/mpesa/callback-url/",
+                    "stripe_webhook": self.STRIPE_WEBHOOK_PATH,
+                    "mpesa_callback": self.MPESA_CALLBACK_PATH,
+                    "bank_lines": "/api/finance/reconciliation/bank-lines/",
+                },
+                "next_actions": self._next_actions(stripe, mpesa, operations),
+            }
+        )
+
+
 class MpesaStkCallbackView(APIView):
     """
     POST /api/finance/mpesa/callback/
@@ -9014,22 +9407,14 @@ class MpesaStkCallbackView(APIView):
     """
     permission_classes = [permissions.AllowAny]
 
-    def post(self, request):
-        from .mpesa import parse_stk_callback
-        from .models import PaymentGatewayTransaction, Payment, PaymentGatewayWebhookEvent
-        from django.utils import timezone as tz
-        from django.db import transaction as db_transaction
-        import json as _json
-        import logging
-        import uuid
-
-        log = logging.getLogger(__name__)
+    def _legacy_post(self, request):
+        return self.post(request)
 
         # ── 1. Capture raw request body bytes BEFORE any DRF parsing ─────────
         # request.body is the unmodified bytes stream from Safaricom.
         # We store it verbatim so it can be replayed and audited even if the
         # DRF JSON parser would later fail (e.g. on malformed JSON).
-        raw_body_bytes = request.body  # bytes; safe to read before request.data
+        raw_body_bytes = request.body
         raw_body_str = raw_body_bytes.decode("utf-8", errors="replace")
 
         # Try to parse the raw body ourselves; fall back to empty dict on error
@@ -9044,21 +9429,14 @@ class MpesaStkCallbackView(APIView):
         # Stores the verbatim Safaricom bytes as a string so nothing is lost
         # even if subsequent parsing or processing fails.
         try:
-            PaymentGatewayWebhookEvent.objects.create(
-                event_id=f"mpesa-stk-{uuid.uuid4().hex}",
-                provider="mpesa",
-                event_type="stk_callback",
-                payload={"raw": raw_body_str, "parsed": payload},
-            )
+            event, created, parsed = FinanceService.upsert_mpesa_callback_event(raw_body_str, payload)
         except Exception as raw_log_exc:
             log.error("Failed to save raw M-Pesa callback payload: %s", raw_log_exc)
+            return Response({"ResultCode": 0, "ResultDesc": "Accepted"})
 
         # ── 3. Parse and process ──────────────────────────────────────────────
-        parsed = parse_stk_callback(payload)
-
-        checkout_id = parsed.get("checkout_request_id", "")
-        if not checkout_id:
-            return Response({"ResultCode": 0, "ResultDesc": "Accepted (no checkout id)"})
+        if not created and event.processed and not event.error:
+            return Response({"ResultCode": 0, "ResultDesc": "Accepted"})
 
         try:
             tx = PaymentGatewayTransaction.objects.filter(
@@ -9271,6 +9649,177 @@ class MpesaStkCallbackView(APIView):
             log.error("Error processing MPesa callback: %s", exc, exc_info=True)
 
         # Always return 200 — Safaricom retries on non-200
+        return Response({"ResultCode": 0, "ResultDesc": "Accepted"})
+
+    # Fast-track override: route runtime traffic through the idempotent
+    # callback path below while leaving the legacy implementation intact.
+    def post(self, request):
+        import json as _json
+        import logging
+
+        log = logging.getLogger(__name__)
+        raw_body = request.body or b""
+        raw_body_str = raw_body.decode("utf-8", errors="replace")
+
+        try:
+            payload = _json.loads(raw_body_str)
+            if not isinstance(payload, dict):
+                payload = {}
+        except Exception:
+            payload = {}
+
+        try:
+            event, created, parsed = FinanceService.upsert_mpesa_callback_event(raw_body_str, payload)
+        except Exception as exc:
+            log.error("Failed to save raw M-Pesa callback payload: %s", exc)
+            return Response({"ResultCode": 0, "ResultDesc": "Accepted"})
+
+        if not created and event.processed and not event.error:
+            return Response({"ResultCode": 0, "ResultDesc": "Accepted"})
+
+        try:
+            result = FinanceService.process_mpesa_callback_event(event)
+            tx = result.get("transaction")
+            payment = result.get("payment")
+            payment_created = bool(result.get("payment_created"))
+
+            if payment_created and tx and payment:
+                try:
+                    from school.models import Wallet, FinanceAuditLog, UserProfile as _WUP
+
+                    wallet_user = None
+                    if tx.student and tx.student.admission_number:
+                        wallet_profile = _WUP.objects.filter(
+                            admission_number=tx.student.admission_number
+                        ).select_related("user").first()
+                        if wallet_profile:
+                            wallet_user = wallet_profile.user
+                    if wallet_user:
+                        wallet = Wallet.get_or_create_for_user(wallet_user)
+                        wallet.credit(
+                            amount=payment.amount,
+                            entry_type='DEPOSIT',
+                            reference=parsed.get("mpesa_receipt"),
+                            description=f"M-Pesa STK: {parsed.get('phone') or ''}",
+                        )
+                        FinanceAuditLog.log_action(
+                            action='WALLET_CREDITED',
+                            entity='PAYMENT',
+                            entity_id=str(payment.id),
+                            metadata={
+                                'mpesa_receipt': parsed.get("mpesa_receipt"),
+                                'amount': str(payment.amount),
+                                'phone': parsed.get("phone"),
+                            },
+                            request=request,
+                            user=None,
+                        )
+                except Exception as wallet_err:
+                    log.warning("Wallet credit error (non-fatal): %s", wallet_err)
+
+                try:
+                    from django_tenants.utils import get_tenant
+                    from clients.billing_engine import BillingEngine
+
+                    tenant = get_tenant(request)
+                    billing = BillingEngine.for_tenant(
+                        schema_name=tenant.schema_name,
+                        school_name=getattr(tenant, 'name', tenant.schema_name),
+                    )
+                    billing.record_transaction_fee(
+                        amount=payment.amount,
+                        mpesa_receipt=parsed.get("mpesa_receipt"),
+                        metadata={'checkout_id': tx.external_id},
+                    )
+                except Exception as bill_err:
+                    log.warning("Billing fee record error (non-fatal): %s", bill_err)
+
+                try:
+                    from school.fraud_detection import FraudDetectionEngine as _FDE2
+                    from school.models import UserProfile as _UP
+
+                    risk_user = None
+                    if tx.student and tx.student.admission_number:
+                        risk_profile = _UP.objects.filter(
+                            admission_number=tx.student.admission_number
+                        ).select_related("user").first()
+                        if risk_profile:
+                            risk_user = risk_profile.user
+                    _FDE2(user=risk_user).check_deposit_risk(
+                        amount=parsed.get("amount") or tx.amount,
+                        phone=parsed.get("phone") or "",
+                    )
+                except Exception as risk_err:
+                    log.warning("Risk scoring error (non-fatal): %s", risk_err)
+
+                try:
+                    from school.models import FinanceAuditLog
+
+                    FinanceAuditLog.log_action(
+                        action='PAYMENT_RECEIVED',
+                        entity='PAYMENT',
+                        entity_id=str(payment.id),
+                        metadata={
+                            'mpesa_receipt': parsed.get("mpesa_receipt"),
+                            'amount': str(payment.amount),
+                            'phone': parsed.get("phone"),
+                            'transaction_date': parsed.get("transaction_date"),
+                            'checkout_id': tx.external_id,
+                        },
+                        request=request,
+                    )
+                except Exception as audit_err:
+                    log.warning("Audit log error (non-fatal): %s", audit_err)
+
+                try:
+                    from communication.models import Notification as _Notif
+                    from school.models import UserModuleAssignment as _UMA
+
+                    student_name = (
+                        f"{tx.student.first_name} {tx.student.last_name}"
+                        if tx.student else "Unknown Student"
+                    )
+                    amount_str = str(parsed.get("amount") or payment.amount)
+                    receipt = parsed.get("mpesa_receipt") or ""
+                    transaction_time = parsed.get("transaction_date") or ""
+                    finance_user_ids = list(
+                        _UMA.objects.filter(
+                            module__key="FINANCE",
+                            is_active=True,
+                            user__is_active=True,
+                        ).values_list("user_id", flat=True)
+                    )
+                    if finance_user_ids:
+                        _Notif.objects.bulk_create(
+                            [
+                                _Notif(
+                                    recipient_id=user_id,
+                                    notification_type="Financial",
+                                    title="M-Pesa Payment Received",
+                                    message=(
+                                        f"KES {amount_str} received from {student_name}. "
+                                        f"Receipt: {receipt}. Time: {transaction_time}."
+                                    ),
+                                    priority="Important",
+                                    action_url="/dashboard/finance/payments/",
+                                    delivery_status="Sent",
+                                )
+                                for user_id in finance_user_ids
+                            ],
+                        )
+                        log.info(
+                            "M-Pesa payment notification sent to %d finance staff (receipt %s)",
+                            len(finance_user_ids),
+                            receipt,
+                        )
+                except Exception as notif_err:
+                    log.warning("M-Pesa finance notification error (non-fatal): %s", notif_err)
+
+            if not result["processed"]:
+                log.warning("M-Pesa callback stored for retry: %s", result["error"])
+        except Exception as exc:
+            log.error("Error processing M-Pesa callback: %s", exc, exc_info=True)
+
         return Response({"ResultCode": 0, "ResultDesc": "Accepted"})
 
 

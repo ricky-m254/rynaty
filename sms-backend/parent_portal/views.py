@@ -32,6 +32,7 @@ from school.models import (
 )
 from school.permissions import HasModuleAccess
 from school.permissions import IsSchoolAdmin
+from school.services import FinanceService
 
 from .models import ParentStudentLink
 from .serializers import ParentProfileSerializer, ParentStudentLinkSerializer
@@ -40,6 +41,13 @@ from .serializers import ParentProfileSerializer, ParentStudentLinkSerializer
 class ParentPortalAccessMixin:
     permission_classes = [permissions.IsAuthenticated, HasModuleAccess]
     module_key = "PARENTS"
+    force_password_change_exempt_views = {"ParentProfileView", "ParentChangePasswordView"}
+
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        profile = getattr(request.user, "userprofile", None)
+        if profile and profile.force_password_change and self.__class__.__name__ not in self.force_password_change_exempt_views:
+            raise PermissionDenied("Password change required before accessing this portal area.")
 
 
 def _children_for_parent(user):
@@ -647,12 +655,31 @@ class ParentFinancePayView(ParentPortalAccessMixin, APIView):
         if not child:
             return _no_linked_child_response()
 
-        amount = Decimal(str(request.data.get("amount") or "0"))
+        try:
+            amount = Decimal(str(request.data.get("amount") or "0"))
+        except Exception:
+            amount = Decimal("0")
         if amount <= 0:
             return Response({"error": "Amount must be greater than zero."}, status=status.HTTP_400_BAD_REQUEST)
 
         method = (request.data.get("payment_method") or "Online").strip()
         invoice_id = request.data.get("invoice_id")
+        invoice = None
+        if invoice_id:
+            invoice = Invoice.objects.filter(id=invoice_id, student=child, is_active=True).exclude(status="VOID").first()
+            if not invoice:
+                return Response({"error": "Invoice not found for the selected child."}, status=status.HTTP_404_NOT_FOUND)
+            outstanding = Decimal(str(invoice.balance_due or "0"))
+            if outstanding <= 0:
+                return Response(
+                    {"error": "This invoice has no outstanding balance."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if amount > outstanding:
+                return Response(
+                    {"error": f"Amount KES {amount} exceeds outstanding balance of KES {outstanding}."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
         # ── M-Pesa STK Push path ──────────────────────────────────────────
         if method.lower() in ("mpesa", "m-pesa", "mobile money"):
@@ -663,7 +690,10 @@ class ParentFinancePayView(ParentPortalAccessMixin, APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             from school.mpesa import initiate_stk_push, MpesaError
-            callback_url = request.build_absolute_uri("/api/finance/mpesa/callback/")
+            callback_url, _ = FinanceService.resolve_public_url(
+                "/api/finance/mpesa/callback/",
+                request=request,
+            )
             reference = f"FEES-{uuid.uuid4().hex[:6].upper()}"
             try:
                 result = initiate_stk_push(
@@ -680,7 +710,7 @@ class ParentFinancePayView(ParentPortalAccessMixin, APIView):
                 provider="mpesa",
                 external_id=result["checkout_request_id"],
                 student=child,
-                invoice_id=invoice_id,
+                invoice_id=invoice.id if invoice else invoice_id,
                 amount=amount,
                 currency="KES",
                 status="PENDING",
@@ -707,12 +737,55 @@ class ParentFinancePayView(ParentPortalAccessMixin, APIView):
             )
 
         # ── All other payment methods (manual / bank / cash) ─────────────
+        if method.lower() in ("stripe", "card", "online", "online payment"):
+            from school.stripe import StripeError
+
+            try:
+                checkout = FinanceService.create_stripe_checkout_transaction(
+                    request=request,
+                    student=child,
+                    amount=amount,
+                    initiated_by=request.user,
+                    invoice=invoice,
+                    source="parent_portal",
+                    notes=request.data.get("notes") or f"Parent portal payment for {child.first_name} {child.last_name}",
+                    description=request.data.get("description") or "School Fees",
+                    reference=request.data.get("reference"),
+                    success_url=request.data.get("success_url") or "/modules/parent-portal/finance?stripe=success&session_id={CHECKOUT_SESSION_ID}",
+                    cancel_url=request.data.get("cancel_url") or "/modules/parent-portal/finance?stripe=cancel",
+                    customer_email=request.data.get("customer_email") or request.user.email,
+                    extra_payload={
+                        "portal_type": "parent",
+                    },
+                )
+            except (StripeError, ValueError) as exc:
+                return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+            tx = checkout["transaction"]
+            session = checkout["session"]
+            return Response(
+                {
+                    "payment_id": tx.id,
+                    "transaction_id": tx.id,
+                    "checkout_session_id": session.get("id"),
+                    "checkout_url": session.get("url"),
+                    "reference_number": checkout["reference"],
+                    "reference": checkout["reference"],
+                    "payment_method": "Stripe",
+                    "status": tx.status,
+                    "payment_status": session.get("payment_status"),
+                    "configured_mode": session.get("configured_mode"),
+                    "message": "Redirect to the hosted Stripe Checkout page to complete payment.",
+                },
+                status=status.HTTP_201_CREATED,
+            )
+
         reference_number = f"PPORT-{uuid.uuid4().hex[:8].upper()}"
         row = PaymentGatewayTransaction.objects.create(
             provider="parent_portal",
             external_id=reference_number,
             student=child,
-            invoice_id=invoice_id,
+            invoice_id=invoice.id if invoice else invoice_id,
             amount=amount,
             currency="KES",
             status="INITIATED",
@@ -727,8 +800,17 @@ class ParentFinancePayView(ParentPortalAccessMixin, APIView):
             {
                 "payment_id": row.id,
                 "reference_number": row.external_id,
+                "reference": row.external_id,
                 "payment_method": method,
-                "status": "Initiated",
+                "status": row.status,
+                "message": (
+                    f"Bank transfer initiated. Use reference {row.external_id} when sending funds. "
+                    "Your balance will update after the school reconciles the transfer."
+                    if method.lower() in ("bank transfer", "bank", "wire transfer")
+                    else f"{method} payment request recorded with reference {row.external_id}. "
+                    "It will reflect once the school confirms settlement."
+                ),
+                "requires_manual_confirmation": True,
             },
             status=status.HTTP_201_CREATED,
         )

@@ -29,6 +29,7 @@ from school.models import (
     UserProfile,
 )
 from school.permissions import HasModuleAccess
+from school.services import FinanceService
 
 import logging
 
@@ -603,7 +604,7 @@ class StudentFinancePayView(StudentPortalAccessMixin, APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        outstanding = (invoice.total_amount or Decimal("0")) - (invoice.paid_amount or Decimal("0"))
+        outstanding = Decimal(str(invoice.balance_due or "0"))
         if outstanding <= 0:
             return Response(
                 {"error": "This invoice has no outstanding balance."},
@@ -628,9 +629,85 @@ class StudentFinancePayView(StudentPortalAccessMixin, APIView):
             )
 
         method = (request.data.get("payment_method") or "mpesa").strip().lower()
+        if method in ("stripe", "card", "online", "online payment"):
+            from school.stripe import StripeError
+
+            try:
+                checkout = FinanceService.create_stripe_checkout_transaction(
+                    request=request,
+                    student=student,
+                    amount=amount,
+                    initiated_by=request.user,
+                    invoice=invoice,
+                    source="student_portal",
+                    notes=request.data.get("notes") or f"Student portal payment for invoice {invoice.invoice_number or invoice.id}",
+                    description=request.data.get("description") or "School Fees",
+                    reference=request.data.get("reference"),
+                    success_url=request.data.get("success_url") or "/student-portal/fees?stripe=success&session_id={CHECKOUT_SESSION_ID}",
+                    cancel_url=request.data.get("cancel_url") or "/student-portal/fees?stripe=cancel",
+                    customer_email=request.data.get("customer_email") or request.user.email,
+                    extra_payload={
+                        "portal_type": "student",
+                    },
+                )
+            except (StripeError, ValueError) as exc:
+                return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+            tx = checkout["transaction"]
+            session = checkout["session"]
+            return Response(
+                {
+                    "payment_id": tx.id,
+                    "transaction_id": tx.id,
+                    "checkout_session_id": session.get("id"),
+                    "checkout_url": session.get("url"),
+                    "reference_number": checkout["reference"],
+                    "reference": checkout["reference"],
+                    "payment_method": "Stripe",
+                    "status": tx.status,
+                    "payment_status": session.get("payment_status"),
+                    "configured_mode": session.get("configured_mode"),
+                    "message": "Redirect to the hosted Stripe Checkout page to complete payment.",
+                },
+                status=status.HTTP_201_CREATED,
+            )
+
+        if method in ("bank transfer", "bank", "manual", "offline"):
+            reference_number = f"STPORT-{uuid.uuid4().hex[:8].upper()}"
+            row = PaymentGatewayTransaction.objects.create(
+                provider="student_portal",
+                external_id=reference_number,
+                student=student,
+                invoice_id=invoice.id,
+                amount=amount,
+                currency="KES",
+                status="INITIATED",
+                payload={
+                    "source": "student_portal",
+                    "payment_method": request.data.get("payment_method") or "Bank Transfer",
+                    "initiated_by_user_id": request.user.id,
+                    "initiated_by_username": request.user.username,
+                },
+            )
+            return Response(
+                {
+                    "payment_id": row.id,
+                    "reference_number": row.external_id,
+                    "reference": row.external_id,
+                    "payment_method": "Bank Transfer",
+                    "status": row.status,
+                    "message": (
+                        f"Bank transfer initiated. Use reference {row.external_id} when sending funds. "
+                        "Your balance will update after the school reconciles the transfer."
+                    ),
+                    "requires_manual_confirmation": True,
+                },
+                status=status.HTTP_201_CREATED,
+            )
+
         if method not in ("mpesa", "m-pesa", "mobile money"):
             return Response(
-                {"error": "Only M-Pesa payments are supported from the student portal."},
+                {"error": "Supported payment methods are M-Pesa, Stripe, and Bank Transfer."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -642,7 +719,10 @@ class StudentFinancePayView(StudentPortalAccessMixin, APIView):
             )
 
         from school.mpesa import initiate_stk_push, MpesaError
-        callback_url = request.build_absolute_uri("/api/finance/mpesa/callback/")
+        callback_url, _ = FinanceService.resolve_public_url(
+            "/api/finance/mpesa/callback/",
+            request=request,
+        )
         reference = f"FEES-{uuid.uuid4().hex[:6].upper()}"
 
         try:
