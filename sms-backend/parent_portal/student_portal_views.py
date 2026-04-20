@@ -568,13 +568,13 @@ class MyPaymentsView(StudentPortalAccessMixin, APIView):
 class StudentFinancePayView(StudentPortalAccessMixin, APIView):
     """
     POST /api/student-portal/finance/pay/
-    Student initiates an M-Pesa STK Push to pay their own outstanding fees.
+    Student initiates a payment for their own outstanding fees.
 
     Body:
         invoice_id      : int  — REQUIRED; must belong to this student and be unpaid
         phone           : str  — Kenyan mobile number e.g. 0712345678
         amount          : decimal — amount in KES; must be > 0 and <= outstanding balance
-        payment_method  : str  — "mpesa" (only supported value for now)
+        payment_method  : str  — "mpesa", "stripe", or "bank transfer"
     """
     def post(self, request):
         student = _student_from_request(request.user)

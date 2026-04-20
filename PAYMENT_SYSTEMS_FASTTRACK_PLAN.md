@@ -344,11 +344,12 @@ That gives you a real, launchable payments system much faster than trying to imp
 
 ## Where This Plan Picks Up Now
 
-Since this draft, the repo has moved forward on several of the "build next" items. The fastest path is no longer "implement Stripe and bank tooling from scratch." The fastest path now is:
+Since this draft, the repo has moved forward on several of the "build next" items. The fastest path is no longer "finish Stripe portal entry points" or "implement bank tooling from scratch." The fastest path now is:
 
-1. finish the portal-facing entry points
-2. validate the shared settlement paths already in the repo
-3. document launch and recovery steps
+1. validate real tenant credentials and public callback/webhook reachability
+2. exercise the bank reconciliation and gateway-event recovery workflows in staging
+3. run the payment regression suites and capture evidence
+4. close only the hardening items that still look truly launch-blocking
 
 ---
 
@@ -361,9 +362,14 @@ The following is already present and should be treated as existing delivery, not
 - Stripe signature verification already exists
 - shared Stripe webhook settlement exists in `sms-backend/school/services.py`
 - M-Pesa callback idempotency and reprocess flows already exist
+- parent portal payment initiation now supports Stripe, M-Pesa, and bank transfer in `sms-backend/parent_portal/views.py`
+- student portal payment initiation now supports Stripe, M-Pesa, and bank transfer in `sms-backend/parent_portal/student_portal_views.py`
 - bank statement CSV import/export exists in `sms-backend/school/views.py`
 - bank auto-match logic already includes exact reference plus amount/date-window fallback in `sms-backend/school/services.py`
+- launch-readiness, Stripe test-connection, M-Pesa test-connection, callback-url, and gateway-event endpoints already exist
+- `docs/payments_launch_runbook.md` already documents readiness, validation, recovery, and rollback steps
 - finance tests already cover Stripe checkout creation, webhook completion, duplicate safety, and reprocess in `sms-backend/school/test_finance_phase4.py`
+- finance activation-prep coverage already exists in `sms-backend/school/test_phase6_finance_collection_ops_activation_prep.py`
 
 This means the original plan should now be read as a first-pass build plan plus a handoff document, not as a fully current implementation gap list.
 
@@ -371,31 +377,7 @@ This means the original plan should now be read as a first-pass build plan plus 
 
 ## What Is Still Actually Missing
 
-### 1. Student Portal Stripe Path
-
-The student portal still explicitly allows only M-Pesa payment initiation today.
-
-Primary area:
-
-- `sms-backend/parent_portal/student_portal_views.py`
-
-Impact:
-
-- students cannot yet start a real Stripe payment flow from the portal even though Stripe settlement exists downstream
-
-### 2. Parent Portal Online Payment Completion
-
-The parent portal can create non-M-Pesa initiation rows, but non-M-Pesa methods still stop at a placeholder initiation record instead of handing off to Stripe Checkout.
-
-Primary area:
-
-- `sms-backend/parent_portal/views.py`
-
-Impact:
-
-- parents can mark intent for "Online" payment, but that is not the same as a true hosted card checkout flow
-
-### 3. Launch Validation With Real Config
+### 1. Launch Validation With Real Config
 
 The backend flow is materially more complete than the original plan assumed, but it still needs environment validation:
 
@@ -405,74 +387,113 @@ The backend flow is materially more complete than the original plan assumed, but
 - M-Pesa callback URL
 - tenant-level payment settings
 
-### 4. Operator Runbook And Real-File Validation
+This is not a missing-code problem. It is an environment and go-live validation problem.
 
-Bank CSV import and auto-match exist, but they still need validation with real statement formats and a clear operating procedure for bursar and finance users.
+### 2. Real Bank Statement Validation
+
+Bank CSV import and auto-match exist, but they still need proof against real statement formats:
+
+- import a real bank statement CSV in staging
+- verify at least one auto-match
+- verify unmatched lines appear correctly
+- verify clear / unmatch / ignore actions with realistic data
+
+### 3. Staging Operator Exercise
+
+The code supports operator recovery, but the workflow still needs to be exercised in staging:
+
+- list failed gateway events
+- reprocess one recoverable event
+- confirm support / finance staff can follow the runbook without DB access
+
+### 4. Remaining Hardening Gaps
+
+The repo now has much better payment hardening than before, but a few items still look unfinished or not obvious:
+
+- request throttling / rate limiting on payment initiation endpoints is not clearly visible in the current payment paths
+- external idempotency-key handling on payment initiation endpoints is not clearly exposed
+- provider-side Stripe refund automation is not clearly established from this payment audit
+
+These are no longer "build payments from scratch" issues, but they remain real hardening and product-completeness gaps.
+
+### 5. Deferred Later-Phase Features
+
+The following still appear intentionally out of scope or not yet implemented:
+
+- direct bank API integrations
+- cheque OCR
+- recurring card payments
+- advanced fraud controls beyond the current fixes
+- richer reconciliation heuristics beyond exact reference and amount/date fallback
+
+These should be tracked as later-phase work, not confused with current launch blockers.
 
 ---
 
 ## Revised Shortest Path From Here
 
-### Phase 4: Finish Portal Entry Points
-
-Target: 2-3 days
-
-Build:
-
-- allow `payment_method=stripe` from student and parent payment flows
-- route those requests into the existing Stripe checkout session flow
-- return checkout session URL and reference metadata to portal clients
-- keep the current M-Pesa flow unchanged
-
-Primary areas:
-
-- `sms-backend/parent_portal/student_portal_views.py`
-- `sms-backend/parent_portal/views.py`
-- any shared request/response serializers used by portal finance endpoints
-
-Acceptance:
-
-- student can select Stripe and receive a hosted checkout URL
-- parent can select Stripe and receive a hosted checkout URL
-- successful Stripe completion settles through the existing shared webhook path
-- duplicate completion remains idempotent
-
-### Phase 5: Validate And Launch
+### Phase 4: Validate And Exercise In Staging
 
 Target: 2 days
 
 Build:
 
-- validate Stripe webhook delivery against the existing endpoint
-- validate M-Pesa callback routing in the target environment
-- test bank CSV import with real sample statements
-- verify manual webhook reprocess works for recoverable failures
-- document launch checklist, rollback steps, and support procedure
+- run `GET /api/finance/launch-readiness/` for each launch tenant
+- validate Stripe and M-Pesa test-connection checks with real tenant credentials
+- confirm the public Stripe webhook URL and M-Pesa callback URL are correct and HTTPS
+- import one real bank statement sample in staging
+- exercise clear / unmatch / ignore actions with realistic reconciliation data
+- reprocess one recoverable gateway event through the operator flow
 
 Primary areas:
 
 - `sms-backend/school/views.py`
 - `sms-backend/school/services.py`
-- `sms-backend/finance`
+- `docs/payments_launch_runbook.md`
+- operator finance settings and reconciliation screens
+
+Acceptance:
+
+- readiness reports the right blocking issues and next actions for the tenant
+- Stripe and M-Pesa validation checks succeed in the target environment
+- one real bank CSV import produces at least one auto-match and one unmatched line
+- finance/support can reprocess a recoverable event without DB access
+
+### Phase 5: Close Selective Launch Gaps
+
+Target: 1-2 days
+
+Build:
+
+- run the payment regression suites and capture the results
+- document tenant-by-tenant launch evidence and operator sign-off
+- decide whether rate limiting and external idempotency support must land before go-live
+- keep post-launch items separated from true launch blockers
+- finalize launch, rollback, and support notes
+
+Primary areas:
+
+- `sms-backend/school/test_finance_phase4.py`
+- `sms-backend/school/test_phase6_finance_collection_ops_activation_prep.py`
 - docs and ops notes
 
 Acceptance:
 
-- finance admin can see and reprocess failed webhook events safely
-- bursar can import a statement and act on unmatched lines
-- launch checklist exists and has been exercised once in staging
-- payment credentials and callback/webhook URLs are documented per tenant
+- regression suites are green
+- launch evidence exists per tenant
+- open items are clearly classified as launch blockers or deferred
+- finance/support can follow the current runbook and rollback notes
 
 ---
 
 ## Updated Build Order
 
-1. Finish Stripe entry points in student and parent portals
-2. Reuse the existing shared settlement/webhook path; do not fork business logic
-3. Validate bank CSV import and matching with real statement samples
-4. Confirm Stripe and M-Pesa configuration in staging
+1. Validate launch-readiness and tenant payment credentials
+2. Confirm public Stripe webhook and M-Pesa callback URLs in staging
+3. Validate bank CSV import and reconciliation against a real statement sample
+4. Exercise failed-event listing and reprocess workflow
 5. Run payment regression tests and capture results
-6. Launch with operator checklist and reprocess procedure
+6. Close only the hardening items that remain true launch blockers
 
 ---
 
@@ -480,30 +501,34 @@ Acceptance:
 
 The payment system is now launch-ready when all of these are true:
 
-1. student portal can initiate M-Pesa and Stripe flows
-2. parent portal can initiate M-Pesa and Stripe flows
-3. Stripe webhook completes payment settlement using the existing shared flow
-4. duplicate M-Pesa and Stripe callbacks remain safe
-5. bank CSV import works with real statement samples
-6. finance staff can inspect gateway transactions and webhook events
-7. finance staff can reprocess recoverable failed events without database access
-8. launch configuration is documented tenant-by-tenant
-9. regression tests for payment initiation, settlement, reprocess, and matching are green
+1. student and parent portals can initiate Stripe, M-Pesa, and bank-transfer flows
+2. Stripe and M-Pesa settlement paths remain idempotent and recoverable
+3. `GET /api/finance/launch-readiness/` reports ready for the launch tenants
+4. Stripe and M-Pesa test-connection checks succeed with real tenant credentials
+5. public webhook and callback URLs are reachable over HTTPS
+6. one real bank CSV sample has been imported and validated in staging
+7. finance staff can inspect and reprocess recoverable gateway events without database access
+8. launch configuration and operator runbook steps are documented tenant-by-tenant
+9. regression tests for payment initiation, settlement, reprocess, and activation prep are green
 
 ---
 
 ## Execution Checklist
 
-- [ ] wire Stripe initiation into student portal finance flow
-- [ ] wire Stripe initiation into parent portal finance flow
-- [ ] confirm `integrations.stripe` contains secret and webhook secret
-- [ ] confirm `/api/finance/gateway/webhooks/stripe/` is reachable from Stripe
-- [ ] confirm `/api/finance/mpesa/callback/` is reachable from Safaricom
+- [x] wire Stripe initiation into student portal finance flow
+- [x] wire Stripe initiation into parent portal finance flow
+- [x] confirm shared Stripe checkout + webhook settlement exists in backend
+- [x] confirm readiness, test-connection, callback-url, and gateway-event endpoints exist
+- [x] write a short launch/runbook note for support and bursar users
+- [x] run `school.test_finance_phase4`
+- [x] run `school.test_phase6_finance_collection_ops_activation_prep`
+- [ ] confirm `integrations.stripe` contains secret and webhook secret for each launch tenant
+- [ ] confirm `/api/finance/gateway/webhooks/stripe/` is reachable from Stripe in staging
+- [ ] confirm `/api/finance/mpesa/callback/` is reachable from Safaricom in staging
 - [ ] validate bank CSV import against real statement samples
-- [ ] exercise manual reprocess flow for one M-Pesa and one Stripe failure case
-- [ ] run `school.test_finance_phase4`
-- [ ] run the relevant finance activation prep tests before launch
-- [ ] write a short launch/runbook note for support and bursar users
+- [ ] exercise manual reprocess flow for one M-Pesa and one Stripe failure case in staging
+- [ ] classify rate limiting / external idempotency support as launch-blocking or deferred
+- [ ] capture tenant-by-tenant launch evidence and sign-off
 
 ---
 
@@ -521,9 +546,9 @@ The fastest move now is not another large backend implementation phase.
 
 The fastest move is:
 
-- finish the Stripe handoff in student and parent portals
+- validate live tenant config and public callback/webhook reachability
+- exercise bank reconciliation and gateway-event recovery in staging
 - trust and reuse the shared settlement logic that already exists
-- validate real callbacks, webhooks, and bank files in staging
-- ship with a runbook and reprocess procedure
+- ship with the current runbook and only the remaining hardening fixes that truly block launch
 
 Most of the backend work the original fast-track plan called for is already present in the repo. The remaining work is mainly exposure, validation, and launch discipline.
