@@ -9398,6 +9398,62 @@ class FinanceLaunchReadinessView(APIView):
         )
 
 
+def _resolve_request_tenant_metadata(request):
+    request_tenant = getattr(request, "tenant", None)
+    schema_name = getattr(request_tenant, "schema_name", None) or getattr(connection, "schema_name", None)
+    if not schema_name or schema_name == "public":
+        return None
+
+    school_name = getattr(request_tenant, "name", None)
+    if school_name:
+        return {
+            "schema_name": schema_name,
+            "school_name": school_name,
+        }
+
+    try:
+        from django_tenants.utils import get_public_schema_name, schema_context
+        from clients.models import Tenant
+
+        with schema_context(get_public_schema_name()):
+            tenant = Tenant.objects.filter(schema_name=schema_name).first()
+    except Exception:
+        tenant = None
+
+    return {
+        "schema_name": schema_name,
+        "school_name": getattr(tenant, "name", None) or schema_name,
+    }
+
+
+def _record_mpesa_transaction_fee(*, request, payment_amount, mpesa_receipt, checkout_id, log):
+    from clients.billing_engine import BillingEngine
+
+    tenant_meta = _resolve_request_tenant_metadata(request)
+    if not tenant_meta:
+        log.info("Skipping M-Pesa transaction fee billing because no tenant context could be resolved.")
+        return False
+
+    billing = BillingEngine.for_tenant(
+        schema_name=tenant_meta["schema_name"],
+        school_name=tenant_meta["school_name"],
+    )
+    billing.record_transaction_fee(
+        amount=payment_amount,
+        mpesa_receipt=mpesa_receipt,
+        metadata={"checkout_id": checkout_id},
+    )
+    return True
+
+
+def _log_mpesa_callback_retry(log, error_message):
+    message = str(error_message or "").strip()
+    if message.startswith("Unknown M-Pesa checkout_request_id:"):
+        log.info("M-Pesa callback stored for retry: %s", message)
+        return
+    log.warning("M-Pesa callback stored for retry: %s", message)
+
+
 class MpesaStkCallbackView(APIView):
     """
     POST /api/finance/mpesa/callback/
@@ -9546,17 +9602,12 @@ class MpesaStkCallbackView(APIView):
 
                             # ── Enterprise: SaaS transaction fee billing ───────
                             try:
-                                from django_tenants.utils import get_tenant
-                                from clients.billing_engine import BillingEngine
-                                _tenant = get_tenant(request)
-                                _billing = BillingEngine.for_tenant(
-                                    schema_name=_tenant.schema_name,
-                                    school_name=getattr(_tenant, 'name', _tenant.schema_name),
-                                )
-                                _billing.record_transaction_fee(
-                                    amount=payment.amount,
+                                _record_mpesa_transaction_fee(
+                                    request=request,
+                                    payment_amount=payment.amount,
                                     mpesa_receipt=parsed["mpesa_receipt"],
-                                    metadata={'checkout_id': checkout_id},
+                                    checkout_id=checkout_id,
+                                    log=log,
                                 )
                             except Exception as _bill_err:
                                 log.warning("Billing fee record error (non-fatal): %s", _bill_err)
@@ -9718,18 +9769,12 @@ class MpesaStkCallbackView(APIView):
                     log.warning("Wallet credit error (non-fatal): %s", wallet_err)
 
                 try:
-                    from django_tenants.utils import get_tenant
-                    from clients.billing_engine import BillingEngine
-
-                    tenant = get_tenant(request)
-                    billing = BillingEngine.for_tenant(
-                        schema_name=tenant.schema_name,
-                        school_name=getattr(tenant, 'name', tenant.schema_name),
-                    )
-                    billing.record_transaction_fee(
-                        amount=payment.amount,
+                    _record_mpesa_transaction_fee(
+                        request=request,
+                        payment_amount=payment.amount,
                         mpesa_receipt=parsed.get("mpesa_receipt"),
-                        metadata={'checkout_id': tx.external_id},
+                        checkout_id=tx.external_id,
+                        log=log,
                     )
                 except Exception as bill_err:
                     log.warning("Billing fee record error (non-fatal): %s", bill_err)
@@ -9816,7 +9861,7 @@ class MpesaStkCallbackView(APIView):
                     log.warning("M-Pesa finance notification error (non-fatal): %s", notif_err)
 
             if not result["processed"]:
-                log.warning("M-Pesa callback stored for retry: %s", result["error"])
+                _log_mpesa_callback_retry(log, result["error"])
         except Exception as exc:
             log.error("Error processing M-Pesa callback: %s", exc, exc_info=True)
 

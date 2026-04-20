@@ -996,6 +996,25 @@ class BankStatementLineSerializer(serializers.ModelSerializer):
     matched_payment_reference = serializers.CharField(source='matched_payment.reference_number', read_only=True)
     matched_gateway_external_id = serializers.CharField(source='matched_gateway_transaction.external_id', read_only=True)
 
+    def validate(self, attrs):
+        if "status" in getattr(self, "initial_data", {}):
+            raise serializers.ValidationError(
+                {
+                    "status": "Use the clear, unmatch, or ignore actions to change reconciliation status."
+                }
+            )
+        return super().validate(attrs)
+
+    def update(self, instance, validated_data):
+        if {"matched_payment", "matched_gateway_transaction"} & set(validated_data):
+            matched_payment = validated_data.get("matched_payment", instance.matched_payment)
+            matched_gateway_transaction = validated_data.get(
+                "matched_gateway_transaction",
+                instance.matched_gateway_transaction,
+            )
+            validated_data["status"] = "MATCHED" if matched_payment or matched_gateway_transaction else "UNMATCHED"
+        return super().update(instance, validated_data)
+
     class Meta:
         model = BankStatementLine
         fields = [
@@ -1003,7 +1022,7 @@ class BankStatementLineSerializer(serializers.ModelSerializer):
             'status', 'matched_payment', 'matched_payment_reference',
             'matched_gateway_transaction', 'matched_gateway_external_id', 'imported_at'
         ]
-        read_only_fields = ['imported_at']
+        read_only_fields = ['status', 'imported_at']
 
 
 

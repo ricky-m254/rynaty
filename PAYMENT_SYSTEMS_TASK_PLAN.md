@@ -41,12 +41,20 @@ This task plan assumes the repo-backed payment baseline has already been verifie
 | Shared settlement and recovery paths | Verified in repo | Stripe webhook settlement, M-Pesa callback settlement, and gateway-event reprocess paths already exist |
 | Launch tooling | Verified in repo | readiness, test-connection, callback-url, gateway-event endpoints, and runbook are present |
 | Regression suites | Verified on April 19, 2026 | `school.test_finance_phase4` and `school.test_phase6_finance_collection_ops_activation_prep` passed |
-| Tenant config validation | Pending | Real tenant credentials and public callback/webhook reachability still need proof |
-| Staging payment validation | Pending | Parent/student staging flows still need live execution evidence |
-| Real bank CSV validation | Pending | Real statement samples still need import and reconciliation proof |
-| Operator recovery drill | Pending | Finance/support still need a staging reprocess exercise and runbook signoff |
+| Tenant config validation | In Progress | `demo_school` local preflight now proves M-Pesa config + sandbox OAuth; Stripe is being left out of the current Kenya launch scope by decision |
+| Staging payment validation | In Progress | Local parent/student dry-runs now pass on `demo_school`, and a synthetic M-Pesa callback settlement completed end to end; live staging evidence still needs capture |
+| Real bank CSV validation | Pending | Synthetic import/match/clear now works locally, but a real statement sample is still required |
+| Operator recovery drill | In Progress | Local failed-event inspection and manual reprocess simulation now pass; finance/support staging walkthrough and signoff still remain |
 
 The task statuses below refer to execution work in this plan, not to the repo capabilities already verified.
+
+## Current Launch Scope Note
+
+As of April 20, 2026, the current Kenya launch track is focusing on M-Pesa and bank-transfer flows.
+
+- Stripe remains implemented in the repo
+- Stripe is not launch-gating for the current Kenya rollout unless scope changes later
+- Stripe tasks stay visible for later follow-up, but they should not block M-Pesa or bank validation now
 
 ---
 
@@ -54,8 +62,8 @@ The task statuses below refer to execution work in this plan, not to the repo ca
 
 | Workstream | Purpose | Priority | Target Outcome |
 |------------|---------|----------|----------------|
-| WS1 | Launch configuration validation | Critical | Stripe and M-Pesa are correctly configured per tenant |
-| WS2 | End-to-end staging payment validation | Critical | Parent/student flows settle correctly in staging |
+| WS1 | Launch configuration validation | Critical | M-Pesa and bank-transfer launch prerequisites are correctly configured per tenant |
+| WS2 | End-to-end staging payment validation | Critical | Parent/student M-Pesa and bank-transfer flows settle correctly in staging |
 | WS3 | Bank statement validation | Critical | Real CSV files are imported and reconciled successfully |
 | WS4 | Operator readiness | Critical | Finance/support can recover failed events without DB access |
 | WS5 | Launch hardening | High | Payment initiation is safer and more production-ready |
@@ -76,7 +84,7 @@ The task statuses below refer to execution work in this plan, not to the repo ca
   Acceptance: every tenant has a clear owner and environment label
 
 - `TP-002` Confirm access and credentials ownership.
-  Deliverable: owner list for Stripe keys, Stripe webhook setup, M-Pesa credentials, bank statement samples
+  Deliverable: owner list for in-scope launch dependencies including M-Pesa credentials, callback setup, and bank statement samples
   Acceptance: no launch-critical dependency is ownerless
 
 - `TP-003` Freeze the launch-candidate baseline.
@@ -106,9 +114,9 @@ The task statuses below refer to execution work in this plan, not to the repo ca
   Deliverable: per-tenant readiness snapshot
   Acceptance: all blocking issues are logged and assigned
 
-- `TP-102` Validate Stripe test connection per tenant.
-  Deliverable: result from `POST /api/finance/stripe/test-connection/`
-  Acceptance: success response, correct account identity, correct mode
+- `TP-102` Defer Stripe connection validation for the current Kenya launch.
+  Deliverable: explicit scope note and owner acknowledgement that Stripe is not launch-gating for this rollout
+  Acceptance: Stripe-only readiness gaps do not block TP-105 or Phase 1 exit for the current Kenya launch
 
 - `TP-103` Validate M-Pesa test connection per tenant.
   Deliverable: result from `POST /api/finance/mpesa/test-connection/`
@@ -117,28 +125,27 @@ The task statuses below refer to execution work in this plan, not to the repo ca
 - `TP-104` Validate public callback and webhook URLs per tenant.
   Deliverable: screenshots or API responses from readiness and callback-url endpoints
   Acceptance:
-  Stripe webhook URL is HTTPS and externally reachable
   M-Pesa callback URL is HTTPS and externally reachable
   `mpesa.callback_source` is not `request_fallback`
+  Stripe webhook proof is only required if Stripe returns to launch scope
 
 - `TP-105` Resolve tenant-level configuration gaps.
   Deliverable: updated tenant settings and rerun readiness results
-  Acceptance: each launch tenant returns `ready: true`
+  Acceptance: each launch tenant is ready for the in-scope Kenya launch items, or any Stripe-only gaps are explicitly waived
 
 ### WS2: End-to-End Staging Payment Validation
 
 - `TP-106` Run parent portal smoke tests in staging.
-  Deliverable: evidence of Stripe, M-Pesa, and bank transfer initiation
+  Deliverable: evidence of M-Pesa and bank transfer initiation
   Acceptance:
-  Stripe returns hosted checkout URL
   M-Pesa returns checkout request ID
   bank transfer returns manual reference and instructions
 
 - `TP-107` Run student portal smoke tests in staging.
-  Deliverable: evidence of Stripe, M-Pesa, and bank transfer initiation
+  Deliverable: evidence of M-Pesa and bank transfer initiation
   Acceptance: same as parent portal, but from student flow
 
-- `TP-108` Validate Stripe settlement end to end.
+- `TP-108` Validate Stripe settlement end to end if Stripe is reintroduced later.
   Deliverable: one successful staging Stripe payment
   Acceptance:
   webhook is received
@@ -194,7 +201,7 @@ The task statuses below refer to execution work in this plan, not to the repo ca
 
 - all launch tenants pass readiness
 - parent and student portals are smoke-tested in staging
-- one real Stripe and one real M-Pesa payment are validated
+- one real M-Pesa payment is validated
 - one real bank statement file is validated
 - one manual reprocess drill is completed
 - support / bursar signoff is captured
@@ -223,11 +230,11 @@ The task statuses below refer to execution work in this plan, not to the repo ca
 
 - `TP-202` Add explicit idempotency support for payment initiation if `TP-200` keeps it in pre-launch scope.
   Scope:
-  external-facing initiation paths for Stripe and M-Pesa
+  external-facing initiation paths for M-Pesa and any other in-scope launch payment methods
   Deliverable: request contract, persistence behavior, tests
   Acceptance: duplicate initiation requests return safe, deterministic results
 
-- `TP-203` Review and decide Stripe refund / reversal automation scope.
+- `TP-203` Review and decide Stripe refund / reversal automation scope if Stripe returns to active scope.
   Deliverable: design note or decision memo
   Acceptance:
   either refund automation is implemented for MVP
@@ -241,7 +248,7 @@ The task statuses below refer to execution work in this plan, not to the repo ca
 
 - an approved decision exists for rate limiting, initiation idempotency, and refund/reversal scope
 - any hardening items kept in launch scope are implemented and tested
-- Stripe refund handling is either implemented or formally deferred with operator process
+- if Stripe returns to scope, refund handling is either implemented or formally deferred with operator process
 
 ---
 
@@ -310,26 +317,26 @@ Status reflects the next meaningful action at plan time. Dependencies still gove
 | TP-002 | Confirm access and credentials ownership | Critical | 0 | Blocked | TP-001 |
 | TP-003 | Freeze launch-candidate baseline | Critical | 0 | Complete | TP-001 |
 | TP-004 | Create evidence tracker | Critical | 0 | Complete | TP-001 |
-| TP-101 | Run readiness endpoint per tenant | Critical | 1 | Ready for Staging | TP-001, TP-003 |
-| TP-102 | Validate Stripe test connection | Critical | 1 | Ready for Staging | TP-101 |
-| TP-103 | Validate M-Pesa test connection | Critical | 1 | Ready for Staging | TP-101 |
-| TP-104 | Validate public callback/webhook URLs | Critical | 1 | Ready for Staging | TP-101 |
-| TP-105 | Resolve tenant config gaps | Critical | 1 | Blocked | TP-102, TP-103, TP-104 |
-| TP-106 | Parent portal staging smoke test | Critical | 1 | Ready for Staging | TP-105 |
-| TP-107 | Student portal staging smoke test | Critical | 1 | Ready for Staging | TP-105 |
-| TP-108 | Stripe end-to-end staging settlement | Critical | 1 | Ready for Staging | TP-102, TP-106, TP-107 |
-| TP-109 | M-Pesa end-to-end staging settlement | Critical | 1 | Ready for Staging | TP-103, TP-106, TP-107 |
+| TP-101 | Run readiness endpoint per tenant | Critical | 1 | In Progress | TP-001, TP-003 |
+| TP-102 | Defer Stripe connection validation for current Kenya launch | Critical | 1 | Deferred | TP-101 |
+| TP-103 | Validate M-Pesa test connection | Critical | 1 | In Progress | TP-101 |
+| TP-104 | Validate public callback/webhook URLs | Critical | 1 | In Progress | TP-101 |
+| TP-105 | Resolve tenant config gaps | Critical | 1 | In Progress | TP-103, TP-104 |
+| TP-106 | Parent portal staging smoke test | Critical | 1 | In Progress | TP-105 |
+| TP-107 | Student portal staging smoke test | Critical | 1 | In Progress | TP-105 |
+| TP-108 | Validate Stripe settlement end to end if Stripe is reintroduced later | Critical | 1 | Deferred | TP-102, TP-106, TP-107 |
+| TP-109 | M-Pesa end-to-end staging settlement | Critical | 1 | In Progress | TP-103, TP-106, TP-107 |
 | TP-110 | Collect real bank statement samples | Critical | 1 | Blocked | TP-002 |
 | TP-111 | Import real statement file | Critical | 1 | Blocked | TP-110 |
 | TP-112 | Validate reconciliation outcomes | Critical | 1 | Blocked | TP-111 |
-| TP-113 | Exercise failed-event inspection | Critical | 1 | Ready for Staging | TP-105 |
-| TP-114 | Exercise manual reprocess | Critical | 1 | Ready for Staging | TP-113 |
+| TP-113 | Exercise failed-event inspection | Critical | 1 | In Progress | TP-105 |
+| TP-114 | Exercise manual reprocess | Critical | 1 | In Progress | TP-113 |
 | TP-115 | Run support/bursar walkthrough | Critical | 1 | Blocked | TP-112, TP-114 |
-| TP-116 | Produce launch go/no-go summary | Critical | 1 | Blocked | TP-108, TP-109, TP-115 |
+| TP-116 | Produce launch go/no-go summary | Critical | 1 | Blocked | TP-109, TP-115 |
 | TP-200 | Decide launch-blocking hardening scope | High | 2 | Decision Pending | TP-116 or launch freeze decision |
 | TP-201 | Add rate limiting to initiation endpoints | High | 2 | Decision Pending | TP-200 |
 | TP-202 | Add initiation idempotency support | High | 2 | Decision Pending | TP-200 |
-| TP-203 | Decide Stripe refund automation scope | High | 2 | Decision Pending | TP-116 |
+| TP-203 | Decide Stripe refund automation scope if Stripe returns to active scope | High | 2 | Deferred | TP-116 |
 | TP-204 | Extend regression suite for hardening | High | 2 | Blocked | TP-200, TP-201, TP-202, TP-203 |
 | TP-301 | Bank API feasibility | Medium | 3 | Deferred | TP-116 |
 | TP-302 | Cheque OCR feasibility | Medium | 3 | Deferred | TP-116 |
@@ -364,7 +371,7 @@ No task should be marked complete without evidence.
 | Area | Recommended Owner |
 |------|-------------------|
 | tenant settings and credentials | platform / finance admin |
-| Stripe validation | backend engineer + finance admin |
+| optional Stripe validation | backend engineer + finance admin |
 | M-Pesa validation | backend engineer + finance admin |
 | portal smoke tests | QA or product engineer |
 | bank statement validation | bursar / finance operations |
@@ -380,7 +387,7 @@ This plan is successful when:
 
 1. every launch-critical task in Phase 1 is complete with evidence
 2. launch readiness is green for all target tenants
-3. real staging flows are proven for Stripe, M-Pesa, and bank reconciliation
+3. real staging flows are proven for M-Pesa and bank reconciliation
 4. support and finance teams can operate the system using the documented runbook
 5. hardening tasks and deferred roadmap items are clearly tracked instead of left implicit
 
@@ -392,7 +399,10 @@ Start with:
 
 - `TP-001` Confirm launch tenant list
 - `TP-002` Confirm credential owners
-- `TP-101` Run readiness snapshots for each launch tenant once `TP-001` is complete
+- `TP-104` capture external M-Pesa callback reachability in staging now that local callback resolution is proven
+- `TP-109` replace the local simulated M-Pesa settlement with one real staging settlement after callback reachability is confirmed
+- `TP-110` collect one real bank statement CSV sample now that local import/reconciliation mechanics are proven
+- `TP-115` schedule the finance/support walkthrough after the local failed-event and reprocess simulation
 - record proof in `PAYMENT_SYSTEMS_LAUNCH_EVIDENCE.md`
 
 That gives the fastest path to converting the second audit into active execution.

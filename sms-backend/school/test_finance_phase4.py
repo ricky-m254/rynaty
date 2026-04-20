@@ -292,6 +292,64 @@ class FinancePhase4WebhookAndReconciliationTests(TenantTestBase):
         line.refresh_from_db()
         self.assertEqual(line.status, "CLEARED")
 
+    def test_bank_line_manual_patch_match_sets_status_to_matched(self):
+        payment = Payment.objects.create(
+            student=self.student,
+            amount="640.00",
+            payment_method="Bank Transfer",
+            reference_number="BANK-MANUAL-9001",
+            notes="manual reconciliation target",
+        )
+        line = BankStatementLine.objects.create(
+            statement_date="2026-02-16",
+            amount="640.00",
+            reference="BANK-MANUAL-9001",
+            source="manual",
+            status="UNMATCHED",
+        )
+
+        request = self.factory.patch(
+            f"/api/finance/reconciliation/bank-lines/{line.id}/",
+            {"matched_payment": payment.id},
+            format="json",
+        )
+        force_authenticate(request, user=self.user)
+        response = BankStatementLineViewSet.as_view({"patch": "partial_update"})(request, pk=line.id)
+
+        self.assertEqual(response.status_code, 200)
+        line.refresh_from_db()
+        self.assertEqual(line.status, "MATCHED")
+        self.assertEqual(line.matched_payment_id, payment.id)
+
+    def test_bank_line_patch_rejects_direct_status_changes(self):
+        line = BankStatementLine.objects.create(
+            statement_date="2026-02-17",
+            amount="910.00",
+            reference="BANK-STATUS-REJECT",
+            source="manual",
+            status="UNMATCHED",
+        )
+
+        request = self.factory.patch(
+            f"/api/finance/reconciliation/bank-lines/{line.id}/",
+            {"status": "CLEARED"},
+            format="json",
+        )
+        force_authenticate(request, user=self.user)
+        response = BankStatementLineViewSet.as_view({"patch": "partial_update"})(request, pk=line.id)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn(
+            "Use the clear, unmatch, or ignore actions",
+            response.data["error"]["message"],
+        )
+        self.assertIn(
+            "Use the clear, unmatch, or ignore actions",
+            response.data["error"]["details"]["status"][0],
+        )
+        line.refresh_from_db()
+        self.assertEqual(line.status, "UNMATCHED")
+
     def test_mpesa_callback_is_idempotent_for_duplicate_payloads(self):
         PaymentGatewayTransaction.objects.create(
             provider="mpesa",
@@ -317,6 +375,30 @@ class FinancePhase4WebhookAndReconciliationTests(TenantTestBase):
         event = PaymentGatewayWebhookEvent.objects.get()
         self.assertTrue(event.processed)
         self.assertEqual(event.error, "")
+
+    @patch("clients.billing_engine.BillingEngine.for_tenant")
+    def test_mpesa_callback_records_billing_fee_using_active_tenant_context(self, mock_for_tenant):
+        PaymentGatewayTransaction.objects.create(
+            provider="mpesa",
+            external_id="ws_CO_BILLING",
+            student=self.student,
+            amount="500.00",
+            status="PENDING",
+            payload={},
+        )
+        payload = self._mpesa_success_payload(
+            checkout_id="ws_CO_BILLING",
+            receipt="MPESA-BILLING-001",
+        )
+
+        response = self._post_mpesa_callback(payload)
+
+        self.assertEqual(response.status_code, 200)
+        mock_for_tenant.assert_called_once_with(
+            schema_name=self.tenant.schema_name,
+            school_name=self.tenant.name,
+        )
+        mock_for_tenant.return_value.record_transaction_fee.assert_called_once()
 
     def test_mpesa_callback_can_be_reprocessed_after_missing_transaction_is_fixed(self):
         payload = self._mpesa_success_payload(
@@ -349,6 +431,24 @@ class FinancePhase4WebhookAndReconciliationTests(TenantTestBase):
         self.assertTrue(event.processed)
         self.assertEqual(event.error, "")
         self.assertEqual(Payment.objects.filter(reference_number="MPESA-RETRY-001").count(), 1)
+
+    def test_mpesa_callback_retry_path_logs_at_info_for_missing_transaction(self):
+        payload = self._mpesa_success_payload(
+            checkout_id="ws_CO_RETRY_LOG",
+            receipt="MPESA-RETRY-LOG-001",
+        )
+
+        with self.assertLogs("school.views", level="INFO") as logs:
+            response = self._post_mpesa_callback(payload)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(any("M-Pesa callback stored for retry" in entry for entry in logs.output))
+        self.assertFalse(
+            any(
+                "WARNING:school.views:M-Pesa callback stored for retry" in entry
+                for entry in logs.output
+            )
+        )
 
     def test_bank_line_auto_match_falls_back_to_unique_amount_and_date_window(self):
         payment = Payment.objects.create(
