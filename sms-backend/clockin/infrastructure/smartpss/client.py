@@ -36,6 +36,7 @@ import urllib.request
 import urllib.error
 from datetime import datetime, timezone as dt_tz
 from typing import Optional
+from ...networking import format_host_for_url
 
 
 CONNECT_TIMEOUT = 10.0   # seconds — for login / test
@@ -73,7 +74,7 @@ class SmartPSSLiteClient:
                  password: str = '', use_https: bool = False):
         import os
         scheme = 'https' if use_https else 'http'
-        self.base = f'{scheme}://{host.strip()}:{port}/evo-apigw'
+        self.base = f'{scheme}://{format_host_for_url(host)}:{port}/evo-apigw'
         self.username = username
         # Never fall back to a hardcoded credential; require the caller to supply
         # the password explicitly or via the SMARTPSS_PASSWORD environment variable.

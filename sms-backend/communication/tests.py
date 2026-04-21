@@ -2,6 +2,7 @@ from datetime import timedelta
 import hashlib
 import hmac
 import json
+from django.core.files.uploadedfile import SimpleUploadedFile
 
 from django.contrib.auth import get_user_model
 from django.test import override_settings
@@ -131,6 +132,61 @@ class CommunicationModuleTests(TenantTestBase):
         self.assertEqual(dashboard_rows[0]["content"], "Newer message")
         self.assertEqual(dashboard_rows[0]["delivery_status"], "Read")
         self.assertEqual(dashboard_rows[0]["sender_name"], "teacher1")
+
+    def test_message_create_accepts_attachments_and_returns_absolute_urls(self):
+        conversation = Conversation.objects.create(
+            conversation_type="Direct",
+            title="Attachment thread",
+            created_by=self.user,
+        )
+        conversation.participants.create(user=self.user, role="Admin", is_active=True)
+        conversation.participants.create(user=self.user2, role="Member", is_active=True)
+
+        upload = SimpleUploadedFile(
+            "notice.png",
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR",
+            content_type="image/png",
+        )
+        request = self.factory.post(
+            "/api/communication/messages/",
+            {"conversation": str(conversation.id), "content": "See attachment", "attachments": upload},
+            format="multipart",
+        )
+        force_authenticate(request, user=self.user)
+        response = CommunicationMessageViewSet.as_view({"post": "create"})(request)
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["message_type"], "Image")
+        self.assertEqual(len(response.data["attachments"]), 1)
+        attachment = response.data["attachments"][0]
+        self.assertEqual(attachment["file_name"], "notice.png")
+        self.assertTrue(attachment["is_image"])
+        self.assertTrue(attachment["url"].startswith("http://testserver/"))
+        self.assertTrue(attachment["preview_url"].startswith("http://testserver/"))
+
+    def test_message_create_requires_text_or_attachment(self):
+        conversation = Conversation.objects.create(
+            conversation_type="Direct",
+            title="Empty guard",
+            created_by=self.user,
+        )
+        conversation.participants.create(user=self.user, role="Admin", is_active=True)
+        conversation.participants.create(user=self.user2, role="Member", is_active=True)
+
+        request = self.factory.post(
+            "/api/communication/messages/",
+            {"conversation": conversation.id, "content": "   "},
+            format="json",
+        )
+        force_authenticate(request, user=self.user)
+        response = CommunicationMessageViewSet.as_view({"post": "create"})(request)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data.get("error", {}).get("code"), "VALIDATION_ERROR")
+        self.assertEqual(
+            response.data.get("error", {}).get("details", {}).get("content"),
+            "Message content or at least one attachment is required.",
+        )
 
     @override_settings(COMMUNICATION_WEBHOOK_TOKEN="test-webhook-token")
     def test_communication_core_flow(self):

@@ -1,6 +1,7 @@
 from django.urls import include, path, re_path
 from django.http import JsonResponse, FileResponse, HttpResponse
 from django.conf import settings
+from django.views.static import serve as static_serve
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework_simplejwt.views import TokenRefreshView
 
@@ -160,4 +161,12 @@ urlpatterns = [
 
     # 5. Catch-all: serve the React SPA for any remaining public-schema route
     re_path(r"^(?!api/|admin/|static/|media/).*$", _serve_react_app),
+]
+
+urlpatterns += [
+    re_path(
+        r"^media/(?P<path>.*)$",
+        static_serve,
+        {"document_root": str(settings.MEDIA_ROOT)},
+    )
 ]

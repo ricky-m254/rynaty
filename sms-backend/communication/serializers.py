@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from common.media_urls import AbsoluteURLFileField, build_absolute_media_url, display_media_name, is_image_file
 from .models import (
     Announcement,
     AnnouncementRead,
@@ -38,10 +39,53 @@ class ConversationParticipantSerializer(serializers.ModelSerializer):
 
 
 class MessageAttachmentSerializer(serializers.ModelSerializer):
+    file = AbsoluteURLFileField(read_only=True)
+    url = serializers.SerializerMethodField()
+    preview_url = serializers.SerializerMethodField()
+    is_image = serializers.SerializerMethodField()
+    file_extension = serializers.SerializerMethodField()
+
+    def get_url(self, obj):
+        return build_absolute_media_url(self.context.get("request"), obj.file)
+
+    def get_preview_url(self, obj):
+        return self.get_url(obj) if self.get_is_image(obj) else ""
+
+    def get_is_image(self, obj):
+        return is_image_file(obj.file, obj.mime_type)
+
+    def get_file_extension(self, obj):
+        file_name = display_media_name(obj.file_name or obj.file)
+        if "." not in file_name:
+            return ""
+        return file_name.rsplit(".", 1)[-1].lower()
+
     class Meta:
         model = MessageAttachment
-        fields = "__all__"
-        read_only_fields = ["uploaded_at", "file_name", "file_size", "mime_type"]
+        fields = [
+            "id",
+            "message",
+            "file",
+            "file_name",
+            "file_size",
+            "mime_type",
+            "uploaded_at",
+            "is_active",
+            "url",
+            "preview_url",
+            "is_image",
+            "file_extension",
+        ]
+        read_only_fields = [
+            "uploaded_at",
+            "file_name",
+            "file_size",
+            "mime_type",
+            "url",
+            "preview_url",
+            "is_image",
+            "file_extension",
+        ]
 
 
 class CommunicationMessageSerializer(serializers.ModelSerializer):

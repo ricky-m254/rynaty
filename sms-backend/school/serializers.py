@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.db import models, OperationalError as _DbOperationalError, ProgrammingError as _DbProgrammingError
+from common.media_urls import AbsoluteURLFileField, build_absolute_media_url, display_media_name
 from .security_policy import normalize_allowed_ip_ranges
 from .models import (
     Expense, Student, Guardian, Enrollment,
@@ -55,23 +56,28 @@ class GuardianSerializer(serializers.ModelSerializer):
 
 class StudentSerializer(serializers.ModelSerializer): 
     admission_number = serializers.CharField(required=False, allow_blank=True)
+    photo = AbsoluteURLFileField(required=False, allow_null=True)
+    photo_url = serializers.SerializerMethodField()
     guardians = GuardianSerializer(many=True, read_only=True)
     uploaded_documents = serializers.SerializerMethodField()
     class Meta:
         model = Student
         fields = [
             'id', 'ulid', 'admission_number', 'first_name', 'last_name',
-            'date_of_birth', 'gender', 'phone', 'email', 'address', 'photo', 'is_active',
+            'date_of_birth', 'gender', 'phone', 'email', 'address', 'photo', 'photo_url', 'is_active',
             'created_at', 'guardians', 'uploaded_documents',
         ]
         read_only_fields = ['ulid', 'created_at']
+
+    def get_photo_url(self, obj):
+        return build_absolute_media_url(self.context.get("request"), obj.photo)
 
     def get_uploaded_documents(self, obj):
         return [
             {
                 "id": doc.id,
-                "name": doc.file.name,
-                "url": doc.file.url,
+                "name": display_media_name(doc.file),
+                "url": build_absolute_media_url(self.context.get("request"), doc.file),
                 "uploaded_at": doc.uploaded_at,
             }
             for doc in obj.uploaded_documents.all()
@@ -448,6 +454,7 @@ class EnrollmentSerializer(serializers.ModelSerializer):
 
 class AdmissionApplicationSerializer(serializers.ModelSerializer):
     applying_for_grade_name = serializers.CharField(source='applying_for_grade.name', read_only=True)
+    student_photo = AbsoluteURLFileField(required=False, allow_null=True)
     documents_upload = serializers.ListField(
         child=serializers.FileField(),
         write_only=True,
@@ -472,8 +479,8 @@ class AdmissionApplicationSerializer(serializers.ModelSerializer):
         return [
             {
                 "id": doc.id,
-                "name": doc.file.name,
-                "url": doc.file.url
+                "name": display_media_name(doc.file),
+                "url": build_absolute_media_url(self.context.get("request"), doc.file),
             }
             for doc in obj.uploaded_documents.all()
         ]
@@ -496,10 +503,16 @@ class AdmissionApplicationSerializer(serializers.ModelSerializer):
         return instance
 
 class StudentDocumentSerializer(serializers.ModelSerializer):
+    file = AbsoluteURLFileField(read_only=True)
+    file_name = serializers.SerializerMethodField()
+
     class Meta:
         model = StudentDocument
-        fields = ['id', 'student', 'file', 'uploaded_at']
+        fields = ['id', 'student', 'file', 'file_name', 'uploaded_at']
         read_only_fields = ['id', 'uploaded_at']
+
+    def get_file_name(self, obj):
+        return display_media_name(obj.file)
 
 class AttendanceRecordSerializer(serializers.ModelSerializer):
     student_name = serializers.CharField(source='student', read_only=True)

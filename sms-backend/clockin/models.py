@@ -9,6 +9,10 @@ class BiometricDevice(models.Model):
         ('EXIT', 'Exit Only'),
         ('BOTH', 'Entry & Exit'),
     ]
+    IP_VERSION_CHOICES = [
+        ('ipv4', 'IPv4'),
+        ('ipv6', 'IPv6'),
+    ]
     USE_CONTEXT_CHOICES = [
         ('gate',           'Gate / Entrance'),
         ('classroom',      'Classroom'),
@@ -26,6 +30,11 @@ class BiometricDevice(models.Model):
     )
 
     # Network / connection (Dahua ASI6214S defaults pre-filled)
+    ip_version  = models.CharField(
+                    max_length=10,
+                    choices=IP_VERSION_CHOICES,
+                    default='ipv4',
+                    help_text='Select IPv4 or IPv6 for the device network address.')
     ip_address  = models.GenericIPAddressField(null=True, blank=True,
                     help_text='Device IP address (Dahua factory default: 192.168.1.108)')
     port        = models.PositiveIntegerField(default=37777,
@@ -152,8 +161,17 @@ class SmartPSSSource(models.Model):
     CSV mode:  user exports CSV from SmartPSS Lite and uploads via the portal.
     Both modes feed into the same ClockEvent pipeline.
     """
+    IP_VERSION_CHOICES = [
+        ('ipv4', 'IPv4'),
+        ('ipv6', 'IPv6'),
+    ]
     name          = models.CharField(max_length=150,
                       help_text='Friendly label, e.g. "Main Office SmartPSS"')
+    ip_version    = models.CharField(
+                      max_length=10,
+                      choices=IP_VERSION_CHOICES,
+                      default='ipv4',
+                      help_text='Select IPv4 or IPv6 when the SmartPSS host is an IP literal.')
     host          = models.CharField(max_length=255,
                       help_text='IP address or hostname of the Windows PC running SmartPSS Lite '
                                 '(e.g. 192.168.1.10). Must be reachable from this server.')

@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from .networking import format_host_for_url, infer_ip_version
 from .models import (
     BiometricDevice, SchoolShift, PersonRegistry, ClockEvent,
     SmartPSSSource, SmartPSSImportLog, AttendanceCaptureLog,
@@ -9,6 +10,12 @@ class BiometricDeviceSerializer(serializers.ModelSerializer):
         model = BiometricDevice
         fields = '__all__'
         read_only_fields = ('api_key', 'created_at')
+
+    def validate(self, attrs):
+        ip_address = attrs.get('ip_address')
+        if ip_address:
+            attrs['ip_version'] = infer_ip_version(ip_address, attrs.get('ip_version', 'ipv4'))
+        return attrs
 
     def create(self, validated_data):
         import uuid
@@ -57,15 +64,27 @@ class SmartPSSSourceSerializer(serializers.ModelSerializer):
     class Meta:
         model  = SmartPSSSource
         fields = [
-            'id', 'name', 'host', 'port', 'use_https', 'username', 'password',
+            'id', 'name', 'ip_version', 'host', 'port', 'use_https', 'username', 'password',
             'device_model', 'sync_days_back', 'is_active', 'last_sync_at',
             'last_sync_result', 'notes', 'created_at', 'api_url',
         ]
         read_only_fields = ('created_at', 'last_sync_at', 'last_sync_result')
 
+    def validate_host(self, value):
+        cleaned = str(value or '').strip()
+        if cleaned.startswith('[') and cleaned.endswith(']'):
+            cleaned = cleaned[1:-1].strip()
+        return cleaned
+
+    def validate(self, attrs):
+        host = attrs.get('host')
+        if host:
+            attrs['ip_version'] = infer_ip_version(host, attrs.get('ip_version', 'ipv4'))
+        return attrs
+
     def get_api_url(self, obj):
         scheme = 'https' if obj.use_https else 'http'
-        return f'{scheme}://{obj.host}:{obj.port}/evo-apigw'
+        return f'{scheme}://{format_host_for_url(obj.host)}:{obj.port}/evo-apigw'
 
 
 class SmartPSSImportLogSerializer(serializers.ModelSerializer):

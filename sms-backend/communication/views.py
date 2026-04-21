@@ -1,10 +1,13 @@
+import os
+
 from django.contrib.auth import get_user_model
 from django.conf import settings
 from django.db.models import Avg, Count, Q
 from django.utils import timezone
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -17,6 +20,7 @@ from .models import (
     ConversationParticipant,
     EmailCampaign,
     EmailRecipient,
+    MessageAttachment,
     MessageReadReceipt,
     Message,
     MessageTemplate,
@@ -88,6 +92,33 @@ def _is_admin(user):
     return hasattr(user, "userprofile") and user.userprofile.role.name in ["ADMIN", "TENANT_SUPER_ADMIN"]
 
 
+def _uploaded_message_files(request):
+    uploads = []
+    for field_name in ("attachments", "files"):
+        uploads.extend(request.FILES.getlist(field_name))
+    single_upload = request.FILES.get("file")
+    if single_upload:
+        uploads.append(single_upload)
+
+    seen_ids = set()
+    unique_uploads = []
+    for upload in uploads:
+        marker = id(upload)
+        if marker in seen_ids:
+            continue
+        seen_ids.add(marker)
+        unique_uploads.append(upload)
+    return unique_uploads
+
+
+def _message_type_for_uploads(uploads):
+    if not uploads:
+        return "Text"
+    if all((getattr(upload, "content_type", "") or "").startswith("image/") for upload in uploads):
+        return "Image"
+    return "File"
+
+
 class ConversationViewSet(CommunicationAccessMixin, viewsets.ModelViewSet):
     serializer_class = ConversationSerializer
     queryset = Conversation.objects.filter(is_active=True).order_by("-created_at")
@@ -138,6 +169,7 @@ class ConversationViewSet(CommunicationAccessMixin, viewsets.ModelViewSet):
 class CommunicationMessageViewSet(CommunicationAccessMixin, viewsets.ModelViewSet):
     serializer_class = CommunicationMessageSerializer
     queryset = CommunicationMessage.objects.filter(is_active=True).order_by("-sent_at")
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -172,6 +204,11 @@ class CommunicationMessageViewSet(CommunicationAccessMixin, viewsets.ModelViewSe
         return qs
 
     def perform_create(self, serializer):
+        uploads = _uploaded_message_files(self.request)
+        content = (serializer.validated_data.get("content") or "").strip()
+        if not content and not uploads:
+            raise ValidationError({"content": "Message content or at least one attachment is required."})
+
         user = self.request.user
         conversation = serializer.validated_data.get("conversation")
         is_participant = ConversationParticipant.objects.filter(conversation=conversation, user=user, is_active=True).exists()
@@ -184,7 +221,21 @@ class CommunicationMessageViewSet(CommunicationAccessMixin, viewsets.ModelViewSe
                 )
             else:
                 raise PermissionDenied("You are not an active participant in this conversation.")
-        serializer.save(sender=user, delivery_status="Sent")
+        message = serializer.save(
+            sender=user,
+            content=content,
+            delivery_status="Sent",
+            message_type=_message_type_for_uploads(uploads),
+        )
+
+        for upload in uploads:
+            MessageAttachment.objects.create(
+                message=message,
+                file=upload,
+                file_name=os.path.basename(upload.name or "attachment"),
+                file_size=getattr(upload, "size", 0) or 0,
+                mime_type=(getattr(upload, "content_type", "") or "").strip(),
+            )
 
     def perform_update(self, serializer):
         instance = self.get_object()

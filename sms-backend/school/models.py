@@ -2346,10 +2346,20 @@ class MediaFile(models.Model):
     """Tracks uploaded media/document files per module."""
     MODULE_CHOICES = [
         ('STUDENTS', 'Students'),
+        ('ADMISSIONS', 'Admissions'),
+        ('ACADEMICS', 'Academics'),
         ('STAFF', 'Staff'),
+        ('HR', 'Human Resources'),
         ('FINANCE', 'Finance'),
+        ('LIBRARY', 'Library'),
+        ('TRANSPORT', 'Transport'),
+        ('HOSTEL', 'Hostel'),
+        ('ASSETS', 'Inventory & Assets'),
+        ('CLOCKIN', 'Clock-In'),
         ('BRANDING', 'Branding'),
         ('COMMUNICATION', 'Communication'),
+        ('REPORTING', 'Reporting'),
+        ('SETTINGS', 'Settings'),
         ('OTHER', 'Other'),
     ]
     FILE_TYPE_CHOICES = [
@@ -2357,6 +2367,9 @@ class MediaFile(models.Model):
         ('pdf', 'PDF'),
         ('doc', 'Document'),
         ('spreadsheet', 'Spreadsheet'),
+        ('json', 'JSON'),
+        ('xml', 'XML'),
+        ('archive', 'Archive'),
         ('other', 'Other'),
     ]
 

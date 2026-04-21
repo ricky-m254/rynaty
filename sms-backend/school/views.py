@@ -15,6 +15,7 @@ from django.utils import timezone
 from django.contrib.auth import authenticate, get_user_model
 from psycopg2 import sql as pgsql
 from datetime import datetime, timedelta
+from decimal import Decimal, InvalidOperation
 import hashlib
 import hmac
 import json
@@ -28,6 +29,7 @@ from .models import (
     Student, Guardian, Invoice, Payment, Enrollment, AdmissionApplication,
     FeeStructure, Expense, Budget, InvoiceLineItem, AttendanceRecord, BehaviorIncident,
     FeeAssignment, InvoiceAdjustment, Module, UserModuleAssignment,
+    GradeLevel,
     Role, UserProfile, AdmissionDocument, StudentDocument,
     Department,
     MedicalRecord, ImmunizationRecord, ClinicVisit, SchoolProfile,
@@ -45,6 +47,7 @@ from hr.models import Staff
 from academics.models import AcademicYear, Term, SchoolClass
 from communication.models import Message
 from communication.services import send_email_placeholder, send_sms_placeholder
+from common.media_urls import build_absolute_media_url
 from reporting.models import AuditLog
 from .control_plane import build_control_plane_summary
 
@@ -380,7 +383,11 @@ class StudentViewSet(viewsets.ModelViewSet):
             return Response({"error": "photo is required"}, status=status.HTTP_400_BAD_REQUEST)
         student.photo = photo
         student.save(update_fields=['photo'])
-        return Response({"id": student.id, "photo": student.photo.url}, status=status.HTTP_200_OK)
+        photo_url = build_absolute_media_url(request, student.photo)
+        return Response(
+            {"id": student.id, "photo": photo_url, "photo_url": photo_url},
+            status=status.HTTP_200_OK,
+        )
 
     @action(detail=True, methods=['post'], url_path='documents')
     def upload_documents(self, request, pk=None):
@@ -391,7 +398,13 @@ class StudentViewSet(viewsets.ModelViewSet):
         created = []
         for upload in files:
             doc = StudentDocument.objects.create(student=student, file=upload)
-            created.append({"id": doc.id, "name": doc.file.name, "url": doc.file.url})
+            created.append(
+                {
+                    "id": doc.id,
+                    "name": _display_document_name(doc.file),
+                    "url": build_absolute_media_url(request, doc.file),
+                }
+            )
         return Response({"documents": created}, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['delete'], url_path='documents/(?P<doc_id>[^/.]+)')
@@ -1342,7 +1355,13 @@ class AdmissionApplicationViewSet(viewsets.ModelViewSet):
         created = []
         for upload in files:
             doc = AdmissionDocument.objects.create(application=application, file=upload)
-            created.append({"id": doc.id, "name": doc.file.name, "url": doc.file.url})
+            created.append(
+                {
+                    "id": doc.id,
+                    "name": _display_document_name(doc.file),
+                    "url": build_absolute_media_url(request, doc.file),
+                }
+            )
         if created:
             if not application.documents:
                 application.documents = []
@@ -3483,7 +3502,7 @@ class StudentReportView(APIView):
     module_key = "STUDENTS"
 
     @staticmethod
-    def build_report_data(student_id):
+    def build_report_data(student_id, request=None):
         try:
             student = Student.objects.get(id=student_id)
         except Student.DoesNotExist:
@@ -3510,7 +3529,12 @@ class StudentReportView(APIView):
         )
 
         documents = [
-            {"id": doc.id, "name": doc.file.name, "url": doc.file.url, "uploaded_at": doc.uploaded_at}
+            {
+                "id": doc.id,
+                "name": _display_document_name(doc.file),
+                "url": build_absolute_media_url(request, doc.file),
+                "uploaded_at": doc.uploaded_at,
+            }
             for doc in student.uploaded_documents.all()
         ]
 
@@ -3522,7 +3546,7 @@ class StudentReportView(APIView):
                 "last_name": student.last_name,
                 "gender": student.gender,
                 "date_of_birth": student.date_of_birth,
-                "photo": student.photo.url if student.photo else None,
+                "photo": build_absolute_media_url(request, student.photo),
             },
             "guardians": guardians,
             "enrollment": {
@@ -3545,7 +3569,7 @@ class StudentReportView(APIView):
         }
 
     def get(self, request, student_id):
-        report = self.build_report_data(student_id)
+        report = self.build_report_data(student_id, request=request)
         if report is None:
             return Response({"error": "Student not found"}, status=status.HTTP_404_NOT_FOUND)
         return Response(report, status=status.HTTP_200_OK)
@@ -8267,44 +8291,81 @@ class MediaUploadView(APIView):
         'application/vnd.ms-excel': 'spreadsheet',
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'spreadsheet',
         'text/csv': 'spreadsheet',
+        'application/json': 'json',
+        'text/json': 'json',
+        'application/xml': 'xml',
+        'text/xml': 'xml',
+        'application/zip': 'archive',
+        'application/x-zip-compressed': 'archive',
+        'application/x-7z-compressed': 'archive',
+        'application/x-rar-compressed': 'archive',
     }
+    _VALID_MODULES = {
+        'STUDENTS', 'ADMISSIONS', 'ACADEMICS', 'STAFF', 'HR', 'FINANCE',
+        'LIBRARY', 'TRANSPORT', 'HOSTEL', 'ASSETS', 'CLOCKIN', 'BRANDING',
+        'COMMUNICATION', 'REPORTING', 'SETTINGS', 'OTHER',
+    }
+
+    def _build_result(self, request, media_file):
+        return {
+            'id': media_file.id,
+            'module': media_file.module,
+            'file_type': media_file.file_type,
+            'original_name': media_file.original_name,
+            'size_bytes': media_file.size_bytes,
+            'url': request.build_absolute_uri(media_file.file.url) if media_file.file else media_file.url,
+            'created_at': media_file.created_at,
+        }
 
     def post(self, request):
         from .models import MediaFile
-        upload = request.FILES.get('file')
-        if not upload:
+        uploads = []
+        uploads.extend(request.FILES.getlist('files'))
+        uploads.extend(request.FILES.getlist('file'))
+        if not uploads and request.FILES.get('file'):
+            uploads.append(request.FILES['file'])
+        if not uploads:
             return Response({'error': 'file is required'}, status=status.HTTP_400_BAD_REQUEST)
 
         module = (request.data.get('module') or 'OTHER').upper()
-        valid_modules = ['STUDENTS', 'STAFF', 'FINANCE', 'BRANDING', 'COMMUNICATION', 'OTHER']
-        if module not in valid_modules:
+        if module not in self._VALID_MODULES:
             module = 'OTHER'
 
-        content_type = upload.content_type or ''
-        file_type = self._MIME_MAP.get(content_type, 'other')
+        description = (request.data.get('description') or '').strip()
+        source_system = (request.data.get('source_system') or '').strip()
+        migration_batch = (request.data.get('migration_batch') or '').strip()
 
-        mf = MediaFile.objects.create(
-            module=module,
-            file_type=file_type,
-            file=upload,
-            original_name=upload.name,
-            size_bytes=upload.size,
-            uploaded_by=request.user,
-            description=request.data.get('description', ''),
-        )
-        url = request.build_absolute_uri(mf.file.url)
-        mf.url = url
-        mf.save(update_fields=['url'])
+        results = []
+        for upload in uploads:
+            content_type = upload.content_type or ''
+            file_type = self._MIME_MAP.get(content_type, 'other')
+            notes = description
+            metadata_bits = [
+                f"source_system={source_system}" if source_system else '',
+                f"migration_batch={migration_batch}" if migration_batch else '',
+            ]
+            metadata = ' | '.join(bit for bit in metadata_bits if bit)
+            if metadata:
+                notes = f"{notes}\n{metadata}".strip()
 
-        return Response({
-            'id':            mf.id,
-            'module':        mf.module,
-            'file_type':     mf.file_type,
-            'original_name': mf.original_name,
-            'size_bytes':    mf.size_bytes,
-            'url':           url,
-            'created_at':    mf.created_at,
-        }, status=status.HTTP_201_CREATED)
+            mf = MediaFile.objects.create(
+                module=module,
+                file_type=file_type,
+                file=upload,
+                original_name=upload.name,
+                size_bytes=upload.size,
+                uploaded_by=request.user,
+                description=notes,
+            )
+            url = request.build_absolute_uri(mf.file.url)
+            mf.url = url
+            mf.save(update_fields=['url'])
+            results.append(self._build_result(request, mf))
+
+        payload = {'count': len(results), 'results': results}
+        if len(results) == 1:
+            payload.update(results[0])
+        return Response(payload, status=status.HTTP_201_CREATED)
 
 
 class MediaFileListView(APIView):
@@ -8346,8 +8407,8 @@ class ImportTemplateDownloadView(APIView):
             'email', 'phone', 'national_id', 'tsc_number',
         ],
         'fees': [
-            'admission_number', 'student_name', 'fee_item', 'amount',
-            'academic_year', 'term', 'due_date',
+            'name', 'category', 'amount', 'academic_year',
+            'term', 'grade_level', 'billing_cycle', 'is_mandatory', 'description',
         ],
         'payments': [
             'admission_number', 'amount', 'payment_date', 'reference',
@@ -8372,7 +8433,48 @@ class ImportTemplateDownloadView(APIView):
             writer.writerow(['Jane', 'Doe', 'Female', '2015-03-14', '', 'Grade 4', 'East', 'John Doe', '0700000001', 'jdoe@example.com', 'Nairobi', ''])
         elif module == 'staff':
             writer.writerow(['Samuel', 'Otieno', 'Male', '1985-06-01', '', 'Science', 'Teacher', '2020-01-15', 'samuel@school.ac.ke', '0711222333', '12345678', 'TSC12345'])
+        elif module == 'fees':
+            writer.writerow(['Tuition Term 1', 'Tuition', '15000.00', '2026-2027', 'Term 1', 'Grade 4', 'TERMLY', 'true', 'Migrated from previous SIS'])
+        elif module == 'payments':
+            writer.writerow(['ADM-1001', '5000.00', '2026-01-15 09:30:00', 'BANK-REF-001', 'Bank Transfer', 'Migrated opening balance payment'])
         return response
+
+
+def _decode_csv_upload(upload):
+    try:
+        return upload.read().decode('utf-8-sig')
+    except Exception:
+        raise ValidationError({'error': 'Cannot decode file. Use UTF-8 CSV.'})
+
+
+def _parse_csv_upload(upload):
+    decoded = _decode_csv_upload(upload)
+    reader = csv.DictReader(decoded.splitlines())
+    if not reader.fieldnames:
+        raise ValidationError({'error': 'CSV has no headers.'})
+    return list(reader)
+
+
+def _as_bool(value, default=True):
+    raw = str(value).strip().lower()
+    if raw == '':
+        return default
+    return raw in {'1', 'true', 'yes', 'y', 'mandatory'}
+
+
+def _parse_import_date(raw_value):
+    raw = (raw_value or '').strip()
+    if not raw:
+        return None
+    for fmt in ('%Y-%m-%d', '%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%dT%H:%M:%S%z'):
+        try:
+            return datetime.strptime(raw, fmt)
+        except ValueError:
+            continue
+    try:
+        return datetime.fromisoformat(raw.replace('Z', '+00:00'))
+    except ValueError as exc:
+        raise ValueError(f"Invalid date '{raw}'. Use YYYY-MM-DD or ISO datetime.") from exc
 
 
 class StudentsBulkImportView(APIView):
@@ -8404,6 +8506,8 @@ class StudentsBulkImportView(APIView):
         rows = list(reader)
         errors = []
         previews = []
+        academic_year_model = FeeStructure._meta.get_field('academic_year').remote_field.model
+        term_model = FeeStructure._meta.get_field('term').remote_field.model
 
         for idx, row in enumerate(rows, start=2):
             row_errors = []
@@ -8525,6 +8629,8 @@ class StaffBulkImportView(APIView):
         rows = list(reader)
         errors = []
         previews = []
+        academic_year_model = FeeStructure._meta.get_field('academic_year').remote_field.model
+        term_model = FeeStructure._meta.get_field('term').remote_field.model
 
         for idx, row in enumerate(rows, start=2):
             row_errors = []
@@ -8587,6 +8693,239 @@ class StaffBulkImportView(APIView):
 
         return Response({
             'created': created_count,
+            'failed': len(commit_errors),
+            'errors': commit_errors[:25],
+            'committed': True,
+        }, status=status.HTTP_201_CREATED)
+
+
+class FeesBulkImportView(APIView):
+    """
+    POST CSV to bulk-import finance fee structures.
+    """
+    permission_classes = [CanManageSystemSettings | IsAccountant]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    _REQUIRED = {'name', 'amount', 'academic_year', 'term'}
+
+    def post(self, request):
+        upload = request.FILES.get('file')
+        validate_only = str(request.data.get('validate_only', 'false')).lower() in ('true', '1', 'yes')
+        if not upload:
+            return Response({'error': 'file is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            rows = _parse_csv_upload(upload)
+        except ValidationError as exc:
+            return Response(exc.detail, status=status.HTTP_400_BAD_REQUEST)
+
+        errors = []
+        previews = []
+        academic_year_model = FeeStructure._meta.get_field('academic_year').remote_field.model
+        term_model = FeeStructure._meta.get_field('term').remote_field.model
+
+        for idx, row in enumerate(rows, start=2):
+            row_errors = []
+            for field in self._REQUIRED:
+                if not (row.get(field) or '').strip():
+                    row_errors.append(f"'{field}' is required")
+
+            amount_raw = (row.get('amount') or '').strip()
+            try:
+                amount = Decimal(amount_raw)
+                if amount < 0:
+                    raise InvalidOperation
+            except (InvalidOperation, ValueError):
+                row_errors.append(f"amount '{amount_raw}' must be a non-negative decimal")
+                amount = None
+
+            year_name = (row.get('academic_year') or '').strip()
+            term_name = (row.get('term') or '').strip()
+            grade_level_name = (row.get('grade_level') or '').strip()
+
+            academic_year = academic_year_model.objects.filter(name__iexact=year_name).first() if year_name else None
+            if year_name and not academic_year:
+                row_errors.append(f"academic_year '{year_name}' was not found")
+
+            term = None
+            if academic_year and term_name:
+                term = term_model.objects.filter(academic_year=academic_year, name__iexact=term_name).first()
+                if not term:
+                    row_errors.append(f"term '{term_name}' was not found in academic_year '{year_name}'")
+
+            grade_level = None
+            if grade_level_name:
+                grade_level = GradeLevel.objects.filter(name__iexact=grade_level_name).first()
+                if not grade_level:
+                    row_errors.append(f"grade_level '{grade_level_name}' was not found")
+
+            billing_cycle = (row.get('billing_cycle') or 'TERMLY').strip().upper()
+            if billing_cycle not in {'TERMLY', 'MONTHLY', 'ONCE'}:
+                row_errors.append(f"billing_cycle '{billing_cycle}' must be TERMLY, MONTHLY, or ONCE")
+
+            if academic_year and term and amount is not None:
+                duplicate = FeeStructure.objects.filter(
+                    name__iexact=(row.get('name') or '').strip(),
+                    academic_year_id=academic_year.id,
+                    term_id=term.id,
+                    grade_level_id=grade_level.id if grade_level else None,
+                    is_active=True,
+                ).exists()
+                if duplicate:
+                    row_errors.append("A matching fee structure already exists")
+
+            if row_errors:
+                errors.append({'row': idx, 'errors': row_errors})
+                continue
+
+            previews.append({
+                'row': idx,
+                'name': (row.get('name') or '').strip(),
+                'amount': str(amount),
+                'academic_year': academic_year.name,
+                'term': term.name,
+                'billing_cycle': billing_cycle,
+            })
+
+        if validate_only or errors:
+            return Response({
+                'valid_rows': len(previews),
+                'error_rows': len(errors),
+                'errors': errors[:50],
+                'preview': previews[:20],
+                'committed': False,
+            })
+
+        created = 0
+        commit_errors = []
+        for idx, row in enumerate(rows, start=2):
+            try:
+                academic_year = academic_year_model.objects.get(name__iexact=(row.get('academic_year') or '').strip())
+                term = term_model.objects.get(academic_year=academic_year, name__iexact=(row.get('term') or '').strip())
+                grade_level_name = (row.get('grade_level') or '').strip()
+                grade_level = GradeLevel.objects.filter(name__iexact=grade_level_name).first() if grade_level_name else None
+                FeeStructure.objects.create(
+                    name=(row.get('name') or '').strip(),
+                    category=(row.get('category') or '').strip(),
+                    amount=Decimal((row.get('amount') or '0').strip()),
+                    academic_year=academic_year,
+                    term=term,
+                    grade_level=grade_level,
+                    billing_cycle=(row.get('billing_cycle') or 'TERMLY').strip().upper() or 'TERMLY',
+                    is_mandatory=_as_bool(row.get('is_mandatory'), default=True),
+                    description=(row.get('description') or '').strip(),
+                    is_active=True,
+                )
+                created += 1
+            except Exception as exc:
+                commit_errors.append({'row': idx, 'errors': [str(exc)]})
+
+        return Response({
+            'created': created,
+            'failed': len(commit_errors),
+            'errors': commit_errors[:25],
+            'committed': True,
+        }, status=status.HTTP_201_CREATED)
+
+
+class PaymentsBulkImportView(APIView):
+    """
+    POST CSV to bulk-import migrated payment history.
+    """
+    permission_classes = [CanManageSystemSettings | IsAccountant]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    _REQUIRED = {'admission_number', 'amount', 'payment_date', 'reference', 'payment_method'}
+
+    def post(self, request):
+        upload = request.FILES.get('file')
+        validate_only = str(request.data.get('validate_only', 'false')).lower() in ('true', '1', 'yes')
+        if not upload:
+            return Response({'error': 'file is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            rows = _parse_csv_upload(upload)
+        except ValidationError as exc:
+            return Response(exc.detail, status=status.HTTP_400_BAD_REQUEST)
+
+        errors = []
+        previews = []
+
+        for idx, row in enumerate(rows, start=2):
+            row_errors = []
+            for field in self._REQUIRED:
+                if not (row.get(field) or '').strip():
+                    row_errors.append(f"'{field}' is required")
+
+            admission_number = (row.get('admission_number') or '').strip()
+            student = Student.objects.filter(admission_number__iexact=admission_number).first() if admission_number else None
+            if admission_number and not student:
+                row_errors.append(f"student '{admission_number}' was not found")
+
+            amount_raw = (row.get('amount') or '').strip()
+            try:
+                amount = Decimal(amount_raw)
+                if amount <= 0:
+                    raise InvalidOperation
+            except (InvalidOperation, ValueError):
+                row_errors.append(f"amount '{amount_raw}' must be a positive decimal")
+                amount = None
+
+            payment_date_raw = (row.get('payment_date') or '').strip()
+            try:
+                payment_date = _parse_import_date(payment_date_raw)
+            except ValueError as exc:
+                row_errors.append(str(exc))
+                payment_date = None
+
+            reference = (row.get('reference') or '').strip()
+            if reference and Payment.objects.filter(reference_number__iexact=reference).exists():
+                row_errors.append(f"reference '{reference}' already exists")
+
+            if row_errors:
+                errors.append({'row': idx, 'errors': row_errors})
+                continue
+
+            previews.append({
+                'row': idx,
+                'admission_number': student.admission_number,
+                'student_name': f"{student.first_name} {student.last_name}".strip(),
+                'amount': str(amount),
+                'payment_method': (row.get('payment_method') or '').strip(),
+                'payment_date': payment_date.isoformat(),
+            })
+
+        if validate_only or errors:
+            return Response({
+                'valid_rows': len(previews),
+                'error_rows': len(errors),
+                'errors': errors[:50],
+                'preview': previews[:20],
+                'committed': False,
+            })
+
+        created = 0
+        commit_errors = []
+        for idx, row in enumerate(rows, start=2):
+            try:
+                student = Student.objects.get(admission_number__iexact=(row.get('admission_number') or '').strip())
+                payment = FinanceService.record_payment(
+                    student=student,
+                    amount=Decimal((row.get('amount') or '0').strip()),
+                    payment_method=(row.get('payment_method') or '').strip(),
+                    reference_number=(row.get('reference') or '').strip(),
+                    notes=(row.get('notes') or '').strip(),
+                )
+                payment_date = _parse_import_date(row.get('payment_date'))
+                if payment_date is not None:
+                    payment.payment_date = payment_date
+                    payment.save(update_fields=['payment_date'])
+                created += 1
+            except Exception as exc:
+                commit_errors.append({'row': idx, 'errors': [str(exc)]})
+
+        return Response({
+            'created': created,
             'failed': len(commit_errors),
             'errors': commit_errors[:25],
             'committed': True,

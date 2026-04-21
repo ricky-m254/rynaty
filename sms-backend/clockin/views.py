@@ -45,6 +45,7 @@ from .serializers import (
     SmartPSSImportLogSerializer,
     AttendanceCaptureLogSerializer,
 )
+from .networking import format_host_for_url
 from .smartpss_client import (
     SmartPSSLiteClient, SmartPSSError,
     normalise_attend_status, parse_smartpss_time, parse_smartpss_csv,
@@ -151,6 +152,7 @@ def _dahua_http_identify(ip: str, timeout: float = 1.5) -> dict:
         ip = _validate_device_ip(ip)
     except ValueError:
         return {}
+    host = format_host_for_url(ip)
 
     info: dict = {}
     for action, key in [
@@ -158,7 +160,7 @@ def _dahua_http_identify(ip: str, timeout: float = 1.5) -> dict:
         ('getProductDefinition&name=ProductModel', 'model'),
     ]:
         try:
-            url = f'http://{ip}/cgi-bin/magicBox.cgi?action={action}'
+            url = f'http://{host}/cgi-bin/magicBox.cgi?action={action}'
             req = urllib.request.Request(url, headers={'User-Agent': 'SmartCampus/1.0'})
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 body = resp.read().decode('utf-8', errors='ignore')
@@ -581,6 +583,7 @@ class DahuaSyncView(ClockInModuleMixin, APIView):
             ip = _validate_device_ip(device.ip_address)
         except ValueError as exc:
             return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        host = format_host_for_url(ip)
         port     = device.http_port or 80
         username = device.username or 'admin'
         # Do not fall back to a hardcoded credential; require the password to be
@@ -607,8 +610,8 @@ class DahuaSyncView(ClockInModuleMixin, APIView):
 
         # Dahua HTTP API endpoint for attendance records
         urls_to_try = [
-            f'http://{ip}:{port}/cgi-bin/attendancePunchRecord.cgi?{qs_punch}',
-            f'http://{ip}:{port}/cgi-bin/recordFinder.cgi?{qs_finder}',
+            f'http://{host}:{port}/cgi-bin/attendancePunchRecord.cgi?{qs_punch}',
+            f'http://{host}:{port}/cgi-bin/recordFinder.cgi?{qs_finder}',
         ]
 
         raw_text = None
