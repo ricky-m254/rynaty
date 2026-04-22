@@ -111,6 +111,8 @@ class StoreOrderItemSerializer(serializers.ModelSerializer):
             "unit",
             "quantity_requested",
             "quantity_approved",
+            "quoted_unit_price",
+            "approved_total",
             "notes",
         ]
 
@@ -122,21 +124,41 @@ class StoreOrderItemSerializer(serializers.ModelSerializer):
 
 class StoreOrderRequestSerializer(serializers.ModelSerializer):
     items = StoreOrderItemSerializer(many=True, read_only=True)
+    supplier_name = serializers.SerializerMethodField()
     requested_by_name = serializers.SerializerMethodField()
     reviewed_by_name = serializers.SerializerMethodField()
+    received_by_name = serializers.SerializerMethodField()
     generated_expense_id = serializers.SerializerMethodField()
+    procurement_type_label = serializers.CharField(source="get_procurement_type_display", read_only=True)
+    office_owner_label = serializers.CharField(source="get_office_owner_display", read_only=True)
+    receiving_state_label = serializers.CharField(source="get_receiving_state_display", read_only=True)
 
     class Meta:
         model = StoreOrderRequest
         fields = [
             "id",
             "request_code",
+            "document_number",
             "title",
             "description",
             "requested_by",
             "requested_by_name",
+            "supplier",
+            "supplier_name",
+            "procurement_type",
+            "procurement_type_label",
+            "office_owner",
+            "office_owner_label",
             "send_to",
             "status",
+            "approved_total",
+            "receiving_state",
+            "receiving_state_label",
+            "received_by",
+            "received_by_name",
+            "received_at",
+            "received_notes",
+            "approval_trail",
             "notes",
             "reviewed_by",
             "reviewed_by_name",
@@ -148,7 +170,15 @@ class StoreOrderRequestSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             "request_code",
+            "document_number",
             "requested_by",
+            "status",
+            "approved_total",
+            "receiving_state",
+            "received_by",
+            "received_at",
+            "received_notes",
+            "approval_trail",
             "reviewed_by",
             "reviewed_at",
             "generated_expense_id",
@@ -173,4 +203,17 @@ class StoreOrderRequestSerializer(serializers.ModelSerializer):
                 f"{obj.reviewed_by.first_name} {obj.reviewed_by.last_name}".strip()
                 or obj.reviewed_by.username
             )
+        return ""
+
+    def get_received_by_name(self, obj):
+        if obj.received_by:
+            return (
+                f"{obj.received_by.first_name} {obj.received_by.last_name}".strip()
+                or obj.received_by.username
+            )
+        return ""
+
+    def get_supplier_name(self, obj):
+        if obj.supplier:
+            return obj.supplier.name
         return ""

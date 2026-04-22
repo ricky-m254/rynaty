@@ -1,8 +1,9 @@
 from unittest.mock import patch
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase
 from django_tenants.utils import schema_context
 from rest_framework.test import APIRequestFactory, force_authenticate
 
@@ -148,3 +149,10 @@ class SettingsMigrationImportTests(TenantTestBase):
         payment = Payment.objects.get(reference_number="BANK-REF-001")
         self.assertEqual(payment.student_id, student.id)
         self.assertEqual(payment.payment_date.strftime("%Y-%m-%d %H:%M:%S"), "2026-01-15 09:30:00")
+
+
+class JwtSettingsTests(SimpleTestCase):
+    def test_signing_key_is_length_safe(self):
+        signing_key = settings.SIMPLE_JWT["SIGNING_KEY"]
+
+        self.assertGreaterEqual(len(signing_key.encode("utf-8")), 32)

@@ -1,4 +1,5 @@
 from collections import defaultdict
+from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from django.contrib.auth import update_session_auth_hash
@@ -12,6 +13,14 @@ from rest_framework.views import APIView
 from communication.models import Announcement, Notification
 from elearning.models import Course, CourseMaterial
 from hr.models import Employee
+from library.classroom_custody import (
+    ensure_staff_library_member,
+    ensure_student_library_member,
+    get_active_teacher_transaction,
+    member_display_name,
+    serialize_classroom_loan,
+)
+from library.models import CirculationTransaction, ResourceCopy, TeacherClassroomLoan
 from school.models import (
     Assessment,
     AssessmentGrade,
@@ -21,6 +30,7 @@ from school.models import (
     GradeBand,
     GradingScheme,
     SchoolClass,
+    Student,
     TeacherAssignment,
     UserProfile,
 )
@@ -142,6 +152,32 @@ def _teacher_rosters(class_ids):
             "admission_number": row.student.admission_number,
         })
     return dict(roster_map)
+
+
+def _teacher_student_lookup(user):
+    class_rows = list(_teacher_classes(user))
+    rosters = _teacher_rosters([row.id for row in class_rows])
+    class_map = {str(row.id): row.display_name for row in class_rows}
+    students = []
+    seen = set()
+    for class_id, rows in rosters.items():
+        for row in rows:
+            if row["id"] in seen:
+                continue
+            seen.add(row["id"])
+            students.append(
+                {
+                    **row,
+                    "class_id": int(class_id),
+                    "class_name": class_map.get(class_id, ""),
+                }
+            )
+    return class_rows, students
+
+
+def _teacher_can_access_student(user, student_id):
+    _, students = _teacher_student_lookup(user)
+    return next((row for row in students if row["id"] == int(student_id)), None)
 
 
 def _selected_class_or_default(user, requested_class_id):
@@ -566,6 +602,228 @@ class TeacherPortalGradebookView(TeacherPortalAccessMixin, APIView):
 
         return Response(
             {"message": "Grades saved.", "created": created, "updated": updated},
+            status=status.HTTP_200_OK,
+        )
+
+
+def _serialize_teacher_custody_transaction(row):
+    return {
+        "teacher_transaction_id": row.id,
+        "copy_id": row.copy_id,
+        "copy_accession_number": row.copy.accession_number if row.copy_id else "",
+        "resource_id": row.copy.resource_id if row.copy_id else None,
+        "resource_title": row.copy.resource.title if row.copy_id else "",
+        "teacher_due_date": row.due_date,
+        "teacher_member_id": row.member_id,
+        "teacher_member_code": row.member.member_id if row.member_id else "",
+        "teacher_name": member_display_name(row.member),
+    }
+
+
+class TeacherPortalLibraryView(TeacherPortalAccessMixin, APIView):
+    def get(self, request):
+        teacher_member = ensure_staff_library_member(request.user)
+        class_rows, students = _teacher_student_lookup(request.user)
+        teacher_transactions = (
+            CirculationTransaction.objects.filter(
+                member=teacher_member,
+                transaction_type="Issue",
+                return_date__isnull=True,
+                is_active=True,
+            )
+            .select_related("copy", "copy__resource", "member", "member__user", "member__student")
+            .order_by("due_date", "-issue_date", "-id")
+        )
+        active_loans = (
+            TeacherClassroomLoan.objects.filter(
+                teacher_member=teacher_member,
+                return_date__isnull=True,
+                is_active=True,
+            )
+            .select_related(
+                "copy",
+                "copy__resource",
+                "teacher_member",
+                "teacher_member__user",
+                "teacher_member__student",
+                "student_member",
+                "student_member__user",
+                "student_member__student",
+            )
+            .order_by("due_date", "-issue_date", "-id")
+        )
+        active_loan_by_copy_id = {row.copy_id: row for row in active_loans}
+        held_books = [
+            _serialize_teacher_custody_transaction(row)
+            for row in teacher_transactions
+            if row.copy_id not in active_loan_by_copy_id
+        ]
+        recent_returns = (
+            TeacherClassroomLoan.objects.filter(
+                teacher_member=teacher_member,
+                return_date__isnull=False,
+                is_active=True,
+            )
+            .select_related(
+                "copy",
+                "copy__resource",
+                "teacher_member",
+                "teacher_member__user",
+                "teacher_member__student",
+                "student_member",
+                "student_member__user",
+                "student_member__student",
+            )
+            .order_by("-return_date", "-id")[:10]
+        )
+        today = timezone.now().date()
+        return Response(
+            {
+                "teacher_member": {
+                    "id": teacher_member.id if teacher_member else None,
+                    "member_code": teacher_member.member_id if teacher_member else "",
+                    "member_name": member_display_name(teacher_member),
+                },
+                "summary": {
+                    "teacher_custody_count": teacher_transactions.count(),
+                    "available_for_student_issue": len(held_books),
+                    "active_student_loans": active_loans.count(),
+                    "overdue_student_loans": active_loans.filter(due_date__lt=today).count(),
+                },
+                "classes": _serialize_classes(class_rows),
+                "eligible_students": students,
+                "held_books": held_books,
+                "active_student_loans": [serialize_classroom_loan(row) for row in active_loans],
+                "recent_student_returns": [serialize_classroom_loan(row) for row in recent_returns],
+            }
+        )
+
+
+class TeacherPortalLibraryIssueView(TeacherPortalAccessMixin, APIView):
+    def post(self, request):
+        copy_id = request.data.get("copy")
+        student_id = request.data.get("student_id")
+        due_date_raw = str(request.data.get("due_date") or "").strip()
+        notes = str(request.data.get("notes") or "").strip()
+        if not copy_id or not student_id:
+            return Response(
+                {"error": "copy and student_id are required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        teacher_member = ensure_staff_library_member(request.user)
+        teacher_transaction = get_active_teacher_transaction(
+            copy_id=int(copy_id),
+            teacher_member=teacher_member,
+        )
+        if teacher_transaction is None:
+            return Response(
+                {"error": "This copy is not currently in your classroom custody."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if TeacherClassroomLoan.objects.filter(
+            copy_id=teacher_transaction.copy_id,
+            return_date__isnull=True,
+            is_active=True,
+        ).exists():
+            return Response(
+                {"error": "This copy is already issued to a student."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        student_row = _teacher_can_access_student(request.user, int(student_id))
+        if student_row is None:
+            raise PermissionDenied("Teachers can only issue classroom books to students in assigned classes.")
+
+        student = Student.objects.filter(id=student_row["id"], is_active=True).first()
+        if student is None:
+            return Response({"error": "Student not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        classroom_due_date = teacher_transaction.due_date
+        if due_date_raw:
+            try:
+                requested_due_date = date.fromisoformat(due_date_raw)
+            except ValueError:
+                return Response(
+                    {"error": "due_date must use YYYY-MM-DD format."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if teacher_transaction.due_date and requested_due_date > teacher_transaction.due_date:
+                return Response(
+                    {"error": "Student due date cannot be later than the teacher custody due date."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            classroom_due_date = requested_due_date
+
+        student_member = ensure_student_library_member(student)
+        row = TeacherClassroomLoan.objects.create(
+            teacher_transaction=teacher_transaction,
+            copy=teacher_transaction.copy,
+            teacher_member=teacher_member,
+            student_member=student_member,
+            issued_by=request.user,
+            due_date=classroom_due_date,
+            notes=notes,
+            is_active=True,
+        )
+        return Response(
+            {
+                "message": "Classroom book issued to student.",
+                "loan": serialize_classroom_loan(row),
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class TeacherPortalLibraryReturnView(TeacherPortalAccessMixin, APIView):
+    def post(self, request):
+        loan_id = request.data.get("loan")
+        if not loan_id:
+            return Response(
+                {"error": "loan is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        teacher_member = ensure_staff_library_member(request.user)
+        row = (
+            TeacherClassroomLoan.objects.filter(
+                id=loan_id,
+                teacher_member=teacher_member,
+                return_date__isnull=True,
+                is_active=True,
+            )
+            .select_related(
+                "copy",
+                "copy__resource",
+                "teacher_member",
+                "teacher_member__user",
+                "teacher_member__student",
+                "student_member",
+                "student_member__user",
+                "student_member__student",
+            )
+            .first()
+        )
+        if row is None:
+            return Response({"error": "Active classroom loan not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        now = timezone.now()
+        return_note = str(request.data.get("notes") or "").strip()
+        row.return_date = now
+        row.return_destination = "Teacher"
+        row.received_by = request.user
+        row.notes = (
+            f"{(row.notes or '').strip()}\n"
+            f"{return_note}".strip()
+            if return_note
+            else row.notes
+        ).strip()
+        row.save(update_fields=["return_date", "return_destination", "received_by", "notes"])
+        return Response(
+            {
+                "message": "Student return recorded.",
+                "loan": serialize_classroom_loan(row),
+            },
             status=status.HTTP_200_OK,
         )
 

@@ -188,6 +188,8 @@ def suggest_account_role_name(position_title: str | None, staff_category: str | 
         suggested = "HR_OFFICER"
     elif "REGISTRAR" in title:
         suggested = "REGISTRAR"
+    elif "SECRETARY" in title:
+        suggested = "SECRETARY"
     elif "LIBRARIAN" in title:
         suggested = "LIBRARIAN"
     elif "NURSE" in title or "MEDICALOFFICER" in title:

@@ -11,7 +11,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from communication.services import send_email_placeholder, send_sms_placeholder
-from school.permissions import HasModuleAccess
+from school.permissions import HasModuleAccess, request_has_approval_category
 from school.services import FinanceService
 from .models import (
     AcquisitionRequest,
@@ -24,6 +24,14 @@ from .models import (
     LibraryResource,
     Reservation,
     ResourceCopy,
+    TeacherClassroomLoan,
+)
+from .classroom_custody import (
+    ensure_staff_library_member,
+    get_active_classroom_loan,
+    get_copy_custody_snapshot,
+    member_display_name,
+    serialize_classroom_loan,
 )
 from .serializers import (
     AcquisitionRequestSerializer,
@@ -315,11 +323,7 @@ class ResourceCopyViewSet(LibraryAccessMixin, viewsets.ModelViewSet):
         )
         if active_txn:
             member = active_txn.member
-            member_name = ""
-            if member.student:
-                member_name = f"{getattr(member.student, 'full_name', '') or getattr(member.student, 'first_name', '')} {getattr(member.student, 'last_name', '')}".strip()
-            elif member.user:
-                member_name = member.user.get_full_name() or member.user.username
+            member_name = member_display_name(member)
             data["current_transaction"] = {
                 "id": active_txn.id,
                 "member_id": member.member_id,
@@ -330,6 +334,7 @@ class ResourceCopyViewSet(LibraryAccessMixin, viewsets.ModelViewSet):
             }
         else:
             data["current_transaction"] = None
+        data["current_holder"] = get_copy_custody_snapshot(copy)
 
         return Response(data, status=status.HTTP_200_OK)
 
@@ -954,6 +959,11 @@ class AcquisitionRequestViewSet(LibraryAccessMixin, viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="approve")
     def approve(self, request, pk=None):
+        if not request_has_approval_category(request, "acquisitions"):
+            return Response(
+                {"error": "You are not allowed to approve or reject acquisition requests."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         row = self.get_object()
         if row.status in ["Rejected", "Received"]:
             return Response({"error": f"Cannot approve a {row.status.lower()} request."}, status=status.HTTP_400_BAD_REQUEST)
@@ -964,6 +974,11 @@ class AcquisitionRequestViewSet(LibraryAccessMixin, viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="reject")
     def reject(self, request, pk=None):
+        if not request_has_approval_category(request, "acquisitions"):
+            return Response(
+                {"error": "You are not allowed to approve or reject acquisition requests."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         row = self.get_object()
         if row.status == "Received":
             return Response({"error": "Cannot reject a received request."}, status=status.HTTP_400_BAD_REQUEST)
@@ -974,6 +989,11 @@ class AcquisitionRequestViewSet(LibraryAccessMixin, viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="mark-ordered")
     def mark_ordered(self, request, pk=None):
+        if not request_has_approval_category(request, "acquisitions"):
+            return Response(
+                {"error": "You are not allowed to move acquisition requests through ordering."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         row = self.get_object()
         if row.status not in ["Approved", "Ordered"]:
             return Response({"error": "Only approved requests can be marked ordered."}, status=status.HTTP_400_BAD_REQUEST)
@@ -983,6 +1003,11 @@ class AcquisitionRequestViewSet(LibraryAccessMixin, viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="mark-received")
     def mark_received(self, request, pk=None):
+        if not request_has_approval_category(request, "acquisitions"):
+            return Response(
+                {"error": "You are not allowed to move acquisition requests through receipt."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         row = self.get_object()
         if row.status not in ["Ordered", "Received"]:
             return Response({"error": "Only ordered requests can be marked received."}, status=status.HTTP_400_BAD_REQUEST)
@@ -1144,6 +1169,7 @@ class ReturnResourceView(LibraryAccessMixin, APIView):
             )
         if not row:
             return Response({"error": "active issue transaction not found"}, status=status.HTTP_404_NOT_FOUND)
+        active_classroom_loan = get_active_classroom_loan(row.copy_id)
         now = timezone.now()
         overdue_days = max(0, (now.date() - row.due_date).days) if row.due_date else 0
         fine_amount = Decimal("0.00")
@@ -1151,6 +1177,22 @@ class ReturnResourceView(LibraryAccessMixin, APIView):
             rule = _pick_rule(row.member, row.copy.resource)
             if rule:
                 fine_amount = Decimal(overdue_days) * rule.fine_per_day
+        if active_classroom_loan is not None:
+            active_classroom_loan.return_date = now
+            active_classroom_loan.return_destination = "Library"
+            active_classroom_loan.received_by = request.user
+            active_classroom_loan.notes = (
+                f"{(active_classroom_loan.notes or '').strip()}\n"
+                f"Closed at library return by {request.user.username} on {now.isoformat()}"
+            ).strip()
+            active_classroom_loan.save(
+                update_fields=[
+                    "return_date",
+                    "return_destination",
+                    "received_by",
+                    "notes",
+                ]
+            )
         row.return_date = now
         row.overdue_days = overdue_days
         row.is_overdue = overdue_days > 0
@@ -1478,6 +1520,16 @@ class LibraryReportsCirculationView(LibraryAccessMixin, APIView):
                 "overdue_count": CirculationTransaction.objects.filter(
                     transaction_type="Issue", return_date__isnull=True, due_date__lt=timezone.now().date(), is_active=True
                 ).count(),
+                "teacher_custody_count": CirculationTransaction.objects.filter(
+                    transaction_type="Issue",
+                    return_date__isnull=True,
+                    is_active=True,
+                    member__member_type="Staff",
+                ).count(),
+                "student_via_teacher_count": TeacherClassroomLoan.objects.filter(
+                    return_date__isnull=True,
+                    is_active=True,
+                ).count(),
                 "monthly": payload,
             },
             status=status.HTTP_200_OK,
@@ -1532,6 +1584,43 @@ class LibraryReportsOverdueView(LibraryAccessMixin, APIView):
                     "copy_accession_number": row.copy.accession_number,
                     "due_date": row.due_date.isoformat() if row.due_date else None,
                     "overdue_days": overdue_days,
+                }
+            )
+        return Response(payload, status=status.HTTP_200_OK)
+
+
+class LibraryReportsTeacherCustodyView(LibraryAccessMixin, APIView):
+    def get(self, request):
+        rows = (
+            CirculationTransaction.objects.filter(
+                transaction_type="Issue",
+                return_date__isnull=True,
+                is_active=True,
+                member__member_type="Staff",
+            )
+            .select_related("copy", "copy__resource", "member", "member__user", "member__student")
+            .order_by("due_date", "-issue_date", "-id")
+        )
+        payload = []
+        for row in rows:
+            custody = get_copy_custody_snapshot(row.copy)
+            payload.append(
+                {
+                    "teacher_transaction_id": row.id,
+                    "copy_id": row.copy_id,
+                    "copy_accession_number": row.copy.accession_number,
+                    "resource_id": row.copy.resource_id,
+                    "resource_title": row.copy.resource.title,
+                    "teacher_member_id": row.member_id,
+                    "teacher_member_code": row.member.member_id,
+                    "teacher_name": member_display_name(row.member),
+                    "teacher_due_date": row.due_date.isoformat() if row.due_date else None,
+                    "current_holder": custody,
+                    "active_classroom_loan": (
+                        serialize_classroom_loan(get_active_classroom_loan(row.copy_id))
+                        if custody["holder_type"] == "student"
+                        else None
+                    ),
                 }
             )
         return Response(payload, status=status.HTTP_200_OK)

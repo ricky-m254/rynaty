@@ -1,9 +1,26 @@
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+from django.utils.dateparse import parse_date, parse_datetime
 
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def _format_attendance_date(raw_date):
+    if hasattr(raw_date, "strftime"):
+        return raw_date.strftime("%A, %d %B %Y")
+
+    parsed_date = parse_date(str(raw_date)) if raw_date is not None else None
+    if parsed_date is None and raw_date is not None:
+        parsed_datetime = parse_datetime(str(raw_date))
+        if parsed_datetime is not None:
+            parsed_date = parsed_datetime.date()
+
+    if parsed_date is not None:
+        return parsed_date.strftime("%A, %d %B %Y")
+
+    return str(raw_date)
 
 
 
@@ -34,7 +51,7 @@ def notify_parent_on_absence(sender, instance, created, **kwargs):
             f"{student.first_name} {student.last_name}".strip()
             or student.admission_number
         )
-        date_str = instance.date.strftime("%A, %d %B %Y")
+        date_str = _format_attendance_date(instance.date)
 
         if instance.status == "Absent":
             title = f"Absence Alert — {student_name}"

@@ -86,6 +86,7 @@ ROLE_NAME_CHOICES = [
     ('BURSAR', 'School Bursar'),
     ('HR_OFFICER', 'HR Officer'),
     ('REGISTRAR', 'Registrar'),
+    ('SECRETARY', 'School Secretary'),
     ('TEACHER', 'Teaching Staff'),
     ('LIBRARIAN', 'School Librarian'),
     ('NURSE', 'School Nurse'),
@@ -1738,6 +1739,14 @@ class StoreTransaction(models.Model):
 
 
 class StoreOrderRequest(models.Model):
+    PROCUREMENT_TYPE_CHOICES = [
+        ('LPO', 'Local Purchase Order'),
+        ('LSO', 'Local Supply Order'),
+    ]
+    OFFICE_OWNER_CHOICES = [
+        ('FINANCE', 'Finance Office'),
+        ('ADMIN', 'Administration'),
+    ]
     SEND_TO_CHOICES = [('FINANCE', 'Finance Office'), ('ADMIN', 'Administration'), ('BOTH', 'Finance & Admin')]
     STATUS_CHOICES = [
         ('PENDING', 'Pending'),
@@ -1745,12 +1754,39 @@ class StoreOrderRequest(models.Model):
         ('REJECTED', 'Rejected'),
         ('FULFILLED', 'Fulfilled'),
     ]
+    RECEIVING_STATE_CHOICES = [
+        ('PENDING', 'Pending'),
+        ('PARTIAL', 'Partially Received'),
+        ('RECEIVED', 'Received'),
+    ]
     request_code = models.CharField(max_length=30, blank=True, unique=True, null=True)
+    document_number = models.CharField(max_length=30, blank=True, null=True, unique=True)
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True)
     requested_by = models.ForeignKey('auth.User', on_delete=models.SET_NULL, null=True, related_name='store_requests')
+    procurement_type = models.CharField(max_length=3, choices=PROCUREMENT_TYPE_CHOICES, default='LPO')
+    office_owner = models.CharField(max_length=10, choices=OFFICE_OWNER_CHOICES, default='FINANCE')
+    supplier = models.ForeignKey(
+        'StoreSupplier',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='procurement_orders',
+    )
     send_to = models.CharField(max_length=10, choices=SEND_TO_CHOICES, default='FINANCE')
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='PENDING')
+    approval_trail = models.JSONField(default=list, blank=True)
+    approved_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    receiving_state = models.CharField(max_length=10, choices=RECEIVING_STATE_CHOICES, default='PENDING')
+    received_by = models.ForeignKey(
+        'auth.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='received_store_requests',
+    )
+    received_at = models.DateTimeField(null=True, blank=True)
+    received_notes = models.TextField(blank=True)
     notes = models.TextField(blank=True)
     reviewed_by = models.ForeignKey('auth.User', on_delete=models.SET_NULL, null=True, blank=True, related_name='reviewed_store_requests')
     reviewed_at = models.DateTimeField(null=True, blank=True)
@@ -1759,15 +1795,35 @@ class StoreOrderRequest(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     def save(self, *args, **kwargs):
+        if self.procurement_type not in {choice for choice, _ in self.PROCUREMENT_TYPE_CHOICES}:
+            self.procurement_type = 'LSO' if self.send_to == 'ADMIN' else 'LPO'
+        if self.send_to == 'ADMIN' and self.procurement_type == 'LPO':
+            self.procurement_type = 'LSO'
+        inferred_office_owner = 'ADMIN' if self.send_to == 'ADMIN' or self.procurement_type == 'LSO' else 'FINANCE'
+        if self.office_owner not in {choice for choice, _ in self.OFFICE_OWNER_CHOICES} or self.office_owner != inferred_office_owner:
+            self.office_owner = inferred_office_owner
+        if not isinstance(self.approval_trail, list):
+            self.approval_trail = list(self.approval_trail or [])
+        if self.approved_total is None:
+            self.approved_total = Decimal('0.00')
+
         super().save(*args, **kwargs)
+
+        updates = {}
         if not self.request_code:
-            import datetime as _dt
-            year = self.created_at.year if self.created_at else _dt.date.today().year
+            year = self.created_at.year if self.created_at else timezone.now().year
             self.request_code = f'REQ-{year}-{self.id:04d}'
-            StoreOrderRequest.objects.filter(pk=self.pk).update(request_code=self.request_code)
+            updates['request_code'] = self.request_code
+        if not self.document_number:
+            year = self.created_at.year if self.created_at else timezone.now().year
+            prefix = 'LSO' if self.procurement_type == 'LSO' else 'LPO'
+            self.document_number = f'{prefix}-{year}-{self.id:04d}'
+            updates['document_number'] = self.document_number
+        if updates:
+            StoreOrderRequest.objects.filter(pk=self.pk).update(**updates)
 
     def __str__(self):
-        return f"{self.request_code or self.id}: {self.title} ({self.status})"
+        return f"{self.document_number or self.request_code or self.id}: {self.title} ({self.status})"
 
     class Meta:
         ordering = ['-created_at']
@@ -1780,6 +1836,8 @@ class StoreOrderItem(models.Model):
     unit = models.CharField(max_length=30, default='pcs')
     quantity_requested = models.DecimalField(max_digits=12, decimal_places=2)
     quantity_approved = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    quoted_unit_price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    approved_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     notes = models.CharField(max_length=255, blank=True)
 
     def __str__(self):

@@ -10,7 +10,7 @@ from communication.services import DispatchResult
 from clockin.models import PersonRegistry
 from school.models import Module, Role, UserProfile
 
-from .identity import ensure_employment_profile, seed_default_onboarding_tasks
+from .identity import ensure_employment_profile, seed_default_onboarding_tasks, suggest_account_role_name
 from .models import (
     Department,
     Employee,
@@ -74,6 +74,7 @@ class HrSession6IdentityBackboneTests(TenantTestBase):
             ("CURRICULUM", "Curriculum"),
             ("ELEARNING", "E-Learning"),
             ("COMMUNICATION", "Communication"),
+            ("REPORTING", "Reporting"),
         ]:
             Module.objects.get_or_create(key=key, defaults={"name": name})
 
@@ -308,6 +309,42 @@ class HrSession6IdentityBackboneTests(TenantTestBase):
         employee = Employee.objects.get(pk=response.data["employee_id"])
         self.assertEqual(employee.account_role_name, "HOD")
 
+    def test_secretary_title_suggests_secretary_account_role(self):
+        self.assertEqual(suggest_account_role_name("School Secretary", "SUPPORT"), "SECRETARY")
+
+    def test_employee_create_infers_secretary_role_from_position_title(self):
+        secretary_position = Position.objects.create(
+            title="School Secretary",
+            department=self.department,
+            headcount=1,
+            is_active=True,
+        )
+
+        request = self.factory.post(
+            "/api/hr/employees/",
+            {
+                "first_name": "Pauline",
+                "last_name": "Njoroge",
+                "date_of_birth": "1991-01-01",
+                "gender": "Female",
+                "department": self.department.id,
+                "position": secretary_position.id,
+                "employment_type": "Full-time",
+                "status": "Active",
+                "join_date": "2026-01-10",
+                "notice_period_days": 30,
+                "is_active": True,
+            },
+            format="json",
+        )
+        force_authenticate(request, user=self.user)
+        response = EmployeeViewSet.as_view({"post": "create"})(request)
+
+        self.assertEqual(response.status_code, 201)
+        employee = Employee.objects.get(pk=response.data["id"])
+        self.assertEqual(employee.staff_category, "SUPPORT")
+        self.assertEqual(employee.account_role_name, "SECRETARY")
+
     def test_employment_profile_create_updates_existing_shell_and_advances_summary(self):
         employee = self._create_employee()
 
@@ -454,7 +491,11 @@ class HrSession6IdentityBackboneTests(TenantTestBase):
         response = EmployeeViewSet.as_view({"post": "link_biometric"})(request, pk=second_employee.id)
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("fingerprint_id", response.data)
+        self.assertEqual(response.data["error"]["code"], "VALIDATION_ERROR")
+        self.assertEqual(
+            response.data["error"]["details"]["fingerprint_id"],
+            "That biometric identifier is already linked to another person.",
+        )
 
     def test_provision_account_rejects_when_blockers_remain(self):
         employee = self._create_employee()
@@ -468,7 +509,8 @@ class HrSession6IdentityBackboneTests(TenantTestBase):
         response = EmployeeViewSet.as_view({"post": "provision_account"})(request, pk=employee.id)
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("blockers", response.data)
+        self.assertEqual(response.data["error"]["code"], "VALIDATION_ERROR")
+        self.assertIn("blockers", response.data["error"]["details"])
         self.assertFalse(User.objects.filter(username__iexact=employee.work_email).exists())
 
     @patch(
@@ -531,3 +573,49 @@ class HrSession6IdentityBackboneTests(TenantTestBase):
 
         account_task = OnboardingTask.objects.get(employee=employee, task_code="access.system_account")
         self.assertEqual(account_task.status, "Completed")
+
+    def test_provision_account_supports_secretary_role_baseline(self):
+        secretary_position = Position.objects.create(
+            title="School Secretary",
+            department=self.department,
+            headcount=1,
+            is_active=True,
+        )
+        employee = self._create_employee(
+            employee_id="EMP-2026-020",
+            staff_id="STF-HRTEST-2026-00020",
+            first_name="Pauline",
+            last_name="Njoroge",
+            personal_email="pauline@example.com",
+            work_email="pauline.secretary@example.com",
+            position=secretary_position,
+            staff_category="SUPPORT",
+            account_role_name="SECRETARY",
+        )
+        self._make_employee_ready_for_provisioning(employee)
+        PersonRegistry.objects.create(
+            employee=employee,
+            fingerprint_id="BIO-SECRETARY",
+            card_no="CARD-SECRETARY",
+            dahua_user_id="DAHUA-SECRETARY",
+            person_type="STAFF",
+            display_name="Pauline Njoroge",
+            is_active=True,
+        )
+
+        request = self.factory.post(
+            f"/api/hr/employees/{employee.id}/provision-account/",
+            {},
+            format="json",
+        )
+        force_authenticate(request, user=self.user)
+        response = EmployeeViewSet.as_view({"post": "provision_account"})(request, pk=employee.id)
+
+        self.assertEqual(response.status_code, 200)
+        employee.refresh_from_db()
+        self.assertEqual(employee.account_role_name, "SECRETARY")
+        self.assertEqual(response.data["module_baseline"]["scope_profile"], "SECRETARY_SUPPORT")
+        self.assertEqual(
+            sorted(employee.user.module_assignments.filter(is_active=True).values_list("module__key", flat=True)),
+            ["COMMUNICATION", "EXAMINATIONS", "REPORTING", "STUDENTS"],
+        )

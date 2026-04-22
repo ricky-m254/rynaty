@@ -11,6 +11,7 @@ Roles created:
   accountant / accountant123      (ACCOUNTANT)
   hr / hr123                      (HR_OFFICER)
   registrar / registrar123        (REGISTRAR)
+  secretary / secretary123        (SECRETARY)
   librarian / librarian123        (LIBRARIAN)
   teacher1 / teacher123           (TEACHER — from Kenya seed)
   nurse / nurse123                (NURSE)
@@ -31,6 +32,7 @@ STAFF_ACCOUNTS = [
     ("accountant",  "accountant123", "Faith",   "Njoroge",   "accountant@stmarys.ac.ke",  "ACCOUNTANT"),
     ("hr",          "hr123",         "David",   "Mwangi",    "hr@stmarys.ac.ke",          "HR_OFFICER"),
     ("registrar",   "registrar123",  "Mary",    "Achieng",   "registrar@stmarys.ac.ke",   "REGISTRAR"),
+    ("secretary",   "secretary123",  "Pauline", "Njoroge",   "secretary@stmarys.ac.ke",   "SECRETARY"),
     ("librarian",   "librarian123",  "Joyce",   "Wangari",   "librarian@stmarys.ac.ke",   "LIBRARIAN"),
     ("nurse",       "nurse123",      "Esther",  "Chepkoech", "nurse@stmarys.ac.ke",       "NURSE"),
     ("security",    "security123",   "John",    "Kamau",     "security@stmarys.ac.ke",    "SECURITY"),

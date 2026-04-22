@@ -30,6 +30,7 @@ from school.role_scope import (
     SCOPE_REGISTRAR_OPERATIONS,
     SCOPE_SCHOOL_ADMIN,
     SCOPE_SECURITY_OPERATIONS,
+    SCOPE_SECRETARY_SUPPORT,
     SCOPE_STORE_OPERATIONS,
     SCOPE_STUDENT_PORTAL,
     iter_seed_role_names,
@@ -70,6 +71,8 @@ DEFAULT_PERMISSIONS = [
     ("library.book.read", "library", "read", "Browse book catalog"),
     ("library.book.manage", "library", "manage", "Manage book catalog"),
     ("library.circulation.manage", "library", "manage", "Issue and return books"),
+    ("library.classroom.view", "library", "read", "View teacher classroom custody"),
+    ("library.classroom.manage", "library", "manage", "Issue and reconcile classroom books"),
     ("hostel.allocation.read", "hostel", "read", "View bed allocations"),
     ("hostel.allocation.manage", "hostel", "manage", "Assign/remove bed allocations"),
     ("admissions.application.read", "admissions", "read", "View admission applications"),
@@ -133,6 +136,8 @@ TEACHER_PERMISSIONS = [
     "communication.message.send",
     "communication.message.read",
     "library.book.read",
+    "library.classroom.view",
+    "library.classroom.manage",
 ]
 PARENT_PERMISSIONS = [
     "students.student.read",
@@ -187,6 +192,13 @@ SCOPE_PERMISSION_DEFAULTS = {
         "admissions.application.manage",
         "communication.message.read",
         "communication.message.send",
+    ],
+    SCOPE_SECRETARY_SUPPORT: [
+        "students.student.read",
+        "academics.exam.read",
+        "communication.message.read",
+        "communication.message.send",
+        "analytics.report.view",
     ],
     SCOPE_LIBRARY_OPERATIONS: [
         "library.book.read",

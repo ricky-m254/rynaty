@@ -17,6 +17,7 @@ from school.role_scope import (
     SCOPE_ACADEMIC_LEAD,
     SCOPE_FINANCE_MANAGER,
     SCOPE_SCHOOL_ADMIN,
+    SCOPE_SECRETARY_SUPPORT,
     resolve_scope_profile,
 )
 
@@ -46,6 +47,7 @@ class Phase5RoleScopeBridgeTests(SimpleTestCase):
         self.assertEqual(choices["BURSAR"], "School Bursar")
         self.assertEqual(choices["HR_OFFICER"], "HR Officer")
         self.assertEqual(choices["REGISTRAR"], "Registrar")
+        self.assertEqual(choices["SECRETARY"], "School Secretary")
         self.assertEqual(choices["SECURITY_GUARD"], "Security Guard")
         self.assertEqual(choices["STORE_CLERK"], "Store Clerk")
         self.assertEqual(choices["ALUMNI"], "Alumni")
@@ -53,8 +55,10 @@ class Phase5RoleScopeBridgeTests(SimpleTestCase):
     def test_scope_maps_cover_legacy_and_new_role_families(self):
         self.assertEqual(ROLE_SCOPE_PROFILE["PRINCIPAL"], SCOPE_SCHOOL_ADMIN)
         self.assertEqual(ROLE_SCOPE_PROFILE["HOD"], SCOPE_ACADEMIC_LEAD)
+        self.assertEqual(ROLE_SCOPE_PROFILE["SECRETARY"], SCOPE_SECRETARY_SUPPORT)
         self.assertEqual(LEGACY_ROLE_BRIDGE["ACCOUNTANT"], SCOPE_FINANCE_MANAGER)
         self.assertEqual(resolve_scope_profile("BURSAR"), SCOPE_FINANCE_MANAGER)
+        self.assertEqual(resolve_scope_profile("SECRETARY"), SCOPE_SECRETARY_SUPPORT)
         self.assertEqual(resolve_scope_profile("ADMIN"), SCOPE_SCHOOL_ADMIN)
 
     def test_principal_is_allowed_school_admin_guard(self):

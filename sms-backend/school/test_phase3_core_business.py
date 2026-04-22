@@ -160,13 +160,15 @@ class Phase3ApiHardeningTests(TenantPhase3Base):
     def test_core_role_catalog_includes_narrow_staff_roles(self):
         choices = dict(Role._meta.get_field("name").choices)
 
+        self.assertEqual(choices["SECRETARY"], "School Secretary")
         self.assertEqual(choices["LIBRARIAN"], "School Librarian")
         self.assertEqual(choices["NURSE"], "School Nurse")
         self.assertEqual(choices["SECURITY"], "Security Staff")
         self.assertEqual(choices["COOK"], "Kitchen / Cook")
 
-    def test_admin_role_list_exposes_security_and_cook_roles(self):
+    def test_admin_role_list_exposes_security_secretary_and_cook_roles(self):
         admin = self._create_user("phase3_admin_role_catalog", "ADMIN", ["CORE"])
+        Role.objects.get_or_create(name="SECRETARY", defaults={"description": "School Secretary"})
         Role.objects.get_or_create(name="SECURITY", defaults={"description": "Security Staff"})
         Role.objects.get_or_create(name="COOK", defaults={"description": "Kitchen / Cook"})
 
@@ -176,6 +178,7 @@ class Phase3ApiHardeningTests(TenantPhase3Base):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         role_names = {row["name"] for row in response.data}
+        self.assertIn("SECRETARY", role_names)
         self.assertIn("SECURITY", role_names)
         self.assertIn("COOK", role_names)
 

@@ -1,3 +1,4 @@
+import hashlib
 import os
 import warnings
 from datetime import timedelta
@@ -36,6 +37,16 @@ def _env_list(name: str, default: list[str]) -> list[str]:
     if not value.strip():
         return default
     return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _jwt_signing_key(secret_key: str) -> str:
+    configured_key = os.getenv("DJANGO_JWT_SECRET_KEY", "").strip()
+    candidate = configured_key or secret_key
+    candidate_bytes = candidate.encode("utf-8")
+    if len(candidate_bytes) >= 32:
+        return candidate
+    # Short development secrets are normalized so JWT signing stays warning-free.
+    return hashlib.sha256(candidate_bytes).hexdigest()
 
 
 def _env_str(
@@ -361,6 +372,7 @@ SIMPLE_JWT = {
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
     "UPDATE_LAST_LOGIN": True,
+    "SIGNING_KEY": _jwt_signing_key(SECRET_KEY),
 }
 
 

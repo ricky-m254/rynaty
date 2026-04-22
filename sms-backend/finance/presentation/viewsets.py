@@ -51,8 +51,21 @@ from finance.presentation.serializers import (
 )
 from school.models import Invoice, InvoiceInstallment
 from school.pagination import FinanceResultsPagination
-from school.permissions import HasModuleAccess, IsAccountant, IsSchoolAdmin
+from school.permissions import HasModuleAccess, IsAccountant, IsSchoolAdmin, request_has_approval_category
 from school.services import FinanceService
+
+
+def _approval_forbidden(category_key: str) -> Response:
+    label_map = {
+        "adjustments": "adjustments",
+        "reversals": "reversals",
+        "writeoffs": "write-offs",
+    }
+    label = label_map.get(category_key, category_key.replace("_", " "))
+    return Response(
+        {"error": f"You are not allowed to approve or reject {label}."},
+        status=status.HTTP_403_FORBIDDEN,
+    )
 
 
 class VoteHeadViewSet(viewsets.ModelViewSet):
@@ -515,8 +528,8 @@ class PaymentViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="reverse-approve")
     def reverse_approve(self, request, pk=None):
-        if not is_admin_like(request.user):
-            return Response({"error": "Only admin can approve reversals."}, status=status.HTTP_403_FORBIDDEN)
+        if not request_has_approval_category(request, "reversals"):
+            return _approval_forbidden("reversals")
         payment = self.get_object()
         reversal = payment.reversal_requests.filter(status="PENDING").order_by("-requested_at").first()
         if not reversal:
@@ -533,8 +546,8 @@ class PaymentViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="reverse-reject")
     def reverse_reject(self, request, pk=None):
-        if not is_admin_like(request.user):
-            return Response({"error": "Only admin can reject reversals."}, status=status.HTTP_403_FORBIDDEN)
+        if not request_has_approval_category(request, "reversals"):
+            return _approval_forbidden("reversals")
         payment = self.get_object()
         reversal = payment.reversal_requests.filter(status="PENDING").order_by("-requested_at").first()
         if not reversal:
@@ -586,8 +599,8 @@ class InvoiceAdjustmentViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="approve")
     def approve(self, request, pk=None):
-        if not is_admin_like(request.user):
-            return Response({"error": "Only admin can approve adjustments."}, status=status.HTTP_403_FORBIDDEN)
+        if not request_has_approval_category(request, "adjustments"):
+            return _approval_forbidden("adjustments")
         adjustment = self.get_object()
         try:
             review_notes = request.data.get("review_notes") or ""
@@ -602,8 +615,8 @@ class InvoiceAdjustmentViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="reject")
     def reject(self, request, pk=None):
-        if not is_admin_like(request.user):
-            return Response({"error": "Only admin can reject adjustments."}, status=status.HTTP_403_FORBIDDEN)
+        if not request_has_approval_category(request, "adjustments"):
+            return _approval_forbidden("adjustments")
         adjustment = self.get_object()
         try:
             review_notes = request.data.get("review_notes") or ""
@@ -644,8 +657,8 @@ class PaymentReversalRequestViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="approve")
     def approve(self, request, pk=None):
-        if not is_admin_like(request.user):
-            return Response({"error": "Only admin can approve reversals."}, status=status.HTTP_403_FORBIDDEN)
+        if not request_has_approval_category(request, "reversals"):
+            return _approval_forbidden("reversals")
         reversal = self.get_object()
         try:
             review_notes = request.data.get("review_notes") or ""
@@ -660,8 +673,8 @@ class PaymentReversalRequestViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="reject")
     def reject(self, request, pk=None):
-        if not is_admin_like(request.user):
-            return Response({"error": "Only admin can reject reversals."}, status=status.HTTP_403_FORBIDDEN)
+        if not request_has_approval_category(request, "reversals"):
+            return _approval_forbidden("reversals")
         reversal = self.get_object()
         try:
             review_notes = request.data.get("review_notes") or ""
@@ -703,8 +716,8 @@ class InvoiceWriteOffRequestViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="approve")
     def approve(self, request, pk=None):
-        if not is_admin_like(request.user):
-            return Response({"error": "Only admin can approve write-offs."}, status=status.HTTP_403_FORBIDDEN)
+        if not request_has_approval_category(request, "writeoffs"):
+            return _approval_forbidden("writeoffs")
         writeoff = self.get_object()
         try:
             review_notes = request.data.get("review_notes") or ""
@@ -719,8 +732,8 @@ class InvoiceWriteOffRequestViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="reject")
     def reject(self, request, pk=None):
-        if not is_admin_like(request.user):
-            return Response({"error": "Only admin can reject write-offs."}, status=status.HTTP_403_FORBIDDEN)
+        if not request_has_approval_category(request, "writeoffs"):
+            return _approval_forbidden("writeoffs")
         writeoff = self.get_object()
         try:
             review_notes = request.data.get("review_notes") or ""

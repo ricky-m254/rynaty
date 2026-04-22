@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework.decorators import action
 from django.utils import timezone
 from django.db.models import Q
-from school.permissions import HasModuleAccess
+from school.permissions import HasModuleAccess, request_has_approval_category
 from .models import TimetableSlot, StaffDutySlot, TimetableChangeRequest, LessonCoverage
 from .serializers import (
     TimetableSlotSerializer, 
@@ -44,6 +44,11 @@ class TimetableChangeRequestViewSet(TimetableModuleMixin, viewsets.ModelViewSet)
 
     @action(detail=True, methods=['post'])
     def approve(self, request, pk=None):
+        if not request_has_approval_category(request, "timetable"):
+            return Response(
+                {"error": "You are not allowed to approve or reject timetable change requests."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         instance = self.get_object()
         instance.status = 'Approved'
         instance.reviewed_by = request.user
@@ -86,6 +91,11 @@ class TimetableChangeRequestViewSet(TimetableModuleMixin, viewsets.ModelViewSet)
 
     @action(detail=True, methods=['post'])
     def reject(self, request, pk=None):
+        if not request_has_approval_category(request, "timetable"):
+            return Response(
+                {"error": "You are not allowed to approve or reject timetable change requests."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         instance = self.get_object()
         instance.status = 'Rejected'
         instance.reviewed_by = request.user

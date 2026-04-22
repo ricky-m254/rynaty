@@ -30,6 +30,18 @@ class Phase5SeedAlignmentTests(SimpleTestCase):
     def test_specialized_new_roles_have_expected_defaults(self):
         self.assertIn("hr.staff.read", ROLE_DEFAULTS["HR_OFFICER"])
         self.assertIn("admissions.application.manage", ROLE_DEFAULTS["REGISTRAR"])
+        self.assertIn("library.classroom.view", ROLE_DEFAULTS["TEACHER"])
+        self.assertIn("library.classroom.manage", ROLE_DEFAULTS["TEACHER"])
+        self.assertEqual(
+            ROLE_DEFAULTS["SECRETARY"],
+            [
+                "students.student.read",
+                "academics.exam.read",
+                "communication.message.read",
+                "communication.message.send",
+                "analytics.report.view",
+            ],
+        )
         self.assertEqual(ROLE_DEFAULTS["ALUMNI"], ["alumni.record.view"])
 
     def test_role_defaults_builder_is_deterministic(self):

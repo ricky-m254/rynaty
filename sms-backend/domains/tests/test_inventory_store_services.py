@@ -26,16 +26,36 @@ class FakeRepository:
             status="PENDING",
             notes="keep",
             request_code="REQ-2026-0003",
+            document_number="LPO-2026-0003",
             title="Restock Office Supplies",
             description="Bulk order",
+            procurement_type="LPO",
+            office_owner="FINANCE",
+            supplier=SimpleNamespace(name="Acme Supplies"),
             reviewed_at=None,
             reviewed_by=None,
+            approval_trail=[],
+            approved_total=Decimal("0.00"),
+            receiving_state="PENDING",
+            received_by=None,
+            received_at=None,
+            received_notes="",
             generated_expense_id=None,
             generated_expense=None,
         )
         self.order_items = {
-            7: SimpleNamespace(id=7, quantity_requested=Decimal("5"), quantity_approved=None)
+            7: SimpleNamespace(
+                id=7,
+                quantity_requested=Decimal("5"),
+                quantity_approved=None,
+                quoted_unit_price=Decimal("31.25"),
+                approved_total=Decimal("0.00"),
+                item=SimpleNamespace(cost_price=Decimal("31.25")),
+                item_id=5,
+            )
         }
+        self.order.items = SimpleNamespace(all=lambda: list(self.order_items.values()))
+        self.item_cost_prices = {5: Decimal("25.00")}
         self.created_items = []
         self.saved_orders = []
         self.saved_order_items = []
@@ -49,6 +69,9 @@ class FakeRepository:
 
     def find_item_name(self, item_id: int | None) -> str:
         return "Fallback Name" if item_id else ""
+
+    def find_item_cost_price(self, item_id: int | None) -> Decimal:
+        return self.item_cost_prices.get(item_id, Decimal("0.00"))
 
     def create_order_item(self, **kwargs):
         self.created_items.append(kwargs)
@@ -115,6 +138,7 @@ class StoreWorkflowServiceTests(unittest.TestCase):
         self.assertEqual(len(repository.created_items), 1)
         self.assertEqual(repository.created_items[0]["item_name"], "Fallback Name")
         self.assertEqual(repository.created_items[0]["unit"], "box")
+        self.assertEqual(repository.created_items[0]["quoted_unit_price"], Decimal("25.00"))
 
     def test_review_order_supports_status_payload_and_updates_approved_items(self):
         repository = FakeRepository()
@@ -135,8 +159,34 @@ class StoreWorkflowServiceTests(unittest.TestCase):
         self.assertEqual(repository.order.notes, "looks good")
         self.assertEqual(repository.order.reviewed_by, "auditor")
         self.assertIsInstance(repository.order.reviewed_at, datetime)
+        self.assertEqual(repository.order.approved_total, Decimal("125.00"))
+        self.assertEqual(repository.order.approval_trail[-1]["action"], "APPROVE")
         self.assertEqual(repository.order_items[7].quantity_approved, Decimal("4"))
+        self.assertEqual(repository.order_items[7].approved_total, Decimal("125.00"))
         self.assertEqual(repository.saved_order_items[0][0], 7)
+
+    def test_review_order_records_fulfillment_and_receiving_state(self):
+        repository = FakeRepository()
+        repository.order.status = "APPROVED"
+        repository.order.approved_total = Decimal("125.50")
+        service = StoreOrderWorkflowService(repository)
+
+        response = service.review_order(
+            order_id=3,
+            payload={
+                "status": "fulfilled",
+                "notes": "received from supplier",
+            },
+            reviewer="storekeeper",
+        )
+
+        self.assertEqual(response["status"], "FULFILLED")
+        self.assertEqual(repository.order.status, "FULFILLED")
+        self.assertEqual(repository.order.receiving_state, "RECEIVED")
+        self.assertEqual(repository.order.received_by, "storekeeper")
+        self.assertIsNotNone(repository.order.received_at)
+        self.assertEqual(repository.order.received_notes, "received from supplier")
+        self.assertEqual(repository.order.approval_trail[-1]["action"], "FULFILL")
 
     def test_review_order_raises_for_missing_order(self):
         repository = FakeRepository()
@@ -167,6 +217,7 @@ class StoreWorkflowServiceTests(unittest.TestCase):
         repository = FakeRepository()
         repository.order.status = "APPROVED"
         repository.order.reviewed_at = datetime(2026, 3, 30, 12, 0, 0)
+        repository.order.approved_total = Decimal("125.50")
         service = StoreOrderWorkflowService(repository)
 
         response = service.generate_expense(order_id=3)
@@ -175,8 +226,11 @@ class StoreWorkflowServiceTests(unittest.TestCase):
         self.assertEqual(response["amount"], Decimal("125.50"))
         self.assertEqual(repository.expense_calls[0]["amount"], Decimal("125.50"))
         self.assertEqual(repository.expense_calls[0]["expense_date"], date(2026, 3, 30))
+        self.assertEqual(repository.expense_calls[0]["description"], "LPO-2026-0003: Restock Office Supplies. Bulk order")
         self.assertEqual(repository.order.generated_expense.id, 91)
         self.assertEqual(repository.saved_orders[-1][1], ["generated_expense"])
+        self.assertEqual(repository.expense_calls[0]["order"].document_number, "LPO-2026-0003")
+        self.assertEqual(repository.expense_calls[0]["order"].supplier.name, "Acme Supplies")
 
     def test_dashboard_service_proxies_repository_summary(self):
         repository = FakeRepository()

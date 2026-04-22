@@ -10,7 +10,14 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from school.permissions import HasModuleAccess, IsSchoolAdmin, IsTeacher
+from school.permissions import (
+    HasModuleAccess,
+    HasScopeProfile,
+    IsSchoolAdmin,
+    IsTeacher,
+    request_has_approval_category,
+)
+from school.role_scope import SCOPE_REGISTRAR_OPERATIONS
 from school.views import AdmissionApplicationViewSet as SchoolAdmissionApplicationViewSet
 from school.views import AdmissionsPipelineSummaryView as SchoolAdmissionsPipelineSummaryView
 from school.serializers import AdmissionApplicationSerializer
@@ -44,6 +51,9 @@ from .serializers import (
 )
 
 
+AdmissionsAccess = IsSchoolAdmin | IsTeacher | HasScopeProfile.scoped(SCOPE_REGISTRAR_OPERATIONS)
+
+
 def _split_child_name(child_name: str):
     value = (child_name or "").strip()
     if not value:
@@ -66,6 +76,30 @@ def _write_audit(user, action: str, model_name: str, object_id, details: str = "
 
 class AdmissionApplicationViewSet(SchoolAdmissionApplicationViewSet):
     module_key = "ADMISSIONS"
+    permission_classes = [AdmissionsAccess, HasModuleAccess]
+
+    def _approval_status_guard(self, request):
+        target_status = str(request.data.get("status") or "").strip()
+        if target_status not in {"Admitted", "Rejected"}:
+            return None
+        if request_has_approval_category(request, "admissions"):
+            return None
+        return Response(
+            {"error": "You are not allowed to admit or reject applications."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    def update(self, request, *args, **kwargs):
+        guarded_response = self._approval_status_guard(request)
+        if guarded_response is not None:
+            return guarded_response
+        return super().update(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        guarded_response = self._approval_status_guard(request)
+        if guarded_response is not None:
+            return guarded_response
+        return super().partial_update(request, *args, **kwargs)
 
     @staticmethod
     def _build_enrollment_payload(application: AdmissionApplication, request_data=None):
@@ -196,7 +230,7 @@ class AdmissionsPipelineSummaryView(SchoolAdmissionsPipelineSummaryView):
 class AdmissionInquiryViewSet(viewsets.ModelViewSet):
     queryset = AdmissionInquiry.objects.all().order_by("-inquiry_date", "-created_at")
     serializer_class = AdmissionInquirySerializer
-    permission_classes = [IsSchoolAdmin | IsTeacher, HasModuleAccess]
+    permission_classes = [AdmissionsAccess, HasModuleAccess]
     module_key = "ADMISSIONS"
 
     def get_queryset(self):
@@ -298,7 +332,7 @@ class AdmissionInquiryViewSet(viewsets.ModelViewSet):
 class AdmissionApplicationProfileViewSet(viewsets.ModelViewSet):
     queryset = AdmissionApplicationProfile.objects.all().order_by("-created_at")
     serializer_class = AdmissionApplicationProfileSerializer
-    permission_classes = [IsSchoolAdmin | IsTeacher, HasModuleAccess]
+    permission_classes = [AdmissionsAccess, HasModuleAccess]
     module_key = "ADMISSIONS"
 
     def get_queryset(self):
@@ -315,7 +349,7 @@ class AdmissionApplicationProfileViewSet(viewsets.ModelViewSet):
 class AdmissionReviewViewSet(viewsets.ModelViewSet):
     queryset = AdmissionReview.objects.all().order_by("-reviewed_at")
     serializer_class = AdmissionReviewSerializer
-    permission_classes = [IsSchoolAdmin | IsTeacher, HasModuleAccess]
+    permission_classes = [AdmissionsAccess, HasModuleAccess]
     module_key = "ADMISSIONS"
 
     def get_queryset(self):
@@ -333,7 +367,7 @@ class AdmissionReviewViewSet(viewsets.ModelViewSet):
 
 
 class ShortlistedApplicationsView(APIView):
-    permission_classes = [IsSchoolAdmin | IsTeacher, HasModuleAccess]
+    permission_classes = [AdmissionsAccess, HasModuleAccess]
     module_key = "ADMISSIONS"
 
     def get(self, request):
@@ -345,7 +379,7 @@ class ShortlistedApplicationsView(APIView):
 class AdmissionAssessmentViewSet(viewsets.ModelViewSet):
     queryset = AdmissionAssessment.objects.all().order_by("-scheduled_at", "-created_at")
     serializer_class = AdmissionAssessmentSerializer
-    permission_classes = [IsSchoolAdmin | IsTeacher, HasModuleAccess]
+    permission_classes = [AdmissionsAccess, HasModuleAccess]
     module_key = "ADMISSIONS"
 
     def get_queryset(self):
@@ -365,7 +399,7 @@ class AdmissionAssessmentViewSet(viewsets.ModelViewSet):
 class AdmissionInterviewViewSet(viewsets.ModelViewSet):
     queryset = AdmissionInterview.objects.all().order_by("-interview_date", "-created_at")
     serializer_class = AdmissionInterviewSerializer
-    permission_classes = [IsSchoolAdmin | IsTeacher, HasModuleAccess]
+    permission_classes = [AdmissionsAccess, HasModuleAccess]
     module_key = "ADMISSIONS"
 
     def get_queryset(self):
@@ -399,7 +433,7 @@ class AdmissionInterviewViewSet(viewsets.ModelViewSet):
 class AdmissionDecisionViewSet(viewsets.ModelViewSet):
     queryset = AdmissionDecision.objects.all().order_by("-decision_date", "-created_at")
     serializer_class = AdmissionDecisionSerializer
-    permission_classes = [IsSchoolAdmin | IsTeacher, HasModuleAccess]
+    permission_classes = [AdmissionsAccess, HasModuleAccess]
     module_key = "ADMISSIONS"
 
     def get_queryset(self):
@@ -549,7 +583,7 @@ class AdmissionDecisionViewSet(viewsets.ModelViewSet):
 
 
 class EnrollmentReadyApplicationsView(APIView):
-    permission_classes = [IsSchoolAdmin | IsTeacher, HasModuleAccess]
+    permission_classes = [AdmissionsAccess, HasModuleAccess]
     module_key = "ADMISSIONS"
 
     def get(self, request):
@@ -562,7 +596,7 @@ class EnrollmentReadyApplicationsView(APIView):
 
 
 class AdmissionWaitlistQueueView(APIView):
-    permission_classes = [IsSchoolAdmin | IsTeacher, HasModuleAccess]
+    permission_classes = [AdmissionsAccess, HasModuleAccess]
     module_key = "ADMISSIONS"
 
     def get(self, request):
@@ -589,7 +623,7 @@ class AdmissionWaitlistQueueView(APIView):
 
 
 class AdmissionAnalyticsFunnelView(APIView):
-    permission_classes = [IsSchoolAdmin | IsTeacher, HasModuleAccess]
+    permission_classes = [AdmissionsAccess, HasModuleAccess]
     module_key = "ADMISSIONS"
 
     @staticmethod
@@ -626,7 +660,7 @@ class AdmissionAnalyticsFunnelView(APIView):
 
 
 class AdmissionAnalyticsSourcesView(APIView):
-    permission_classes = [IsSchoolAdmin | IsTeacher, HasModuleAccess]
+    permission_classes = [AdmissionsAccess, HasModuleAccess]
     module_key = "ADMISSIONS"
 
     @staticmethod

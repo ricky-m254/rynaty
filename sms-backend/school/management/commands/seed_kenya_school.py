@@ -21,7 +21,7 @@ from school.models import (
     Role, UserProfile, Student, Guardian, Enrollment, SchoolClass,
     FeeStructure, FeeAssignment, Invoice, InvoiceLineItem, Payment, PaymentAllocation,
     Expense, AdmissionApplication, AcademicYear, Term,
-    Department, Subject,
+    Department, Subject, TeacherAssignment,
     GradingScheme, GradeBand,
     Assessment, AssessmentGrade, TermResult, ReportCard,
     VoteHead, Budget, ChartOfAccount, Module, TenantModule,
@@ -236,6 +236,9 @@ class Command(BaseCommand):
 
         self.stdout.write("  Seeding timetable (periods Mon–Fri)…")
         self._seed_timetable(classes, terms, admin)
+
+        self.stdout.write("  Seeding teacher assignments for timetable coverage…")
+        self._seed_teacher_assignments(year)
 
         self.stdout.write("  Seeding visitor log…")
         self._seed_visitors()
@@ -1455,9 +1458,35 @@ class Command(BaseCommand):
             ('Breakfast & Lunch', 'Morning and afternoon meals', 320),
         ]
         plans = []
+
+        def _get_canonical_meal_plan(name, description, price_per_day):
+            existing_plans = list(MealPlan.objects.filter(name=name).order_by('id'))
+            if existing_plans:
+                plan = existing_plans[0]
+                updates = []
+                if plan.description != description:
+                    plan.description = description
+                    updates.append('description')
+                if plan.price_per_day != price_per_day:
+                    plan.price_per_day = price_per_day
+                    updates.append('price_per_day')
+                if not plan.is_active:
+                    plan.is_active = True
+                    updates.append('is_active')
+                if updates:
+                    plan.save(update_fields=updates)
+                if len(existing_plans) > 1:
+                    MealPlan.objects.filter(name=name).exclude(pk=plan.pk).update(is_active=False)
+                return plan
+
+            return MealPlan.objects.create(
+                name=name,
+                description=description,
+                price_per_day=price_per_day,
+                is_active=True,
+            )
         for name, desc, price in plans_data:
-            p, _ = MealPlan.objects.get_or_create(name=name, defaults={'description': desc, 'price_per_day': price, 'is_active': True})
-            plans.append(p)
+            plans.append(_get_canonical_meal_plan(name, desc, price))
 
         # Weekly menus
         MENU_DATA = [
@@ -1485,13 +1514,28 @@ class Command(BaseCommand):
         for student in students:
             plan = random.choice(plans)
             try:
-                StudentMealEnrollment.objects.get_or_create(
-                    student=student,
-                    defaults={
-                        'meal_plan': plan,
-                        'is_active': True,
-                    }
+                existing_enrollments = list(
+                    StudentMealEnrollment.objects.filter(student=student).order_by('-is_active', '-created_at', '-id')
                 )
+                if existing_enrollments:
+                    enrollment = existing_enrollments[0]
+                    updates = []
+                    if enrollment.meal_plan_id != plan.id:
+                        enrollment.meal_plan = plan
+                        updates.append('meal_plan')
+                    if not enrollment.is_active:
+                        enrollment.is_active = True
+                        updates.append('is_active')
+                    if updates:
+                        enrollment.save(update_fields=updates)
+                    if len(existing_enrollments) > 1:
+                        StudentMealEnrollment.objects.filter(student=student).exclude(pk=enrollment.pk).update(is_active=False)
+                else:
+                    StudentMealEnrollment.objects.create(
+                        student=student,
+                        meal_plan=plan,
+                        is_active=True,
+                    )
             except Exception:
                 logger.warning("Caught and logged", exc_info=True)
 
@@ -1790,12 +1834,19 @@ class Command(BaseCommand):
             self.stdout.write("    Timetable app not available — skipping")
             return
 
-        from django.contrib.auth import get_user_model
-        User = get_user_model()
-
         term1 = terms[0] if terms else None
         subjects = list(Subject.objects.filter(is_active=True)[:8])
-        teachers = list(User.objects.filter(is_staff=False, is_superuser=False)[:8])
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        teachers = list(
+            User.objects.filter(
+                userprofile__role__name="TEACHER",
+                is_active=True,
+            )
+            .order_by("id")[:8]
+        )
+        if not teachers:
+            teachers = list(User.objects.filter(is_staff=False, is_superuser=False)[:8])
 
         PERIODS = [
             (1, '07:30', '08:20'),
@@ -1839,6 +1890,48 @@ class Command(BaseCommand):
                         created += 1
 
         self.stdout.write(f'    → Timetable: {TimetableSlot.objects.count()} period slots seeded')
+
+    # ── Teacher Assignments ───────────────────────────────────────────────────
+    def _seed_teacher_assignments(self, year):
+        from django.contrib.auth import get_user_model
+
+        User = get_user_model()
+        teachers = list(
+            User.objects.filter(
+                userprofile__role__name="TEACHER",
+                is_active=True,
+            )
+            .order_by("id")
+        )
+        classes = list(SchoolClass.objects.filter(is_active=True).order_by("id"))
+        subjects = list(Subject.objects.filter(is_active=True).order_by("id"))
+        term = Term.objects.filter(is_active=True).order_by("id").first()
+
+        if not teachers or not classes or not subjects or not year:
+            self.stdout.write("    → Teacher assignments: skipped (missing teachers/classes/subjects)")
+            return
+
+        created = 0
+        for idx, teacher in enumerate(teachers):
+            school_class = classes[idx % len(classes)]
+            subject = subjects[idx % len(subjects)]
+            _, made = TeacherAssignment.objects.get_or_create(
+                teacher=teacher,
+                subject=subject,
+                class_section=school_class,
+                academic_year=year,
+                term=term,
+                defaults={
+                    "is_primary": idx == 0,
+                    "is_active": True,
+                },
+            )
+            if made:
+                created += 1
+
+        self.stdout.write(
+            f"    → Teacher assignments: {created} created, {TeacherAssignment.objects.count()} total"
+        )
 
     # ── Visitors ──────────────────────────────────────────────────────────────
     def _seed_visitors(self):
@@ -2890,6 +2983,7 @@ class Command(BaseCommand):
         ]
 
         scheme_count = topic_count = plan_count = resource_count = 0
+        source_scheme_by_subject = {}
         for cls in flat_classes[:2]:
             for subj in core_subjects[:3]:
                 scheme, s_created = SchemeOfWork.objects.get_or_create(
@@ -2902,6 +2996,7 @@ class Command(BaseCommand):
                 )
                 if s_created:
                     scheme_count += 1
+                source_scheme_by_subject.setdefault(subj.id, scheme)
 
                 for week, (topic, sub_topics, outcomes) in enumerate(TOPICS, start=1):
                     st, t_created = SchemeTopic.objects.get_or_create(
@@ -2938,6 +3033,40 @@ class Command(BaseCommand):
                         )
                         if lp_created:
                             plan_count += 1
+
+        # Publish reusable templates so the template picker always has content.
+        for subj in core_subjects[:3]:
+            source_scheme = source_scheme_by_subject.get(subj.id)
+            if not source_scheme:
+                continue
+            template, template_created = SchemeOfWork.objects.get_or_create(
+                subject=subj,
+                school_class=None,
+                term=None,
+                is_template=True,
+                defaults={
+                    "title": f"{subj.name} Template",
+                    "template_name": f"{subj.name} Template",
+                    "template_description": f"Generic {subj.name} scheme template for demo schools.",
+                    "objectives": f"Template objectives for {subj.name}.",
+                    "created_by": admin_user,
+                },
+            )
+            if template_created or not template.topics.exists():
+                for topic in source_scheme.topics.order_by("week_number"):
+                    SchemeTopic.objects.get_or_create(
+                        scheme=template,
+                        week_number=topic.week_number,
+                        defaults={
+                            "topic": topic.topic,
+                            "sub_topics": topic.sub_topics,
+                            "learning_outcomes": topic.learning_outcomes,
+                            "teaching_methods": topic.teaching_methods,
+                            "resources": topic.resources,
+                            "assessment_type": topic.assessment_type,
+                            "is_covered": False,
+                        },
+                    )
 
         # Learning resources
         RESOURCES = [

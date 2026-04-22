@@ -2,6 +2,7 @@ import re
 
 from rest_framework import permissions
 
+from .approval_scope import user_can_access_approval_category
 from .module_focus import is_module_allowed
 from .role_scope import (
     ACADEMIC_SCOPE_PROFILES,
@@ -60,6 +61,11 @@ def request_has_any_resolved_permission(request, permission_names) -> bool:
 def request_has_any_scope(request, allowed_scopes) -> bool:
     user = getattr(request, "user", None)
     return bool(user and user.is_authenticated and user_has_any_scope(user, allowed_scopes))
+
+
+def request_has_approval_category(request, category_key: str | None) -> bool:
+    user = getattr(request, "user", None)
+    return bool(user and user.is_authenticated and user_can_access_approval_category(user, category_key))
 
 
 def request_can_manage_rbac(request) -> bool:

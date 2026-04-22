@@ -23,7 +23,18 @@ class Phase5ModuleBaselineTests(SimpleTestCase):
 
         self.assertEqual(
             baseline,
-            ("FINANCE", "STUDENTS", "REPORTING", "COMMUNICATION"),
+            (
+                "FINANCE",
+                "STUDENTS",
+                "REPORTING",
+                "COMMUNICATION",
+                "STORE",
+                "DISPENSARY",
+                "LIBRARY",
+                "SPORTS",
+                "CAFETERIA",
+                "ASSETS",
+            ),
         )
 
     def test_portal_roles_remain_exception_based(self):
@@ -40,3 +51,9 @@ class Phase5ModuleBaselineTests(SimpleTestCase):
         )
 
         self.assertEqual(baseline, ("ADMISSIONS", "STUDENTS", "COMMUNICATION"))
+
+    def test_secretary_role_gets_admin_support_baseline(self):
+        self.assertEqual(
+            get_role_module_baseline("SECRETARY"),
+            ("STUDENTS", "EXAMINATIONS", "COMMUNICATION", "REPORTING"),
+        )

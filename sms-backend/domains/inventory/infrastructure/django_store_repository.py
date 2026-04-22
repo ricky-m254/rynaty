@@ -92,9 +92,25 @@ class DjangoStoreRepository:
             queryset = queryset.filter(date__lte=date_to)
         return queryset.order_by("-date", "-created_at")
 
-    def list_orders(self, *, status: str | None = None, send_to: str | None = None):
+    def list_orders(
+        self,
+        *,
+        status: str | None = None,
+        send_to: str | None = None,
+        procurement_type: str | None = None,
+        office_owner: str | None = None,
+        receiving_state: str | None = None,
+        supplier_id: str | None = None,
+        document_number: str | None = None,
+    ):
         queryset = (
-            StoreOrderRequest.objects.select_related("requested_by", "reviewed_by")
+            StoreOrderRequest.objects.select_related(
+                "requested_by",
+                "reviewed_by",
+                "received_by",
+                "supplier",
+                "generated_expense",
+            )
             .prefetch_related("items__item")
             .all()
         )
@@ -102,11 +118,27 @@ class DjangoStoreRepository:
             queryset = queryset.filter(status=status.upper())
         if send_to:
             queryset = queryset.filter(send_to__in=[send_to.upper(), "BOTH"])
+        if procurement_type:
+            queryset = queryset.filter(procurement_type=procurement_type.upper())
+        if office_owner:
+            queryset = queryset.filter(office_owner=office_owner.upper())
+        if receiving_state:
+            queryset = queryset.filter(receiving_state=receiving_state.upper())
+        if supplier_id:
+            queryset = queryset.filter(supplier_id=supplier_id)
+        if document_number:
+            queryset = queryset.filter(document_number__icontains=document_number)
         return queryset.order_by("-created_at")
 
     def find_order(self, order_id: int):
         return (
-            StoreOrderRequest.objects.select_related("requested_by", "reviewed_by")
+            StoreOrderRequest.objects.select_related(
+                "requested_by",
+                "reviewed_by",
+                "received_by",
+                "supplier",
+                "generated_expense",
+            )
             .prefetch_related("items__item")
             .filter(id=order_id)
             .first()
@@ -122,6 +154,12 @@ class DjangoStoreRepository:
             StoreItem.objects.filter(id=item_id).values_list("name", flat=True).first() or ""
         )
 
+    def find_item_cost_price(self, item_id: int | None) -> Decimal:
+        if not item_id:
+            return Decimal("0.00")
+        value = StoreItem.objects.filter(id=item_id).values_list("cost_price", flat=True).first()
+        return value or Decimal("0.00")
+
     def create_order_item(
         self,
         *,
@@ -130,6 +168,7 @@ class DjangoStoreRepository:
         item_name: str,
         unit: str,
         quantity_requested,
+        quoted_unit_price,
         notes: str,
     ):
         return StoreOrderItem.objects.create(
@@ -138,6 +177,7 @@ class DjangoStoreRepository:
             item_name=item_name,
             unit=unit,
             quantity_requested=quantity_requested,
+            quoted_unit_price=quoted_unit_price,
             notes=notes,
         )
 
@@ -156,21 +196,30 @@ class DjangoStoreRepository:
         return order_item
 
     def calculate_order_total(self, order) -> Decimal:
+        approved_total = getattr(order, "approved_total", None)
+        if approved_total and approved_total > Decimal("0.00"):
+            return approved_total
         total = Decimal("0")
         for order_item in order.items.select_related("item").all():
             quantity = order_item.quantity_approved or order_item.quantity_requested or Decimal("0")
-            cost_price = order_item.item.cost_price if order_item.item_id and order_item.item else Decimal("0")
-            total += quantity * (cost_price or Decimal("0"))
+            quoted_unit_price = order_item.quoted_unit_price or Decimal("0")
+            if quoted_unit_price <= 0 and order_item.item_id and order_item.item:
+                quoted_unit_price = order_item.item.cost_price or Decimal("0")
+            total += quantity * (quoted_unit_price or Decimal("0"))
         return total
 
     def create_expense_for_order(self, *, order, amount, expense_date, description: str):
+        supplier_name = ""
+        if getattr(order, "supplier", None):
+            supplier_name = order.supplier.name or ""
         return Expense.objects.create(
-            category="Store Purchase",
+            category="Local Purchase" if getattr(order, "procurement_type", "LPO") == "LPO" else "Local Supply",
             amount=max(amount, Decimal("0.01")),
             expense_date=expense_date,
-            description=description,
+            vendor=supplier_name or (order.office_owner or "Store"),
+            invoice_number=order.document_number or order.request_code or f"REQ-{order.id}",
             approval_status="Approved",
-            vendor="Store Department",
+            description=description,
         )
 
     def build_dashboard_payload(self) -> dict[str, object]:
@@ -183,11 +232,25 @@ class DjangoStoreRepository:
             .values("id", "transaction_type", "quantity", "date", "item__name", "item__unit", "purpose")
             .order_by("-date", "-created_at")[:10]
         )
+        procurement_orders = list(
+            StoreOrderRequest.objects.select_related("supplier")
+            .prefetch_related("items__item")
+            .all()
+        )
         return {
             "total_items": StoreItem.objects.filter(is_active=True).count(),
             "low_stock_count": len(low_stock_items),
             "low_stock_items": low_stock_items,
             "pending_orders": StoreOrderRequest.objects.filter(status="PENDING").count(),
+            "pending_procurement_orders": StoreOrderRequest.objects.filter(status="PENDING").count(),
+            "pending_lpo_orders": StoreOrderRequest.objects.filter(status="PENDING", procurement_type="LPO").count(),
+            "pending_lso_orders": StoreOrderRequest.objects.filter(status="PENDING", procurement_type="LSO").count(),
+            "approved_procurement_total": float(
+                sum(
+                    (self.calculate_order_total(order) for order in procurement_orders if order.status in {"APPROVED", "FULFILLED"}),
+                    Decimal("0.00"),
+                )
+            ),
             "total_categories": StoreCategory.objects.filter(is_active=True).count(),
             "recent_transactions": recent_transactions,
         }
@@ -235,6 +298,12 @@ class DjangoStoreRepository:
             )
             .order_by("date", "created_at")
         )
+        procurement_orders = list(
+            StoreOrderRequest.objects.select_related("supplier")
+            .prefetch_related("items__item")
+            .filter(status__in=["APPROVED", "FULFILLED"])
+            .order_by("created_at")
+        )
 
         monthly_procurement_total = sum((transaction_value(tx) for tx in current_month_receipts), Decimal("0.00"))
         previous_month_procurement_total = sum(
@@ -278,6 +347,32 @@ class DjangoStoreRepository:
                 {
                     "month": month_start.strftime("%b"),
                     "value": float(total_value),
+                }
+            )
+
+        procurement_orders_total = sum(
+            (self.calculate_order_total(order) for order in procurement_orders),
+            Decimal("0.00"),
+        )
+        procurement_type_breakdown = []
+        for procurement_type, label in (("LPO", "Local Purchase Orders"), ("LSO", "Local Supply Orders")):
+            type_orders = [order for order in procurement_orders if order.procurement_type == procurement_type]
+            procurement_type_breakdown.append(
+                {
+                    "type": procurement_type,
+                    "label": label,
+                    "count": len(type_orders),
+                    "value": float(sum((self.calculate_order_total(order) for order in type_orders), Decimal("0.00"))),
+                }
+            )
+
+        receiving_state_breakdown = []
+        for receiving_state, label in (("PENDING", "Pending"), ("PARTIAL", "Partially Received"), ("RECEIVED", "Received")):
+            receiving_state_breakdown.append(
+                {
+                    "state": receiving_state,
+                    "label": label,
+                    "count": StoreOrderRequest.objects.filter(receiving_state=receiving_state).count(),
                 }
             )
 
@@ -344,6 +439,9 @@ class DjangoStoreRepository:
             "monthly_consumption_total": float(monthly_consumption_total),
             "procurement_change_pct": procurement_change_pct,
             "monthly_procurement": monthly_procurement,
+            "procurement_orders_total": float(procurement_orders_total),
+            "procurement_type_breakdown": procurement_type_breakdown,
+            "receiving_state_breakdown": receiving_state_breakdown,
             "department_usage": department_usage,
             "top_consumed_items": top_consumed,
         }
