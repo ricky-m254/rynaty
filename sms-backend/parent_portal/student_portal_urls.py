@@ -10,6 +10,7 @@ from .student_portal_views import (
     StudentDashboardView,
     StudentELearningView,
     StudentFinancePayView,
+    StudentFinanceReceiptView,
     StudentLibraryView,
     StudentMpesaStatusView,
     StudentProfileView,
@@ -26,6 +27,7 @@ urlpatterns = [
     path("assignments/", StudentAssignmentsView.as_view()),
     path("my-invoices/", MyInvoicesView.as_view()),
     path("my-payments/", MyPaymentsView.as_view()),
+    path("finance/payments/<int:payment_id>/receipt/", StudentFinanceReceiptView.as_view()),
     path("finance/pay/", StudentFinancePayView.as_view()),
     path("finance/mpesa-status/", StudentMpesaStatusView.as_view()),
     path("profile/", StudentProfileView.as_view()),
@@ -37,4 +39,5 @@ urlpatterns = [
 portal_urlpatterns = [
     path("my-invoices/", MyInvoicesView.as_view()),
     path("my-payments/", MyPaymentsView.as_view()),
+    path("finance/payments/<int:payment_id>/receipt/", StudentFinanceReceiptView.as_view()),
 ]

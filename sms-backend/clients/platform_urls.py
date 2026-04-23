@@ -22,6 +22,8 @@ from clients.platform_views import (
     PlatformSecurityIncidentViewSet,
     PlatformSettingViewSet,
     PlatformSubscriptionInvoiceViewSet,
+    PlatformSubscriptionPaymentViewSet,
+    PlatformSubscriptionPaymentMpesaCallbackView,
     PlatformSubscriptionPlanViewSet,
     PlatformSupportTicketViewSet,
     PlatformTenantSubscriptionViewSet,
@@ -37,6 +39,7 @@ router.register(r"tenants", PlatformTenantViewSet, basename="platform-tenant")
 router.register(r"plans", PlatformSubscriptionPlanViewSet, basename="platform-plan")
 router.register(r"subscriptions", PlatformTenantSubscriptionViewSet, basename="platform-subscription")
 router.register(r"subscription-invoices", PlatformSubscriptionInvoiceViewSet, basename="platform-subscription-invoice")
+router.register(r"subscription-payments", PlatformSubscriptionPaymentViewSet, basename="platform-subscription-payment")
 router.register(r"analytics", PlatformAnalyticsViewSet, basename="platform-analytics")
 router.register(r"support-tickets", PlatformSupportTicketViewSet, basename="platform-support-ticket")
 router.register(r"impersonation-sessions", PlatformImpersonationSessionViewSet, basename="platform-impersonation-session")
@@ -129,5 +132,6 @@ def platform_login_view(request):
 
 urlpatterns = [
     path("auth/login/", platform_login_view, name="platform-auth-login"),
+    path("subscription-payments/mpesa/callback/", PlatformSubscriptionPaymentMpesaCallbackView.as_view(), name="platform-subscription-payment-mpesa-callback"),
     path("", include(router.urls)),
 ]

@@ -260,6 +260,7 @@ If we compare the repo today against the original audit, the system has moved fr
 
 to:
 
+
 - "payment architecture implemented at MVP level, with launch validation and selected hardening still pending"
 
 That is the most accurate done-vs-pending view of the repo today.

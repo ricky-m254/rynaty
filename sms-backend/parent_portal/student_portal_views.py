@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from django.contrib.auth import update_session_auth_hash
 from django.db.models import Avg, Q, Sum
+from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework import permissions, status
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
@@ -28,6 +29,7 @@ from school.models import (
     TermResult,
     UserProfile,
 )
+from school.payment_receipts import build_payment_receipt_payload
 from school.permissions import HasModuleAccess
 from school.services import FinanceService
 
@@ -553,16 +555,84 @@ class MyPaymentsView(StudentPortalAccessMixin, APIView):
 
         rows = Payment.objects.filter(student=student, is_active=True).order_by("-payment_date", "-id")
         return Response([
-            {
-                "id": r.id,
-                "amount_paid": r.amount,
-                "payment_date": r.payment_date,
-                "payment_method": r.payment_method,
-                "transaction_reference": getattr(r, "reference_number", getattr(r, "transaction_reference", "")),
-                "notes": getattr(r, "notes", ""),
-            }
+                {
+                    "id": r.id,
+                    "amount_paid": r.amount,
+                    "payment_date": r.payment_date,
+                    "payment_method": r.payment_method,
+                    "transaction_reference": getattr(r, "reference_number", getattr(r, "transaction_reference", "")),
+                    "notes": getattr(r, "notes", ""),
+                    "receipt_url": f"/api/student-portal/finance/payments/{r.id}/receipt/",
+                }
             for r in rows[:200]
         ])
+
+
+class StudentFinanceReceiptView(StudentPortalAccessMixin, APIView):
+    def get(self, request, payment_id):
+        student = _student_from_request(request.user)
+        row = Payment.objects.filter(id=payment_id, student=student, is_active=True).first() if student else None
+        if not row:
+            return Response({"error": "Payment not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        from school.models import SchoolProfile
+
+        profile = SchoolProfile.objects.filter(is_active=True).first()
+        school_name = getattr(profile, "school_name", "RynatySchool SmartCampus")
+        school_phone = getattr(profile, "phone", "+254 700 000 000")
+        school_email = getattr(profile, "email_address", "info@rynatyschool.app")
+        currency = getattr(profile, "currency", "KES")
+        receipt = build_payment_receipt_payload(row, request=request)
+        alloc_rows = "".join(
+            [
+                f"<tr><td>Invoice #{a.get('invoice_number') or '—'}</td><td style='text-align:right'>{currency} {Decimal(str(a.get('amount') or 0)):,.2f}</td></tr>"
+                for a in receipt.get("allocations", [])
+            ]
+        ) or f"<tr><td>Payment</td><td style='text-align:right'>{currency} {Decimal(str(receipt['amount'] or 0)):,.2f}</td></tr>"
+        html = f"""<!doctype html><html><head><meta charset='UTF-8'>
+<title>Receipt {receipt['receipt_no']}</title>
+<style>
+  body{{font-family:Arial,sans-serif;max-width:620px;margin:40px auto;color:#222;padding:0 16px;}}
+  .header{{text-align:center;border-bottom:3px solid #10b981;padding-bottom:16px;margin-bottom:24px;}}
+  .logo{{font-size:24px;font-weight:bold;color:#10b981;margin-bottom:4px;}}
+  .receipt-no{{font-size:14px;color:#666;letter-spacing:.12em;text-transform:uppercase;}}
+  .info-grid{{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:20px 0;}}
+  .info-box{{background:#f9f9f9;padding:12px;border-radius:6px;}}
+  .info-box label{{font-size:11px;color:#666;text-transform:uppercase;}}
+  .info-box p{{margin:4px 0 0;font-weight:bold;}}
+  .stamp{{text-align:center;margin:24px 0;}}
+  .paid-stamp{{display:inline-block;border:4px solid #10b981;color:#10b981;font-size:30px;font-weight:bold;padding:8px 30px;border-radius:8px;transform:rotate(-5deg);letter-spacing:4px;}}
+  table{{width:100%;border-collapse:collapse;margin:16px 0;}}
+  th{{background:#10b981;color:white;padding:8px 12px;text-align:left;}}
+  td{{padding:8px 12px;border-bottom:1px solid #eee;}}
+  .total-row{{font-weight:bold;background:#f0fdf4;}}
+  .footer{{margin-top:32px;text-align:center;font-size:12px;color:#888;border-top:1px solid #eee;padding-top:12px;}}
+  @media print{{body{{margin:20px;}} .no-print{{display:none;}}}}
+</style></head><body>
+<div class='header'>
+  <div class='logo'>{school_name}</div>
+  <div style='font-size:12px;color:#666'>{school_phone} | {school_email}</div>
+  <div class='receipt-no'>Official Payment Receipt</div>
+</div>
+<div class='info-grid'>
+  <div class='info-box'><label>Student</label><p>{receipt['student']}</p><p style='font-weight:normal;font-size:13px'>Adm: {receipt['admission_number'] or '—'}</p></div>
+  <div class='info-box'><label>Receipt No.</label><p>{receipt['receipt_no']}</p></div>
+  <div class='info-box'><label>Payment Date</label><p>{receipt['date'] or '—'}</p></div>
+  <div class='info-box'><label>Payment Method</label><p>{receipt['method'] or '—'}</p></div>
+</div>
+<div class='stamp'><div class='paid-stamp'>PAID</div></div>
+<table><thead><tr><th>Description</th><th style='text-align:right'>Amount ({currency})</th></tr></thead>
+<tbody>{alloc_rows}</tbody>
+<tfoot><tr class='total-row'><td>Total Received</td><td style='text-align:right'>{currency} {Decimal(str(receipt['amount'] or 0)):,.2f}</td></tr></tfoot>
+</table>
+{f"<p style='font-size:13px;color:#555'>Ref: {receipt['reference_number']}</p>" if receipt.get('reference_number') else ""}
+{f"<p style='font-size:13px;color:#555'>Notes: {receipt['notes']}</p>" if receipt.get('notes') else ""}
+<div class='no-print' style='text-align:center;margin:20px'>
+  <button onclick='window.print()' style='background:#10b981;color:white;border:none;padding:10px 32px;border-radius:6px;font-size:16px;cursor:pointer'>🖨️ Print / Save as PDF</button>
+</div>
+<div class='footer'>{school_name} &bull; Generated on {timezone.now().strftime('%d %b %Y %H:%M')} &bull; rynatyschool.app</div>
+</body></html>"""
+        return HttpResponse(html, content_type="text/html")
 
 
 class StudentFinancePayView(StudentPortalAccessMixin, APIView):

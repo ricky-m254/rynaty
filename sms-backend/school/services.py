@@ -1345,23 +1345,49 @@ class FinanceService:
 
     @staticmethod
     @transaction.atomic
-    def record_payment(student, amount, payment_method, reference_number, notes=""):
+    def record_payment(student, amount, payment_method, reference_number, notes="", send_notifications=True):
         FinanceWriteGuard.ensure_student_readonly()
         FinanceService._ensure_open_period(timezone.now().date())
-        payment = Payment.objects.create(
-            student=student,
-            amount=amount,
-            payment_method=payment_method,
+        reference_number = str(reference_number or "").strip()
+        if not reference_number:
+            raise ValueError("reference_number is required.")
+
+        payment, created = Payment.objects.get_or_create(
             reference_number=reference_number,
-            notes=notes
+            defaults={
+                "student": student,
+                "amount": amount,
+                "payment_method": payment_method,
+                "notes": notes,
+            },
         )
-        payment_recorded.send(
-            sender=FinanceService,
-            payment_id=payment.id,
-            student_id=student.id,
-            amount=str(amount),
-            reference_number=reference_number
-        )
+
+        if created:
+            payment._was_created = True
+            payment_recorded.send(
+                sender=FinanceService,
+                payment_id=payment.id,
+                student_id=student.id,
+                amount=str(amount),
+                reference_number=reference_number,
+                skip_notifications=not send_notifications,
+            )
+            return payment
+
+        mismatches = []
+        if payment.student_id != getattr(student, "id", None):
+            mismatches.append("student")
+        if Decimal(str(payment.amount or 0)).quantize(Decimal("0.01")) != Decimal(str(amount or 0)).quantize(Decimal("0.01")):
+            mismatches.append("amount")
+        if str(payment.payment_method or "").strip() != str(payment_method or "").strip():
+            mismatches.append("payment_method")
+        if mismatches:
+            raise ValueError(
+                f"Payment reference {reference_number} already exists with a different "
+                f"{', '.join(mismatches)}."
+            )
+
+        payment._was_created = False
         return payment
 
     @staticmethod

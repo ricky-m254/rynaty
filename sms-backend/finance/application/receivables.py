@@ -75,7 +75,10 @@ def get_payment_queryset(
     date_from=None,
     date_to=None,
 ):
-    queryset = Payment.objects.filter(is_active=True).select_related("student")
+    queryset = Payment.objects.filter(is_active=True).select_related("student").prefetch_related(
+        "allocations__invoice",
+        "vote_head_allocations__vote_head",
+    )
 
     if student:
         queryset = queryset.filter(student_id=student)

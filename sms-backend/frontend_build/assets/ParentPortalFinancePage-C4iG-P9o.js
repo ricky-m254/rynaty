@@ -97,7 +97,7 @@ function ParentPortalFinancePage() {
   const [tab, setTab] = React.useState("invoices");
   const [flash, setFlash] = React.useState(null);
   const [paymentOpen, setPaymentOpen] = React.useState(false);
-  const [paymentMethod, setPaymentMethod] = React.useState("stripe");
+  const [paymentMethod, setPaymentMethod] = React.useState("mpesa");
   const [selectedInvoiceId, setSelectedInvoiceId] = React.useState("");
   const [paymentAmount, setPaymentAmount] = React.useState("");
   const [phone, setPhone] = React.useState("");
@@ -181,7 +181,7 @@ function ParentPortalFinancePage() {
   const selectedInvoice =
     outstandingInvoices.find((invoice) => String(invoice.id) === String(selectedInvoiceId)) ?? null;
 
-  const openPaymentModal = (invoice = null, preferredMethod = "stripe") => {
+  const openPaymentModal = (invoice = null, preferredMethod = "mpesa") => {
     clearPolling();
     setPaymentMethod(preferredMethod);
     setSelectedInvoiceId(invoice ? String(invoice.id) : "");
@@ -420,10 +420,10 @@ function ParentPortalFinancePage() {
             }),
             jsx("button", {
               type: "button",
-              onClick: () => openPaymentModal(null, "stripe"),
+              onClick: () => openPaymentModal(null, "mpesa"),
               className:
-                "rounded-xl border border-emerald-400/40 bg-emerald-400/12 px-5 py-2.5 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-400/18",
-              children: "Pay balance",
+                "w-full rounded-xl border border-emerald-400/40 bg-emerald-400/12 px-5 py-2.5 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-400/18 sm:w-auto",
+              children: "Pay now",
             }),
           ],
         }),
@@ -542,10 +542,10 @@ function ParentPortalFinancePage() {
                                       balanceDue > 0 &&
                                         jsx("button", {
                                           type: "button",
-                                          onClick: () => openPaymentModal(invoice, "stripe"),
+                                          onClick: () => openPaymentModal(invoice, "mpesa"),
                                           className:
                                             "rounded-xl border border-emerald-400/35 bg-emerald-400/10 px-4 py-2 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-400/15",
-                                          children: "Pay invoice",
+                                          children: "Pay now",
                                         }),
                                     ],
                                   }),
@@ -559,7 +559,7 @@ function ParentPortalFinancePage() {
                     }),
             })
           : jsx("div", {
-              className: "overflow-hidden rounded-2xl",
+                          className: "overflow-x-auto rounded-2xl",
               style: panelStyle,
               children:
                 payments.length === 0
@@ -573,7 +573,7 @@ function ParentPortalFinancePage() {
                         jsx("thead", {
                           children: jsx("tr", {
                             className: "border-b border-white/[0.07]",
-                            children: ["Date", "Amount", "Method", "Reference"].map((label) =>
+                            children: ["Date", "Amount", "Method", "Reference", "Receipt"].map((label) =>
                               jsx(
                                 "th",
                                 {
@@ -608,6 +608,22 @@ function ParentPortalFinancePage() {
                                   jsx("td", {
                                     className: "px-4 py-3 font-mono text-xs text-slate-500",
                                     children: payment.reference_number || "--",
+                                  }),
+                                  jsx("td", {
+                                    className: "px-4 py-3",
+                                    children: payment.receipt_url
+                                      ? jsx("a", {
+                                          href: payment.receipt_url,
+                                          target: "_blank",
+                                          rel: "noreferrer",
+                                          className:
+                                            "inline-flex rounded-full border border-white/[0.1] px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-300 transition hover:bg-white/[0.04]",
+                                          children: "Receipt",
+                                        })
+                                      : jsx("span", {
+                                          className: "text-xs text-slate-600",
+                                          children: "--",
+                                        }),
                                   }),
                                 ],
                               },
@@ -653,8 +669,8 @@ function ParentPortalFinancePage() {
                 jsx("div", {
                   className: "grid grid-cols-3 gap-2 rounded-2xl bg-slate-900/70 p-1",
                   children: [
-                    { id: "stripe", label: "Card / Stripe" },
                     { id: "mpesa", label: "M-Pesa" },
+                    { id: "stripe", label: "Card / Stripe" },
                     { id: "bank", label: "Bank transfer" },
                   ].map((method) =>
                     jsx(

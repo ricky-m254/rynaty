@@ -7,6 +7,7 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 
 from academics.models import AcademicYear, Term
 from clients.models import Domain, Tenant
+from communication.models import SmsMessage
 from finance.presentation.views import (
     FinanceReceiptPdfView as StagedFinanceReceiptPdfView,
     FinanceStudentLedgerView as StagedFinanceStudentLedgerView,
@@ -31,8 +32,11 @@ from school.models import (
     Role,
     SchoolClass,
     Student,
+    Guardian,
     UserModuleAssignment,
     UserProfile,
+    VoteHead,
+    VoteHeadPaymentAllocation,
 )
 from school.views import (
     FinanceReceiptPdfView as LiveFinanceReceiptPdfView,
@@ -43,6 +47,7 @@ from school.views import (
     PaymentReversalRequestViewSet as LivePaymentReversalRequestViewSet,
     PaymentViewSet as LivePaymentViewSet,
 )
+from school.services import FinanceService
 
 
 User = get_user_model()
@@ -156,7 +161,11 @@ class FinanceReceivablesActivationPrepTests(TenantTestBase):
         normalized = dict(payload)
         normalized.pop("id", None)
         normalized.pop("payment_date", None)
+        normalized.pop("created_at", None)
         normalized.pop("receipt_number", None)
+        normalized.pop("receipt_no", None)
+        normalized.pop("receipt_json_url", None)
+        normalized.pop("receipt_pdf_url", None)
         allocations = []
         for item in normalized.get("allocations", []):
             allocation = dict(item)
@@ -201,6 +210,15 @@ class FinanceReceivablesActivationPrepTests(TenantTestBase):
             notes="List test payment",
             is_active=True,
         )
+        vote_head = VoteHead.objects.create(
+            name="Tuition",
+            description="Core tuition vote head",
+        )
+        VoteHeadPaymentAllocation.objects.create(
+            payment=payment,
+            vote_head=vote_head,
+            amount=Decimal("3500.00"),
+        )
 
         invoice_path = f"/api/finance/invoices/?search={self.student.admission_number}&status=ISSUED"
         live_invoice_list = self._invoke_viewset(LiveInvoiceViewSet, "get", "list", invoice_path)
@@ -213,6 +231,11 @@ class FinanceReceivablesActivationPrepTests(TenantTestBase):
         staged_payment_list = self._invoke_viewset(StagedPaymentViewSet, "get", "list", payment_path)
         self.assertEqual(staged_payment_list.status_code, live_payment_list.status_code)
         self.assertEqual(staged_payment_list.data, live_payment_list.data)
+        self.assertEqual(live_payment_list.data["results"][0]["receipt_no"], payment.receipt_number)
+        self.assertEqual(live_payment_list.data["results"][0]["transaction_code"], payment.reference_number)
+        self.assertEqual(live_payment_list.data["results"][0]["vote_head_summary"], vote_head.name)
+        self.assertEqual(live_payment_list.data["results"][0]["status"], "Active")
+        self.assertTrue(live_payment_list.data["results"][0]["created_at"])
 
     def test_staged_invoice_create_and_issue_match_live_contract(self):
         Invoice.objects.all().delete()
@@ -349,6 +372,15 @@ class FinanceReceivablesActivationPrepTests(TenantTestBase):
             invoice=ledger_invoice,
             amount_allocated=Decimal("3000.00"),
         )
+        vote_head = VoteHead.objects.create(
+            name="Receipt Test Vote Head",
+            description="Receipt test vote head",
+        )
+        VoteHeadPaymentAllocation.objects.create(
+            payment=ledger_payment,
+            vote_head=vote_head,
+            amount=Decimal("3000.00"),
+        )
 
         receipt_path = f"/api/finance/payments/{ledger_payment.id}/receipt/"
         live_receipt = self._invoke_viewset(LivePaymentViewSet, "get", "receipt", receipt_path, pk=ledger_payment.id)
@@ -357,6 +389,37 @@ class FinanceReceivablesActivationPrepTests(TenantTestBase):
         self.assertEqual(staged_receipt["Content-Type"], live_receipt["Content-Type"])
         self.assertEqual(staged_receipt["Content-Disposition"], live_receipt["Content-Disposition"])
         self.assertEqual(staged_receipt.content, live_receipt.content)
+
+        receipt_json_path = f"/api/finance/payments/{ledger_payment.id}/receipt/?format=json"
+        live_receipt_json = self._invoke_viewset(
+            LivePaymentViewSet,
+            "get",
+            "receipt",
+            receipt_json_path,
+            pk=ledger_payment.id,
+        )
+        staged_receipt_json = self._invoke_viewset(
+            StagedPaymentViewSet,
+            "get",
+            "receipt",
+            receipt_json_path,
+            pk=ledger_payment.id,
+        )
+        self.assertEqual(staged_receipt_json.status_code, live_receipt_json.status_code)
+        self.assertEqual(staged_receipt_json.data, live_receipt_json.data)
+        self.assertEqual(live_receipt_json.data["receipt_no"], ledger_payment.receipt_number)
+        self.assertEqual(live_receipt_json.data["transaction_code"], ledger_payment.reference_number)
+        self.assertEqual(live_receipt_json.data["vote_head_summary"], vote_head.name)
+        self.assertEqual(live_receipt_json.data["student"], f"{self.student.first_name} {self.student.last_name}".strip())
+        self.assertEqual(live_receipt_json.data["admission_number"], self.student.admission_number)
+        self.assertEqual(str(live_receipt_json.data["amount"]), str(ledger_payment.amount))
+        self.assertEqual(live_receipt_json.data["method"], ledger_payment.payment_method)
+        self.assertEqual(live_receipt_json.data["status"], "Active")
+        self.assertTrue(live_receipt_json.data["receipt_json_url"].endswith(receipt_json_path))
+        self.assertTrue(live_receipt_json.data["receipt_pdf_url"].endswith(f"/api/finance/payments/{ledger_payment.id}/receipt/pdf/"))
+        self.assertEqual(len(live_receipt_json.data["allocations"]), 1)
+        self.assertEqual(len(live_receipt_json.data["vote_head_allocations"]), 1)
+        self.assertEqual(live_receipt_json.data["vote_head_allocations"][0]["vote_head"], vote_head.name)
 
         pdf_path = f"/api/finance/payments/{ledger_payment.id}/receipt/pdf/"
         live_pdf = self._invoke_api_view(LiveFinanceReceiptPdfView, "get", pdf_path, pk=ledger_payment.id)
@@ -382,6 +445,63 @@ class FinanceReceivablesActivationPrepTests(TenantTestBase):
         )
         self.assertEqual(staged_ledger.status_code, live_ledger.status_code)
         self.assertEqual(staged_ledger.data, live_ledger.data)
+
+    def test_record_payment_emits_sms_audit_trail(self):
+        guardian = Guardian.objects.create(
+            student=self.student,
+            name="Grace Njeri",
+            relationship="Mother",
+            phone="0712345678",
+            email="grace@example.com",
+            is_active=True,
+        )
+
+        payment = FinanceService.record_payment(
+            student=self.student,
+            amount=Decimal("2500.00"),
+            payment_method="CASH",
+            reference_number="SMS-001",
+            notes="SMS trail test",
+        )
+
+        sms_message = SmsMessage.objects.get()
+        self.assertEqual(sms_message.recipient_phone, guardian.phone)
+        self.assertEqual(sms_message.channel, "SMS")
+        self.assertIn(payment.receipt_number, sms_message.message)
+        self.assertIn(self.student.admission_number, sms_message.message)
+        self.assertIn("KES 2,500.00", sms_message.message)
+        self.assertIn("SMS-001", sms_message.message)
+        self.assertIn(sms_message.status, {"Queued", "Sent", "Delivered"})
+
+    def test_record_payment_is_idempotent_for_duplicate_reference(self):
+        Guardian.objects.create(
+            student=self.student,
+            name="Grace Njeri",
+            relationship="Mother",
+            phone="0712345678",
+            email="grace@example.com",
+            is_active=True,
+        )
+
+        first_payment = FinanceService.record_payment(
+            student=self.student,
+            amount=Decimal("2500.00"),
+            payment_method="CASH",
+            reference_number="SMS-002",
+            notes="Duplicate reference test",
+        )
+        second_payment = FinanceService.record_payment(
+            student=self.student,
+            amount=Decimal("2500.00"),
+            payment_method="CASH",
+            reference_number="SMS-002",
+            notes="Duplicate reference test",
+        )
+
+        self.assertEqual(first_payment.id, second_payment.id)
+        self.assertFalse(getattr(second_payment, "_was_created", True))
+        self.assertEqual(Payment.objects.filter(reference_number="SMS-002").count(), 1)
+        self.assertEqual(SmsMessage.objects.filter(message__icontains="SMS-002").count(), 1)
 
     def test_staged_invoice_adjustment_create_matches_live_contract(self):
         adjustment_invoice = Invoice.objects.create(

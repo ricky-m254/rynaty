@@ -191,16 +191,25 @@ class SubscriptionInvoiceSerializer(serializers.ModelSerializer):
 
 
 class SubscriptionPaymentSerializer(serializers.ModelSerializer):
+    tenant_name = serializers.CharField(source="invoice.tenant.name", read_only=True)
+    invoice_number = serializers.CharField(source="invoice.invoice_number", read_only=True)
+    transaction_code = serializers.CharField(source="transaction_id", read_only=True)
+    invoice_status = serializers.CharField(source="invoice.status", read_only=True)
+
     class Meta:
         model = SubscriptionPayment
         fields = [
             "id",
             "invoice",
+            "invoice_number",
+            "tenant_name",
             "amount",
             "method",
             "status",
             "paid_at",
             "transaction_id",
+            "transaction_code",
+            "invoice_status",
             "metadata",
             "created_at",
             "updated_at",
@@ -208,9 +217,32 @@ class SubscriptionPaymentSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at", "paid_at"]
 
 
+class SubscriptionPaymentCreateSerializer(serializers.Serializer):
+    invoice = serializers.PrimaryKeyRelatedField(queryset=SubscriptionInvoice.objects.select_related("tenant", "subscription"))
+    amount = serializers.DecimalField(max_digits=12, decimal_places=2)
+    method = serializers.CharField(required=False, allow_blank=True, max_length=50, default="M-Pesa")
+    status = serializers.ChoiceField(
+        choices=SubscriptionPayment.STATUS_CHOICES,
+        required=False,
+        default=SubscriptionPayment.STATUS_PENDING,
+    )
+    transaction_id = serializers.CharField(required=False, allow_blank=True, max_length=128)
+    external_reference = serializers.CharField(required=False, allow_blank=True, max_length=128)
+    metadata = serializers.JSONField(required=False)
+
+
+class SubscriptionPaymentReviewSerializer(serializers.Serializer):
+    reason = serializers.CharField(required=False, allow_blank=True, max_length=500)
+
+
 class InvoicePaymentCreateSerializer(serializers.Serializer):
     amount = serializers.DecimalField(max_digits=12, decimal_places=2)
     method = serializers.CharField(required=False, allow_blank=True, max_length=50)
+    status = serializers.ChoiceField(
+        choices=SubscriptionPayment.STATUS_CHOICES,
+        required=False,
+        default=SubscriptionPayment.STATUS_PAID,
+    )
     transaction_id = serializers.CharField(required=False, allow_blank=True, max_length=128)
     external_reference = serializers.CharField(required=False, allow_blank=True, max_length=128)
     metadata = serializers.JSONField(required=False)

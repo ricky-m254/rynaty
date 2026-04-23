@@ -22,7 +22,13 @@ from school.models import (
     UserProfile,
 )
 from .models import ParentStudentLink
-from .student_portal_views import MyInvoicesView, MyPaymentsView, StudentFinancePayView, _student_from_request
+from .student_portal_views import (
+    MyInvoicesView,
+    MyPaymentsView,
+    StudentFinancePayView,
+    StudentFinanceReceiptView,
+    _student_from_request,
+)
 from .views import (
     ParentChangePasswordView,
     ParentDashboardView,
@@ -482,13 +488,17 @@ class ParentPortalTests(TenantTestBase):
     def test_student_finance_routes_resolve_under_canonical_and_legacy_prefixes(self):
         canonical_invoices = resolve("/api/student-portal/my-invoices/")
         canonical_payments = resolve("/api/student-portal/my-payments/")
+        canonical_receipt = resolve("/api/student-portal/finance/payments/1/receipt/")
         legacy_invoices = resolve("/api/portal/my-invoices/")
         legacy_payments = resolve("/api/portal/my-payments/")
+        legacy_receipt = resolve("/api/portal/finance/payments/1/receipt/")
 
         self.assertIs(canonical_invoices.func.view_class, MyInvoicesView)
         self.assertIs(canonical_payments.func.view_class, MyPaymentsView)
+        self.assertIs(canonical_receipt.func.view_class, StudentFinanceReceiptView)
         self.assertIs(legacy_invoices.func.view_class, MyInvoicesView)
         self.assertIs(legacy_payments.func.view_class, MyPaymentsView)
+        self.assertIs(legacy_receipt.func.view_class, StudentFinanceReceiptView)
 
 
 class DemoSchoolPortalSmokeTests(TestCase):
@@ -573,6 +583,27 @@ class DemoSchoolPortalSmokeTests(TestCase):
         self.assertEqual(len(payments_response.data), 1)
         self.assertEqual(payments_response.data[0]["amount_paid"], Decimal("500.00"))
         self.assertEqual(payments_response.data[0]["payment_method"], "Cash")
+
+    def test_demo_school_student_receipt_url_and_view_are_available(self):
+        payments_request = self.factory.get("/api/student-portal/my-payments/")
+        force_authenticate(payments_request, user=self.student_user)
+        payments_response = MyPaymentsView.as_view()(payments_request)
+
+        self.assertEqual(payments_response.status_code, 200)
+        self.assertEqual(len(payments_response.data), 1)
+        payment_id = payments_response.data[0]["id"]
+        self.assertTrue(
+            payments_response.data[0]["receipt_url"].endswith(
+                f"/api/student-portal/finance/payments/{payment_id}/receipt/"
+            )
+        )
+
+        receipt_request = self.factory.get(f"/api/student-portal/finance/payments/{payment_id}/receipt/")
+        force_authenticate(receipt_request, user=self.student_user)
+        receipt_response = StudentFinanceReceiptView.as_view()(receipt_request, payment_id=payment_id)
+
+        self.assertEqual(receipt_response.status_code, 200)
+        self.assertIn("Official Payment Receipt", receipt_response.content.decode())
 
     def test_demo_school_parent_bank_transfer_flow(self):
         request = self.factory.post(

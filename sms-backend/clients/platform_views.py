@@ -14,7 +14,7 @@ from decimal import Decimal
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import transaction
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, Max, Q, Sum
 from django.db.models.functions import TruncMonth
 from django.http import JsonResponse
 from django.utils import timezone
@@ -25,6 +25,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from clients.models import (
     BackupJob,
@@ -79,7 +80,9 @@ from clients.serializers import (
     RestoreJobSerializer,
     SecurityIncidentSerializer,
     SubscriptionInvoiceSerializer,
+    SubscriptionPaymentCreateSerializer,
     SubscriptionPaymentSerializer,
+    SubscriptionPaymentReviewSerializer,
     SubscriptionPlanSerializer,
     SupportTicketNoteCreateSerializer,
     SupportTicketNoteSerializer,
@@ -598,6 +601,396 @@ def _create_billing_invoice(
         due_date=period_start + timedelta(days=due_days),
         notes=notes,
     )
+
+
+def _finalize_subscription_payment(
+    *,
+    payment: SubscriptionPayment,
+    actor,
+    request=None,
+    audit_action: str = "APPROVE",
+    audit_details: str = "Subscription payment settled",
+) -> SubscriptionPayment:
+    invoice = payment.invoice
+    tenant = invoice.tenant
+    subscription = invoice.subscription
+    now = timezone.now()
+
+    payment.status = SubscriptionPayment.STATUS_PAID
+    if not payment.paid_at:
+        payment.paid_at = now
+    if payment.transaction_id and not invoice.external_reference:
+        invoice.external_reference = payment.transaction_id
+
+    invoice.status = SubscriptionInvoice.STATUS_PAID
+    if not invoice.paid_at:
+        invoice.paid_at = now
+
+    if subscription and subscription.is_current:
+        subscription.status = TenantSubscription.STATUS_ACTIVE
+        subscription.save(update_fields=["status", "updated_at"])
+
+    if invoice.period_end and (tenant.paid_until is None or invoice.period_end > tenant.paid_until):
+        tenant.paid_until = invoice.period_end
+
+    if tenant.status in [Tenant.STATUS_TRIAL, Tenant.STATUS_ACTIVE, Tenant.STATUS_SUSPENDED]:
+        tenant.status = Tenant.STATUS_ACTIVE
+        tenant.is_active = True
+        tenant.suspended_at = None
+        tenant.suspension_reason = ""
+
+    payment.save(update_fields=["status", "paid_at", "transaction_id", "metadata", "updated_at"])
+    invoice.save(update_fields=["status", "paid_at", "external_reference", "updated_at"])
+    tenant.save(update_fields=["status", "is_active", "paid_until", "suspended_at", "suspension_reason", "updated_at"])
+
+    _platform_audit(
+        user=actor,
+        action=audit_action,
+        model_name="SubscriptionPayment",
+        object_id=payment.id,
+        details=audit_details,
+        tenant=tenant,
+        request=request,
+        metadata={
+            "invoice_id": invoice.id,
+            "invoice_number": invoice.invoice_number,
+            "transaction_id": payment.transaction_id,
+            "payment_status": payment.status,
+        },
+    )
+
+    def _send_receipt():
+        try:
+            from clients.platform_email import platform_email as _pe
+            _pe.payment_receipt(
+                tenant,
+                invoice,
+                receipt_number=payment.transaction_id or invoice.external_reference or invoice.invoice_number,
+                method=payment.method or "M-Pesa",
+            )
+        except Exception:
+            logger.warning("Caught and logged", exc_info=True)
+
+    transaction.on_commit(_send_receipt)
+    return payment
+
+
+def _platform_parse_decimal(value):
+    if value in (None, ""):
+        return None
+    try:
+        return Decimal(str(value))
+    except Exception:
+        return None
+
+
+def _platform_normalize_mpesa_callback(payload):
+    payload = payload if isinstance(payload, dict) else {}
+    body = payload.get("Body")
+    if isinstance(body, dict) and isinstance(body.get("stkCallback"), dict):
+        from school.mpesa import parse_stk_callback
+
+        parsed = parse_stk_callback(payload)
+        stk_callback = body.get("stkCallback") or {}
+        transaction_id = str(parsed.get("checkout_request_id") or parsed.get("mpesa_receipt") or "").strip()
+        receipt_number = str(parsed.get("mpesa_receipt") or parsed.get("checkout_request_id") or "").strip()
+        return {
+            "source": "stk_callback",
+            "success": bool(parsed.get("success")),
+            "transaction_id": transaction_id,
+            "receipt_number": receipt_number,
+            "reference": str(stk_callback.get("AccountReference") or stk_callback.get("BillRefNumber") or "").strip(),
+            "amount": parsed.get("amount"),
+            "phone": parsed.get("phone"),
+            "transaction_date": parsed.get("transaction_date"),
+            "result_code": parsed.get("result_code"),
+            "result_desc": parsed.get("result_desc") or "",
+            "friendly_message": parsed.get("friendly_message") or "",
+            "raw": payload,
+        }
+
+    data = body if isinstance(body, dict) and body else payload
+    if not isinstance(data, dict):
+        data = {}
+
+    result_code_raw = data.get("ResultCode")
+    result_code = None
+    if result_code_raw not in (None, ""):
+        try:
+            result_code = int(result_code_raw)
+        except Exception:
+            result_code = -1
+
+    transaction_id = str(
+        data.get("TransID")
+        or data.get("MpesaReceiptNumber")
+        or data.get("CheckoutRequestID")
+        or data.get("ThirdPartyTransID")
+        or ""
+    ).strip()
+    reference = str(
+        data.get("BillRefNumber")
+        or data.get("AccountReference")
+        or data.get("InvoiceNumber")
+        or data.get("Reference")
+        or ""
+    ).strip()
+    amount = _platform_parse_decimal(data.get("TransAmount") if data.get("TransAmount") is not None else data.get("Amount"))
+    phone = str(data.get("MSISDN") or data.get("PhoneNumber") or data.get("PartyA") or "").strip()
+    transaction_date = str(data.get("TransTime") or data.get("TransactionDate") or data.get("transaction_date") or "").strip()
+    result_desc = str(data.get("ResultDesc") or data.get("Status") or data.get("Message") or "").strip()
+    success = bool(transaction_id) if result_code is None else result_code == 0
+    if success and not result_desc:
+        result_desc = "Payment confirmed successfully."
+    if not success and not result_desc:
+        result_desc = "Payment could not be verified."
+
+    return {
+        "source": "paybill_callback",
+        "success": success,
+        "transaction_id": transaction_id,
+        "receipt_number": transaction_id,
+        "reference": reference,
+        "amount": amount,
+        "phone": phone,
+        "transaction_date": transaction_date,
+        "result_code": result_code,
+        "result_desc": result_desc,
+        "friendly_message": result_desc,
+        "raw": payload,
+    }
+
+
+def _platform_find_subscription_invoice(reference: str):
+    ref = (reference or "").strip()
+    if not ref:
+        return None
+    return SubscriptionInvoice.objects.select_related("tenant", "subscription", "subscription__plan").filter(
+        Q(invoice_number__iexact=ref) | Q(external_reference__iexact=ref)
+    ).order_by("-issued_at").first()
+
+
+def _platform_find_callback_payment(*, invoice: SubscriptionInvoice, transaction_id: str):
+    qs = SubscriptionPayment.objects.select_related("invoice", "invoice__tenant", "invoice__subscription")
+    payment = None
+    tx_id = (transaction_id or "").strip()
+    if tx_id:
+        payment = qs.filter(invoice=invoice, transaction_id__iexact=tx_id).order_by("-created_at").first()
+        if payment is None:
+            duplicate = qs.filter(transaction_id__iexact=tx_id).exclude(invoice=invoice).first()
+            if duplicate:
+                raise ValidationError({"detail": "transaction_id already exists for another tenant payment."})
+    if payment is None:
+        payment = qs.filter(invoice=invoice).order_by("-created_at").first()
+    return payment
+
+
+class PlatformSubscriptionPaymentMpesaCallbackView(APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        raw_body = request.body.decode("utf-8", errors="replace")
+        try:
+            payload = json.loads(raw_body) if raw_body else {}
+            if not isinstance(payload, dict):
+                payload = {}
+        except Exception:
+            return Response({"detail": "Invalid JSON body."}, status=status.HTTP_400_BAD_REQUEST)
+
+        parsed = _platform_normalize_mpesa_callback(payload)
+        invoice = _platform_find_subscription_invoice(parsed["reference"])
+        payment = None
+        if parsed["transaction_id"] and not invoice:
+            payment = (
+                SubscriptionPayment.objects.select_related("invoice", "invoice__tenant", "invoice__subscription")
+                .filter(transaction_id__iexact=parsed["transaction_id"])
+                .order_by("-created_at")
+                .first()
+            )
+            if payment:
+                invoice = payment.invoice
+
+        if not invoice:
+            _platform_audit(
+                user=None,
+                action="MPESA_CALLBACK_UNMATCHED",
+                model_name="SubscriptionPayment",
+                object_id="",
+                details=f"reference={parsed['reference']} transaction_id={parsed['transaction_id']}",
+                metadata={"callback": parsed, "reason": "unmatched_invoice"},
+                request=request,
+            )
+            return Response(
+                {
+                    "processed": False,
+                    "detail": "Callback could not be matched to a tenant invoice.",
+                    "callback": {
+                        "reference": parsed["reference"],
+                        "transaction_id": parsed["transaction_id"],
+                        "source": parsed["source"],
+                    },
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        amount_expected = Decimal(str(invoice.total_amount or invoice.amount or "0.00")).quantize(Decimal("0.01"))
+        callback_amount = parsed["amount"].quantize(Decimal("0.01")) if parsed["amount"] is not None else None
+
+        try:
+            with transaction.atomic():
+                if payment is None:
+                    payment = _platform_find_callback_payment(invoice=invoice, transaction_id=parsed["transaction_id"])
+
+                if payment and payment.status == SubscriptionPayment.STATUS_PAID and invoice.status == SubscriptionInvoice.STATUS_PAID:
+                    _platform_audit(
+                        user=None,
+                        action="MPESA_CALLBACK_DUPLICATE",
+                        model_name="SubscriptionPayment",
+                        object_id=payment.id,
+                        details=f"invoice={invoice.invoice_number} transaction_id={parsed['transaction_id']}",
+                        tenant=invoice.tenant,
+                        request=request,
+                        metadata={"invoice_id": invoice.id, "transaction_id": parsed["transaction_id"], "source": parsed["source"]},
+                    )
+                    return Response(
+                        {
+                            "processed": True,
+                            "duplicate": True,
+                            "payment": SubscriptionPaymentSerializer(payment).data,
+                        },
+                        status=status.HTTP_200_OK,
+                    )
+
+                if payment is None:
+                    payment = SubscriptionPayment.objects.create(
+                        invoice=invoice,
+                        amount=callback_amount or amount_expected,
+                        method="M-Pesa",
+                        status=SubscriptionPayment.STATUS_PENDING,
+                        transaction_id=parsed["transaction_id"],
+                        metadata={},
+                    )
+
+                payment_amount = callback_amount or Decimal(str(payment.amount or amount_expected))
+                metadata = dict(payment.metadata or {})
+                metadata.update(
+                    {
+                        "callback_source": parsed["source"],
+                        "callback_reference": parsed["reference"],
+                        "callback_transaction_id": parsed["transaction_id"],
+                        "callback_receipt_number": parsed["receipt_number"],
+                        "callback_result_code": parsed["result_code"],
+                        "callback_result_desc": parsed["result_desc"],
+                        "callback_friendly_message": parsed["friendly_message"],
+                        "callback_phone": parsed["phone"],
+                        "callback_transaction_date": parsed["transaction_date"],
+                        "callback_payload": parsed["raw"],
+                    }
+                )
+                payment.amount = payment_amount
+                payment.method = payment.method or "M-Pesa"
+                if parsed["transaction_id"]:
+                    payment.transaction_id = parsed["transaction_id"]
+                payment.metadata = metadata
+
+                if not parsed["success"]:
+                    payment.status = SubscriptionPayment.STATUS_FAILED
+                    payment.paid_at = None
+                    if invoice.status != SubscriptionInvoice.STATUS_PAID:
+                        invoice.status = (
+                            SubscriptionInvoice.STATUS_OVERDUE
+                            if invoice.due_date and invoice.due_date < timezone.now().date()
+                            else SubscriptionInvoice.STATUS_PENDING
+                        )
+                        invoice.save(update_fields=["status", "updated_at"])
+                    payment.save(update_fields=["amount", "method", "transaction_id", "status", "paid_at", "metadata", "updated_at"])
+                    _platform_audit(
+                        user=None,
+                        action="MPESA_CALLBACK_FAILED",
+                        model_name="SubscriptionPayment",
+                        object_id=payment.id,
+                        details=f"invoice={invoice.invoice_number} reason={parsed['result_desc']}",
+                        tenant=invoice.tenant,
+                        request=request,
+                        metadata={
+                            "invoice_id": invoice.id,
+                            "transaction_id": parsed["transaction_id"],
+                            "source": parsed["source"],
+                            "reason": parsed["result_desc"],
+                        },
+                    )
+                    return Response(
+                        {
+                            "processed": False,
+                            "payment": SubscriptionPaymentSerializer(payment).data,
+                            "detail": parsed["friendly_message"],
+                        },
+                        status=status.HTTP_200_OK,
+                    )
+
+                if callback_amount is not None and callback_amount != amount_expected:
+                    payment.status = SubscriptionPayment.STATUS_FAILED
+                    payment.paid_at = None
+                    if invoice.status != SubscriptionInvoice.STATUS_PAID:
+                        invoice.status = (
+                            SubscriptionInvoice.STATUS_OVERDUE
+                            if invoice.due_date and invoice.due_date < timezone.now().date()
+                            else SubscriptionInvoice.STATUS_PENDING
+                        )
+                        invoice.save(update_fields=["status", "updated_at"])
+                    payment.save(update_fields=["amount", "method", "transaction_id", "status", "paid_at", "metadata", "updated_at"])
+                    _platform_audit(
+                        user=None,
+                        action="MPESA_CALLBACK_AMOUNT_MISMATCH",
+                        model_name="SubscriptionPayment",
+                        object_id=payment.id,
+                        details=f"invoice={invoice.invoice_number} expected={amount_expected} callback={callback_amount}",
+                        tenant=invoice.tenant,
+                        request=request,
+                        metadata={
+                            "invoice_id": invoice.id,
+                            "transaction_id": parsed["transaction_id"],
+                            "source": parsed["source"],
+                            "expected_amount": str(amount_expected),
+                            "callback_amount": str(callback_amount),
+                        },
+                    )
+                    return Response(
+                        {
+                            "processed": False,
+                            "payment": SubscriptionPaymentSerializer(payment).data,
+                            "detail": "Callback amount does not match the invoice total.",
+                        },
+                        status=status.HTTP_200_OK,
+                    )
+
+                payment = _finalize_subscription_payment(
+                    payment=payment,
+                    actor=None,
+                    request=request,
+                    audit_action="MPESA_CALLBACK",
+                    audit_details=f"invoice={invoice.invoice_number} reference={parsed['reference'] or parsed['transaction_id']}",
+                )
+        except ValidationError as exc:
+            return Response(exc.detail, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as exc:
+            logger.exception("Error processing platform M-Pesa callback: %s", exc)
+            return Response(
+                {
+                    "processed": False,
+                    "detail": "Unable to process the platform payment callback.",
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        return Response(
+            {
+                "processed": True,
+                "payment": SubscriptionPaymentSerializer(payment).data,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 def _provision_school_admin(*, tenant: Tenant, username: str, email: str, password: str):
@@ -1233,6 +1626,207 @@ class PlatformSubscriptionInvoiceViewSet(mixins.ListModelMixin, mixins.RetrieveM
         )
 
 
+class PlatformSubscriptionPaymentViewSet(
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.CreateModelMixin,
+    viewsets.GenericViewSet,
+):
+    queryset = SubscriptionPayment.objects.select_related(
+        "invoice",
+        "invoice__tenant",
+        "invoice__subscription",
+        "invoice__subscription__plan",
+    ).order_by("-created_at")
+    serializer_class = SubscriptionPaymentSerializer
+    permission_classes = [IsAuthenticated, IsGlobalSuperAdmin]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        tenant_id = self.request.query_params.get("tenant_id")
+        invoice_id = self.request.query_params.get("invoice_id")
+        status_value = self.request.query_params.get("status")
+        method_value = self.request.query_params.get("method")
+        if tenant_id:
+            queryset = queryset.filter(invoice__tenant_id=tenant_id)
+        if invoice_id:
+            queryset = queryset.filter(invoice_id=invoice_id)
+        if status_value:
+            queryset = queryset.filter(status=status_value.upper())
+        if method_value:
+            queryset = queryset.filter(method__iexact=method_value)
+        return queryset
+
+    def get_serializer_class(self):
+        if self.action == "create":
+            return SubscriptionPaymentCreateSerializer
+        return super().get_serializer_class()
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        invoice = data["invoice"]
+        amount = data["amount"]
+        method = data.get("method", "")
+        status_value = data.get("status", SubscriptionPayment.STATUS_PENDING)
+        transaction_id = (data.get("transaction_id") or "").strip()
+        external_reference = (data.get("external_reference") or "").strip()
+        metadata = data.get("metadata", {})
+
+        with transaction.atomic():
+            payment = None
+            if transaction_id:
+                payment = (
+                    SubscriptionPayment.objects.select_related("invoice", "invoice__tenant", "invoice__subscription")
+                    .filter(invoice=invoice, transaction_id=transaction_id)
+                    .order_by("-created_at")
+                    .first()
+                )
+                if payment is None:
+                    duplicate = (
+                        SubscriptionPayment.objects.filter(transaction_id=transaction_id)
+                        .exclude(invoice=invoice)
+                        .first()
+                    )
+                    if duplicate:
+                        return Response(
+                            {"detail": "transaction_id already exists for another tenant payment."},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+
+            if payment:
+                payment.amount = amount
+                payment.method = method
+                payment.metadata = metadata
+                if external_reference and not invoice.external_reference:
+                    invoice.external_reference = external_reference
+                if status_value == SubscriptionPayment.STATUS_PAID:
+                    payment = _finalize_subscription_payment(
+                        payment=payment,
+                        actor=request.user,
+                        request=request,
+                        audit_action="CREATE_PAYMENT",
+                        audit_details=f"invoice={invoice.invoice_number} status=PAID",
+                    )
+                else:
+                    payment.status = status_value
+                    payment.save(update_fields=["amount", "method", "status", "metadata", "updated_at"])
+                    if external_reference:
+                        invoice.external_reference = external_reference
+                        invoice.save(update_fields=["external_reference", "updated_at"])
+            else:
+                payment = SubscriptionPayment.objects.create(
+                    invoice=invoice,
+                    amount=amount,
+                    method=method,
+                    status=status_value,
+                    transaction_id=transaction_id,
+                    metadata=metadata,
+                )
+                if external_reference:
+                    invoice.external_reference = external_reference
+                    invoice.save(update_fields=["external_reference", "updated_at"])
+                if status_value == SubscriptionPayment.STATUS_PAID:
+                    payment = _finalize_subscription_payment(
+                        payment=payment,
+                        actor=request.user,
+                        request=request,
+                        audit_action="CREATE_PAYMENT",
+                        audit_details=f"invoice={invoice.invoice_number} status=PAID",
+                    )
+
+        payload = SubscriptionPaymentSerializer(payment).data
+        headers = self.get_success_headers(payload)
+        return Response(payload, status=status.HTTP_201_CREATED, headers=headers)
+
+    @action(detail=True, methods=["post"], url_path="approve")
+    def approve(self, request, pk=None):
+        payment = self.get_object()
+        if payment.status == SubscriptionPayment.STATUS_PAID and payment.invoice.status == SubscriptionInvoice.STATUS_PAID:
+            return Response(SubscriptionPaymentSerializer(payment).data, status=status.HTTP_200_OK)
+
+        with transaction.atomic():
+            payment = self.get_object()
+            payment = _finalize_subscription_payment(
+                payment=payment,
+                actor=request.user,
+                request=request,
+                audit_action="APPROVE",
+                audit_details=f"invoice={payment.invoice.invoice_number} approved by platform operator",
+            )
+
+        return Response(SubscriptionPaymentSerializer(payment).data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="reject")
+    def reject(self, request, pk=None):
+        payment = self.get_object()
+        if payment.status == SubscriptionPayment.STATUS_PAID:
+            return Response({"detail": "Settled payments cannot be rejected."}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = SubscriptionPaymentReviewSerializer(data=request.data or {})
+        serializer.is_valid(raise_exception=True)
+        reason = serializer.validated_data.get("reason", "")
+
+        payment.status = SubscriptionPayment.STATUS_FAILED
+        payment.paid_at = None
+        payment.metadata = {
+            **(payment.metadata or {}),
+            "rejected_at": timezone.now().isoformat(),
+            "rejection_reason": reason,
+        }
+        if payment.invoice.status != SubscriptionInvoice.STATUS_PAID:
+            payment.invoice.status = (
+                SubscriptionInvoice.STATUS_OVERDUE
+                if payment.invoice.due_date and payment.invoice.due_date < timezone.now().date()
+                else SubscriptionInvoice.STATUS_PENDING
+            )
+            payment.invoice.save(update_fields=["status", "updated_at"])
+        payment.save(update_fields=["status", "paid_at", "metadata", "updated_at"])
+
+        _platform_audit(
+            user=request.user,
+            action="REJECT",
+            model_name="SubscriptionPayment",
+            object_id=payment.id,
+            details=f"invoice={payment.invoice.invoice_number} reason={reason}",
+            tenant=payment.invoice.tenant,
+            request=request,
+            metadata={"invoice_id": payment.invoice_id, "reason": reason},
+        )
+        return Response(SubscriptionPaymentSerializer(payment).data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="retry-verification")
+    def retry_verification(self, request, pk=None):
+        payment = self.get_object()
+        if payment.status == SubscriptionPayment.STATUS_PAID:
+            return Response(SubscriptionPaymentSerializer(payment).data, status=status.HTTP_200_OK)
+
+        serializer = SubscriptionPaymentReviewSerializer(data=request.data or {})
+        serializer.is_valid(raise_exception=True)
+        reason = serializer.validated_data.get("reason", "")
+
+        metadata = dict(payment.metadata or {})
+        metadata["verification_retry_at"] = timezone.now().isoformat()
+        metadata["verification_retry_reason"] = reason
+        metadata["verification_retry_count"] = int(metadata.get("verification_retry_count", 0)) + 1
+        payment.status = SubscriptionPayment.STATUS_PENDING
+        payment.metadata = metadata
+        payment.save(update_fields=["status", "metadata", "updated_at"])
+
+        _platform_audit(
+            user=request.user,
+            action="RETRY_VERIFICATION",
+            model_name="SubscriptionPayment",
+            object_id=payment.id,
+            details=f"invoice={payment.invoice.invoice_number} reason={reason}",
+            tenant=payment.invoice.tenant,
+            request=request,
+            metadata={"invoice_id": payment.invoice_id, "reason": reason},
+        )
+        return Response(SubscriptionPaymentSerializer(payment).data, status=status.HTTP_200_OK)
+
+
 class PlatformAnalyticsViewSet(viewsets.ViewSet):
     permission_classes = [IsAuthenticated, IsGlobalSuperAdmin]
 
@@ -1248,6 +1842,247 @@ class PlatformAnalyticsViewSet(viewsets.ViewSet):
         start = (now.replace(day=1, hour=0, minute=0, second=0, microsecond=0) - timedelta(days=31 * (months - 1)))
         start = start.replace(day=1)
         return start, now
+
+    def _month_sequence(self, start_date, end_date):
+        current = start_date.replace(day=1)
+        end_month = end_date.replace(day=1)
+        sequence = []
+        while current <= end_month:
+            sequence.append(current)
+            if current.month == 12:
+                current = current.replace(year=current.year + 1, month=1)
+            else:
+                current = current.replace(month=current.month + 1)
+        return sequence
+
+    def _build_plan_breakdown(self, active_subscriptions):
+        plans = {}
+        for sub in active_subscriptions:
+            monthly_value = Decimal(sub.plan.monthly_price or 0)
+            if sub.billing_cycle == TenantSubscription.BILLING_ANNUAL:
+                monthly_value = Decimal(sub.plan.annual_price or 0) / Decimal("12")
+            key = sub.plan.code or str(sub.plan_id)
+            row = plans.setdefault(
+                key,
+                {
+                    "plan__code": sub.plan.code,
+                    "plan__name": sub.plan.name,
+                    "count": 0,
+                    "total": Decimal("0.00"),
+                },
+            )
+            row["count"] += 1
+            row["total"] += monthly_value
+
+        breakdown = []
+        for row in plans.values():
+            row["total"] = row["total"].quantize(Decimal("0.01"))
+            breakdown.append(row)
+
+        breakdown.sort(key=lambda item: (item["total"], item["count"], item["plan__code"] or ""), reverse=True)
+        return breakdown
+
+    def _build_revenue_forecast(self, monthly_paid_trend):
+        paid_values = [Decimal(str(row.get("total") or 0)) for row in monthly_paid_trend]
+        growth_rates = []
+        for previous, current in zip(paid_values, paid_values[1:]):
+            if previous > 0:
+                growth_rates.append((current - previous) / previous)
+
+        avg_growth = Decimal("0.00")
+        if growth_rates:
+            avg_growth = sum(growth_rates, Decimal("0.00")) / Decimal(len(growth_rates))
+
+        if avg_growth > Decimal("2.00"):
+            avg_growth = Decimal("2.00")
+        elif avg_growth < Decimal("-0.90"):
+            avg_growth = Decimal("-0.90")
+
+        last_value = paid_values[-1] if paid_values else Decimal("0.00")
+        next_month = (last_value * (Decimal("1.00") + avg_growth)).quantize(Decimal("0.01"))
+        next_quarter = Decimal("0.00")
+        for month_index in range(1, 4):
+            next_quarter += last_value * ((Decimal("1.00") + avg_growth) ** month_index)
+        next_quarter = next_quarter.quantize(Decimal("0.01"))
+
+        if abs(avg_growth) < Decimal("0.05"):
+            trend = "stable"
+        elif avg_growth > 0:
+            trend = "growing"
+        else:
+            trend = "declining"
+
+        if len(paid_values) < 3:
+            confidence = "low"
+        elif len(paid_values) < 6:
+            confidence = "medium"
+        else:
+            confidence = "high"
+
+        return {
+            "method": "average_monthly_growth",
+            "trend": trend,
+            "confidence": confidence,
+            "growth_rate_percent": str((avg_growth * Decimal("100")).quantize(Decimal("0.01"))),
+            "next_month_revenue": str(next_month),
+            "next_quarter_revenue": str(next_quarter),
+            "basis_months": len(paid_values),
+        }
+
+    def _build_tenant_risk_signals(self, active_subscriptions):
+        today = timezone.now().date()
+        overdue_rows = (
+            SubscriptionInvoice.objects.filter(
+                status__in=[SubscriptionInvoice.STATUS_PENDING, SubscriptionInvoice.STATUS_OVERDUE]
+            )
+            .values("tenant_id")
+            .annotate(overdue_count=Count("id"), overdue_amount=Sum("total_amount"))
+        )
+        overdue_map = {row["tenant_id"]: row for row in overdue_rows}
+
+        last_paid_rows = (
+            SubscriptionInvoice.objects.filter(status=SubscriptionInvoice.STATUS_PAID, paid_at__isnull=False)
+            .values("tenant_id")
+            .annotate(last_paid_at=Max("paid_at"))
+        )
+        last_paid_map = {row["tenant_id"]: row["last_paid_at"] for row in last_paid_rows}
+
+        signals = []
+        for sub in active_subscriptions:
+            tenant = sub.tenant
+            overdue_row = overdue_map.get(tenant.id) or {}
+            overdue_count = int(overdue_row.get("overdue_count") or 0)
+            overdue_amount = Decimal(str(overdue_row.get("overdue_amount") or 0)).quantize(Decimal("0.01"))
+            score = 0
+            reasons = []
+
+            if tenant.status == Tenant.STATUS_SUSPENDED:
+                score += 60
+                reasons.append("Tenant is suspended")
+            elif tenant.status in [Tenant.STATUS_CANCELLED, Tenant.STATUS_ARCHIVED]:
+                score += 100
+                reasons.append("Tenant is not active")
+
+            if overdue_count:
+                score += min(40, 15 + max(0, overdue_count - 1) * 5)
+                reasons.append(f"{overdue_count} overdue invoice(s)")
+
+            if overdue_amount > 0:
+                reasons.append(f"Overdue amount ${overdue_amount.quantize(Decimal('0.01'))}")
+
+            due_date = sub.next_billing_date or tenant.paid_until
+            days_to_due = None
+            if due_date:
+                days_to_due = (due_date - today).days
+                if days_to_due < 0:
+                    score += 25
+                    reasons.append("Billing date is past due")
+                elif days_to_due <= 7:
+                    score += 18
+                    reasons.append(f"Renewal due in {days_to_due} days")
+                elif days_to_due <= 14:
+                    score += 8
+                    reasons.append(f"Renewal due in {days_to_due} days")
+
+            last_paid_at = last_paid_map.get(tenant.id)
+            if last_paid_at:
+                days_since_paid = (today - last_paid_at.date()).days
+                if days_since_paid >= 45:
+                    score += 10
+                    reasons.append(f"Last payment {days_since_paid} days ago")
+            else:
+                score += 12
+                reasons.append("No settled tenant payment yet")
+
+            if score <= 0:
+                continue
+
+            if score >= 50:
+                risk_level = "high"
+            elif score >= 20:
+                risk_level = "medium"
+            else:
+                risk_level = "low"
+
+            signals.append(
+                {
+                    "tenant_id": tenant.id,
+                    "tenant_name": tenant.name,
+                    "schema_name": tenant.schema_name,
+                    "plan_code": sub.plan.code,
+                    "plan_name": sub.plan.name,
+                    "status": tenant.status,
+                    "next_billing_date": sub.next_billing_date.isoformat() if sub.next_billing_date else None,
+                    "paid_until": tenant.paid_until.isoformat() if tenant.paid_until else None,
+                    "days_to_due": days_to_due,
+                    "overdue_invoices": overdue_count,
+                    "overdue_amount": str(overdue_amount.quantize(Decimal("0.01"))),
+                    "risk_score": score,
+                    "risk_level": risk_level,
+                    "reasons": reasons,
+                }
+            )
+
+        signals.sort(key=lambda item: (item["risk_score"], Decimal(item["overdue_amount"])), reverse=True)
+        return signals[:5]
+
+    def _build_revenue_insights(self, months: int = 12):
+        start, now = self._monthly_window(months=months)
+        start_date = start.date()
+        end_date = now.date()
+        month_sequence = self._month_sequence(start_date, end_date)
+
+        active_subscriptions = list(self._active_current_subscriptions())
+
+        paid_rows = (
+            SubscriptionInvoice.objects.filter(status=SubscriptionInvoice.STATUS_PAID, paid_at__date__gte=start_date)
+            .annotate(month=TruncMonth("paid_at"))
+            .values("month")
+            .annotate(total=Sum("total_amount"))
+            .order_by("month")
+        )
+        invoiced_rows = (
+            SubscriptionInvoice.objects.filter(issued_at__date__gte=start_date)
+            .annotate(month=TruncMonth("issued_at"))
+            .values("month")
+            .annotate(total=Sum("total_amount"))
+            .order_by("month")
+        )
+
+        paid_map = {}
+        for row in paid_rows:
+            month_key = row["month"].date()
+            paid_map[month_key] = (row["total"] or Decimal("0.00")).quantize(Decimal("0.01"))
+
+        invoiced_map = {}
+        for row in invoiced_rows:
+            month_key = row["month"].date()
+            invoiced_map[month_key] = (row["total"] or Decimal("0.00")).quantize(Decimal("0.01"))
+
+        monthly_paid_trend = []
+        monthly_invoiced_trend = []
+        points = []
+        for month in month_sequence:
+            paid_total = paid_map.get(month, Decimal("0.00")).quantize(Decimal("0.01"))
+            invoiced_total = invoiced_map.get(month, Decimal("0.00")).quantize(Decimal("0.01"))
+            month_iso = month.isoformat()
+            monthly_paid_trend.append({"month": month_iso, "total": str(paid_total)})
+            monthly_invoiced_trend.append({"month": month_iso, "total": str(invoiced_total)})
+            points.append({"month": month_iso, "paid": str(paid_total), "invoiced": str(invoiced_total)})
+
+        plan_breakdown = self._build_plan_breakdown(active_subscriptions)
+        forecast = self._build_revenue_forecast(monthly_paid_trend)
+        risk_signals = self._build_tenant_risk_signals(active_subscriptions)
+
+        return {
+            "active_subscriptions": active_subscriptions,
+            "monthly_paid_trend": monthly_paid_trend,
+            "monthly_invoiced_trend": monthly_invoiced_trend,
+            "plan_breakdown": plan_breakdown,
+            "forecast": forecast,
+            "risk_signals": risk_signals,
+            "points": points,
+        }
 
     @action(detail=False, methods=["get"], url_path="overview")
     def overview(self, request):
@@ -1323,36 +2158,23 @@ class PlatformAnalyticsViewSet(viewsets.ViewSet):
 
     @action(detail=False, methods=["get"], url_path="revenue")
     def revenue(self, request):
-        start, _ = self._monthly_window(months=12)
-
-        issued_rows = (
-            SubscriptionInvoice.objects.filter(issued_at__gte=start)
-            .annotate(month=TruncMonth("issued_at"))
-            .values("month")
-            .annotate(invoiced=Sum("total_amount"))
-            .order_by("month")
+        insights = self._build_revenue_insights()
+        return Response(
+            {
+                "points": insights["points"],
+                "monthly_paid_trend": insights["monthly_paid_trend"],
+                "monthly_invoiced_trend": insights["monthly_invoiced_trend"],
+                "plan_breakdown": insights["plan_breakdown"],
+                "forecast": insights["forecast"],
+                "risk_signals": insights["risk_signals"],
+                "risk_summary": {
+                    "total": len(insights["risk_signals"]),
+                    "high": sum(1 for item in insights["risk_signals"] if item["risk_level"] == "high"),
+                    "medium": sum(1 for item in insights["risk_signals"] if item["risk_level"] == "medium"),
+                    "low": sum(1 for item in insights["risk_signals"] if item["risk_level"] == "low"),
+                },
+            }
         )
-        paid_rows = (
-            SubscriptionInvoice.objects.filter(status=SubscriptionInvoice.STATUS_PAID, paid_at__isnull=False, paid_at__gte=start)
-            .annotate(month=TruncMonth("paid_at"))
-            .values("month")
-            .annotate(paid=Sum("total_amount"))
-            .order_by("month")
-        )
-        paid_map = {row["month"].date().isoformat(): row["paid"] or Decimal("0.00") for row in paid_rows}
-
-        points = []
-        for row in issued_rows:
-            key = row["month"].date().isoformat()
-            points.append(
-                {
-                    "month": key,
-                    "invoiced": str((row["invoiced"] or Decimal("0.00")).quantize(Decimal("0.01"))),
-                    "paid": str((paid_map.get(key, Decimal("0.00"))).quantize(Decimal("0.01"))),
-                }
-            )
-
-        return Response({"points": points})
 
     @action(detail=False, methods=["get"], url_path="tenant-growth")
     def tenant_growth(self, request):
@@ -1364,12 +2186,22 @@ class PlatformAnalyticsViewSet(viewsets.ViewSet):
             .annotate(created=Count("id"))
             .order_by("month")
         )
-        points = [{"month": row["month"].date().isoformat(), "created": row["created"]} for row in created_rows]
-        return Response({"points": points})
+        created_map = {row["month"].date().isoformat(): row["created"] for row in created_rows}
+        month_sequence = self._month_sequence(start.date(), timezone.now().date())
+        by_month = [
+            {
+                "month": month.isoformat(),
+                "count": int(created_map.get(month.isoformat(), 0)),
+            }
+            for month in month_sequence
+        ]
+        points = [{"month": row["month"], "created": row["count"]} for row in by_month]
+        return Response({"points": points, "by_month": by_month})
 
     @action(detail=False, methods=["get"], url_path="module-adoption")
     def module_adoption(self, request):
-        active_subscriptions = list(self._active_current_subscriptions())
+        insights = self._build_revenue_insights()
+        active_subscriptions = insights["active_subscriptions"]
         tenant_count = len(active_subscriptions)
         adoption_counter = {module: 0 for module in PLATFORM_MODULES}
 
@@ -1400,7 +2232,8 @@ class PlatformAnalyticsViewSet(viewsets.ViewSet):
         month_start = today.replace(day=1)
         annual_start = (month_start - timedelta(days=365))
 
-        active_subscriptions = list(self._active_current_subscriptions())
+        insights = self._build_revenue_insights()
+        active_subscriptions = insights["active_subscriptions"]
         tenant_count = len(active_subscriptions)
 
         mrr = Decimal("0.00")
@@ -1449,6 +2282,14 @@ class PlatformAnalyticsViewSet(viewsets.ViewSet):
             churn_fraction = monthly_churn_rate / Decimal("100")
             ltv = (arpt / churn_fraction).quantize(Decimal("0.01"))
 
+        risk_signals = insights["risk_signals"]
+        risk_summary = {
+            "total": len(risk_signals),
+            "high": sum(1 for item in risk_signals if item["risk_level"] == "high"),
+            "medium": sum(1 for item in risk_signals if item["risk_level"] == "medium"),
+            "low": sum(1 for item in risk_signals if item["risk_level"] == "low"),
+        }
+
         return Response(
             {
                 "kpis": {
@@ -1458,7 +2299,12 @@ class PlatformAnalyticsViewSet(viewsets.ViewSet):
                     "monthly_churn_rate_percent": str(monthly_churn_rate),
                     "annual_churn_rate_percent": str(annual_churn_rate),
                     "ltv_estimate": str(ltv) if ltv is not None else None,
+                    "forecast_next_month_revenue": insights["forecast"]["next_month_revenue"],
+                    "forecast_next_quarter_revenue": insights["forecast"]["next_quarter_revenue"],
+                    "forecast_growth_rate_percent": insights["forecast"]["growth_rate_percent"],
                 },
+                "forecast": insights["forecast"],
+                "risk_summary": risk_summary,
                 "tenant_segments": {
                     "trial": Tenant.objects.filter(status=Tenant.STATUS_TRIAL).count(),
                     "active": Tenant.objects.filter(status=Tenant.STATUS_ACTIVE).count(),

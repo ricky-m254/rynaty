@@ -1,8 +1,15 @@
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.utils.dateparse import parse_date, parse_datetime
+from django.utils import timezone
+from decimal import Decimal
 
 import logging
+
+from communication.models import SmsMessage
+from communication.services import send_sms_placeholder
+
+from .events import payment_recorded
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +28,57 @@ def _format_attendance_date(raw_date):
         return parsed_date.strftime("%A, %d %B %Y")
 
     return str(raw_date)
+
+
+def _payment_sms_recipient(payment):
+    student = getattr(payment, "student", None)
+    if not student:
+        return ""
+
+    student_phone = (getattr(student, "phone", "") or "").strip()
+    if student_phone:
+        return student_phone
+
+    try:
+        guardian = (
+            student.guardians.filter(is_active=True)
+            .exclude(phone="")
+            .order_by("id")
+            .first()
+        )
+    except Exception:
+        guardian = None
+
+    return (getattr(guardian, "phone", "") or "").strip() if guardian else ""
+
+
+def _build_payment_sms_message(payment):
+    student = getattr(payment, "student", None)
+    student_name = (
+        f"{getattr(student, 'first_name', '').strip()} {getattr(student, 'last_name', '').strip()}".strip()
+        or getattr(student, "admission_number", "")
+        or "student"
+    )
+    admission_number = (getattr(student, "admission_number", "") or "").strip()
+    if admission_number:
+        student_label = f"{student_name} ({admission_number})"
+    else:
+        student_label = student_name
+
+    receipt_number = (getattr(payment, "receipt_number", "") or "").strip()
+    if not receipt_number and getattr(payment, "pk", None):
+        receipt_number = f"RCT-{payment.pk:06d}"
+
+    reference_number = (getattr(payment, "reference_number", "") or "").strip() or receipt_number
+    amount_value = Decimal(str(getattr(payment, "amount", Decimal("0.00")) or Decimal("0.00")))
+    amount_text = f"{amount_value:,.2f}"
+
+    return (
+        f"Payment received for {student_label}. "
+        f"Receipt {receipt_number or 'N/A'}. "
+        f"Ref {reference_number or 'N/A'}. "
+        f"Amount KES {amount_text}."
+    )
 
 
 
@@ -85,5 +143,39 @@ def notify_parent_on_absence(sender, instance, created, **kwargs):
                 action_url="/parent/attendance/",
             )
 
+    except Exception:
+        logger.warning("Caught and logged", exc_info=True)
+
+
+@receiver(payment_recorded)
+def notify_on_payment_recorded(sender, payment_id, skip_notifications=False, **kwargs):
+    """Create the financial SMS audit trail after a payment is recorded."""
+    try:
+        if skip_notifications:
+            return
+        from .models import Payment
+
+        payment = (
+            Payment.objects.select_related("student")
+            .prefetch_related("student__guardians")
+            .get(pk=payment_id)
+        )
+        recipient_phone = _payment_sms_recipient(payment)
+        if not recipient_phone:
+            logger.info("Skipping payment SMS for payment %s because no recipient phone is on file.", payment_id)
+            return
+
+        message = _build_payment_sms_message(payment)
+        dispatch = send_sms_placeholder(recipient_phone, message, channel="SMS")
+        SmsMessage.objects.create(
+            recipient_phone=recipient_phone,
+            message=message,
+            channel="SMS",
+            status=dispatch.status if dispatch.status in {"Queued", "Sent", "Delivered", "Failed"} else "Queued",
+            provider_id=dispatch.provider_id,
+            cost=dispatch.cost,
+            sent_at=timezone.now() if dispatch.status in {"Queued", "Sent", "Delivered"} else None,
+            failure_reason=dispatch.failure_reason,
+        )
     except Exception:
         logger.warning("Caught and logged", exc_info=True)

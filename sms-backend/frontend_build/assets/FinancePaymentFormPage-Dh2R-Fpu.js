@@ -10,6 +10,25 @@ const today = () => new Date().toISOString().slice(0, 10);
 const panelClass = "rounded-2xl border border-white/[0.07] bg-slate-950/70 p-6 shadow-[0_24px_80px_rgba(15,23,42,0.45)]";
 const fieldClass = "mt-2 w-full rounded-xl border border-white/[0.07] bg-slate-950 px-4 py-2 text-sm text-white outline-none focus:border-emerald-400";
 const invalidFieldClass = "mt-2 w-full rounded-xl border border-rose-500/70 bg-slate-950 px-4 py-2 text-sm text-white outline-none focus:border-rose-400";
+const formatMoney = (value) =>
+  Number(value ?? 0).toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const getPrimarySmsTarget = (student) => {
+  if (!student) return "";
+  const guardians = student.guardians ?? [];
+  const guardian = guardians.find((item) => (item?.phone ?? "").trim());
+  return (guardian?.phone ?? student.phone ?? "").trim();
+};
+
+const buildSmsCopy = (payment, student) => {
+  if (!payment) return "";
+  const studentName = payment.student_name || [student?.first_name, student?.last_name].filter(Boolean).join(" ").trim() || student?.admission_number || "student";
+  const admission = payment.admission_number || student?.admission_number || "";
+  const receiptNo = payment.receipt_no || payment.receipt_number || payment.id || "N/A";
+  const transactionCode = payment.transaction_code || payment.reference_number || receiptNo;
+  const amount = formatMoney(payment.amount);
+  return `Payment received for ${studentName}${admission ? ` (${admission})` : ""}. Receipt ${receiptNo}. Ref ${transactionCode}. Amount KES ${amount}.`;
+};
 
 function Field({ label, error, children, hint }) {
   return jsxRuntime.jsxs("label", {
@@ -37,6 +56,7 @@ function Flash({ tone = "success", message }) {
 
 function StudentContext({ student, enrollment, warning }) {
   const guardians = student?.guardians ?? [];
+  const smsTarget = getPrimarySmsTarget(student);
   return jsxRuntime.jsxs("aside", {
     className: `col-span-12 ${panelClass} lg:col-span-5`,
     children: [
@@ -66,6 +86,12 @@ function StudentContext({ student, enrollment, warning }) {
             children: [
               jsxRuntime.jsx("p", { className: "text-[11px] uppercase text-slate-400", children: "Term" }),
               jsxRuntime.jsx("p", { children: enrollment?.term_name ?? "--" }),
+            ],
+          }),
+          jsxRuntime.jsxs("div", {
+            children: [
+              jsxRuntime.jsx("p", { className: "text-[11px] uppercase text-slate-400", children: "SMS target" }),
+              jsxRuntime.jsx("p", { children: smsTarget || student?.phone || "--" }),
             ],
           }),
         ],
@@ -146,6 +172,87 @@ function StripeSummary({ session, onOpen, onReset }) {
   });
 }
 
+function PaymentReceiptPanel({ payment, student, onOpenReceipt, onOpenReceiptJson, onCopySms, onReset }) {
+  if (!payment) return null;
+  const smsTarget = getPrimarySmsTarget(student);
+  const smsStatus = smsTarget ? `Queued to ${smsTarget}` : "No SMS target on file";
+  return jsxRuntime.jsxs("div", {
+    className: "mt-6 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-5 text-sm text-emerald-100",
+    children: [
+      jsxRuntime.jsx("p", {
+        className: "text-[11px] uppercase tracking-[0.3em] text-emerald-200",
+        children: "Receipt ready",
+      }),
+      jsxRuntime.jsx("h3", {
+        className: "mt-2 text-lg font-semibold text-white",
+        children: payment.receipt_no ? `Receipt ${payment.receipt_no}` : "Payment recorded",
+      }),
+      jsxRuntime.jsxs("div", {
+        className: "mt-4 grid gap-3 md:grid-cols-2",
+        children: [
+          jsxRuntime.jsxs("div", {
+            children: [
+              jsxRuntime.jsx("p", { className: "text-[11px] uppercase text-emerald-200/80", children: "Transaction" }),
+              jsxRuntime.jsx("p", { children: payment.transaction_code || payment.reference_number || "--" }),
+            ],
+          }),
+          jsxRuntime.jsxs("div", {
+            children: [
+              jsxRuntime.jsx("p", { className: "text-[11px] uppercase text-emerald-200/80", children: "Status" }),
+              jsxRuntime.jsx("p", { children: payment.status || "--" }),
+            ],
+          }),
+          jsxRuntime.jsxs("div", {
+            children: [
+              jsxRuntime.jsx("p", { className: "text-[11px] uppercase text-emerald-200/80", children: "Amount" }),
+              jsxRuntime.jsx("p", { children: `KES ${formatMoney(payment.amount)}` }),
+            ],
+          }),
+          jsxRuntime.jsxs("div", {
+            children: [
+              jsxRuntime.jsx("p", { className: "text-[11px] uppercase text-emerald-200/80", children: "SMS" }),
+              jsxRuntime.jsx("p", { children: smsStatus }),
+            ],
+          }),
+        ],
+      }),
+      jsxRuntime.jsxs("div", {
+        className: "mt-5 flex flex-wrap gap-2",
+        children: [
+          jsxRuntime.jsx("button", {
+            type: "button",
+            className: "rounded-xl bg-emerald-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-300",
+            onClick: onOpenReceipt,
+            children: "Receipt",
+          }),
+          jsxRuntime.jsx("button", {
+            type: "button",
+            className: "rounded-xl border border-white/[0.14] px-4 py-2 text-sm text-slate-100 transition hover:bg-white/[0.04]",
+            onClick: onOpenReceiptJson,
+            children: "Receipt JSON",
+          }),
+          jsxRuntime.jsx("button", {
+            type: "button",
+            className: "rounded-xl border border-amber-500/40 px-4 py-2 text-sm text-amber-100 transition hover:bg-amber-500/10",
+            onClick: onCopySms,
+            children: "SMS",
+          }),
+          jsxRuntime.jsx("button", {
+            type: "button",
+            className: "rounded-xl border border-white/[0.14] px-4 py-2 text-sm text-slate-100 transition hover:bg-white/[0.04]",
+            onClick: onReset,
+            children: "Record another",
+          }),
+        ],
+      }),
+      jsxRuntime.jsx("p", {
+        className: "mt-3 text-xs text-emerald-100/75",
+        children: `Receipt and SMS payload are aligned to ${payment.receipt_no || payment.receipt_number || "the saved payment"}.`,
+      }),
+    ],
+  });
+}
+
 function FinancePaymentFormPage() {
   const navigate = useNavigate();
   const [students, setStudents] = React.useState([]);
@@ -158,6 +265,9 @@ function FinancePaymentFormPage() {
   const [studentWarning, setStudentWarning] = React.useState(null);
   const [flash, setFlash] = React.useState(null);
   const [stripeSession, setStripeSession] = React.useState(null);
+  const [admissionLookup, setAdmissionLookup] = React.useState("");
+  const [admissionOpen, setAdmissionOpen] = React.useState(false);
+  const [lastPayment, setLastPayment] = React.useState(null);
   const [form, setForm] = React.useState({
     student: "",
     amount: "",
@@ -221,11 +331,48 @@ function FinancePaymentFormPage() {
     };
   }, [form.student]);
 
+  React.useEffect(() => {
+    if (student) {
+      setAdmissionLookup(`${student.admission_number} - ${student.first_name} ${student.last_name}`.trim());
+      return;
+    }
+    if (!form.student) {
+      setAdmissionLookup("");
+    }
+  }, [student, form.student]);
+
   const isStripeFlow = form.payment_method === "Stripe Checkout";
+  const selectedStudentLabel = student ? `${student.first_name} ${student.last_name}`.trim() || student.admission_number : "";
+  const admissionMatches = React.useMemo(() => {
+    const query = admissionLookup.trim().toLowerCase();
+    if (!query) return [];
+    return students
+      .filter((item) => {
+        const haystack = [
+          item.admission_number,
+          item.first_name,
+          item.last_name,
+          `${item.first_name} ${item.last_name}`,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return haystack.includes(query);
+      })
+      .slice(0, 6);
+  }, [admissionLookup, students]);
+  const smsCopyText = React.useMemo(() => buildSmsCopy(lastPayment, student), [lastPayment, student]);
 
   const updateForm = (key, value) => {
     setForm((current) => ({ ...current, [key]: value }));
     setFieldErrors((current) => ({ ...current, [key]: "" }));
+  };
+
+  const selectStudent = (item) => {
+    updateForm("student", String(item.id));
+    setAdmissionLookup(`${item.admission_number} - ${item.first_name} ${item.last_name}`.trim());
+    setAdmissionOpen(false);
+    setLastPayment(null);
   };
 
   const validate = () => {
@@ -256,7 +403,7 @@ function FinancePaymentFormPage() {
   };
 
   const handleManualPayment = async () => {
-    await api.post("/finance/payments/", {
+    const response = await api.post("/finance/payments/", {
       student: Number(form.student),
       amount: Number(form.amount),
       payment_date: form.payment_date,
@@ -264,7 +411,19 @@ function FinancePaymentFormPage() {
       reference_number: form.reference_number,
       notes: form.notes,
     });
-    navigate("/modules/finance/payments", { state: { flash: "Payment recorded." } });
+    setLastPayment(response.data);
+    setStripeSession(null);
+    setFlash({
+      tone: "success",
+      message: `Payment recorded. Receipt ${response.data.receipt_no || response.data.receipt_number || response.data.id} is ready.`,
+    });
+    setForm((current) => ({
+      ...current,
+      amount: "",
+      payment_date: today(),
+      reference_number: "",
+      notes: "",
+    }));
   };
 
   const handleStripeCheckout = async () => {
@@ -286,6 +445,7 @@ function FinancePaymentFormPage() {
     event.preventDefault();
     setFormError(null);
     setFlash(null);
+    setLastPayment(null);
     const nextErrors = validate();
     if (Object.keys(nextErrors).length > 0) {
       setFieldErrors(nextErrors);
@@ -322,6 +482,41 @@ function FinancePaymentFormPage() {
     setFlash(null);
   };
 
+  const openReceipt = (kind) => {
+    if (!lastPayment || typeof window === "undefined") return;
+    const url = kind === "json" ? lastPayment.receipt_json_url : lastPayment.receipt_pdf_url;
+    if (url) {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
+  };
+
+  const copySmsMessage = async () => {
+    if (!smsCopyText) return;
+    if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) {
+      setFlash({ tone: "error", message: "Clipboard access is not available in this browser." });
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(smsCopyText);
+      setFlash({ tone: "success", message: "SMS message copied to clipboard." });
+    } catch {
+      setFlash({ tone: "error", message: "Unable to copy the SMS message." });
+    }
+  };
+
+  const resetPaymentForm = () => {
+    setLastPayment(null);
+    setFlash(null);
+    setFieldErrors({});
+    setForm((current) => ({
+      ...current,
+      amount: "",
+      payment_date: today(),
+      reference_number: "",
+      notes: "",
+    }));
+  };
+
   return jsxRuntime.jsxs("div", {
     className: "grid grid-cols-12 gap-6",
     children: [
@@ -346,137 +541,224 @@ function FinancePaymentFormPage() {
       jsxRuntime.jsx(Flash, { tone: "error", message: formError }),
       jsxRuntime.jsx("section", {
         className: `col-span-12 ${panelClass} lg:col-span-7`,
-        children: jsxRuntime.jsxs("form", {
-          className: "space-y-4",
-          onSubmit: handleSubmit,
-          children: [
-            jsxRuntime.jsx(Field, {
-              label: "Student",
-              error: fieldErrors.student,
-              children: jsxRuntime.jsxs("select", {
-                className: fieldErrors.student ? invalidFieldClass : fieldClass,
-                value: form.student,
-                "aria-invalid": !!fieldErrors.student,
-                onChange: (event) => updateForm("student", event.target.value),
-                children: [
-                  jsxRuntime.jsx("option", { value: "", children: "Select student" }),
-                  students.map((item) =>
-                    jsxRuntime.jsxs(
-                      "option",
-                      {
-                        value: item.id,
-                        children: [item.admission_number, " - ", item.first_name, " ", item.last_name],
+        children: [
+          jsxRuntime.jsxs("form", {
+            className: "space-y-4",
+            onSubmit: handleSubmit,
+            children: [
+              jsxRuntime.jsx(Field, {
+                label: "Admission No.",
+                error: fieldErrors.student,
+                hint: "Search an admission number or name, then choose the matching student.",
+                children: jsxRuntime.jsxs("div", {
+                  className: "relative",
+                  children: [
+                    jsxRuntime.jsx("input", {
+                      className: fieldErrors.student ? invalidFieldClass : fieldClass,
+                      value: admissionLookup,
+                      "aria-invalid": !!fieldErrors.student,
+                      autoComplete: "off",
+                      placeholder: "Type admission number or name...",
+                      onFocus: () => setAdmissionOpen(true),
+                      onBlur: () => setTimeout(() => setAdmissionOpen(false), 150),
+                      onChange: (event) => {
+                        setAdmissionLookup(event.target.value);
+                        setAdmissionOpen(true);
                       },
-                      item.id,
+                    }),
+                    admissionOpen && admissionMatches.length > 0
+                      ? jsxRuntime.jsx("ul", {
+                          className:
+                            "absolute z-30 mt-1 w-full overflow-hidden rounded-xl border border-white/[0.09] bg-[#0d1421] shadow-xl",
+                          children: admissionMatches.map((item) =>
+                            jsxRuntime.jsx(
+                              "li",
+                              {
+                                children: jsxRuntime.jsxs("button", {
+                                  type: "button",
+                                  className:
+                                    "flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left text-sm hover:bg-slate-800 transition",
+                                  onMouseDown: () => selectStudent(item),
+                                  children: [
+                                    jsxRuntime.jsxs("span", {
+                                      className: "text-white",
+                                      children: [item.first_name, " ", item.last_name],
+                                    }),
+                                    jsxRuntime.jsx("span", {
+                                      className: "font-mono text-xs text-slate-400",
+                                      children: item.admission_number,
+                                    }),
+                                  ],
+                                }),
+                              },
+                              item.id,
+                            ),
+                          ),
+                        })
+                      : null,
+                    admissionOpen && admissionLookup.trim().length > 1 && admissionMatches.length === 0
+                      ? jsxRuntime.jsx("div", {
+                          className:
+                            "absolute z-30 mt-1 w-full rounded-xl border border-white/[0.09] bg-[#0d1421] px-4 py-3 text-sm text-slate-500",
+                          children: `No students match "${admissionLookup}"`,
+                        })
+                      : null,
+                  ],
+                }),
+              }),
+              selectedStudentLabel
+                ? jsxRuntime.jsxs("p", {
+                    className: "text-xs text-emerald-400",
+                    children: ["Selected student: ", selectedStudentLabel, " (", student?.admission_number ?? "--", ")"],
+                  })
+                : null,
+              jsxRuntime.jsx(Field, {
+                label: "Student",
+                error: fieldErrors.student,
+                children: jsxRuntime.jsxs("select", {
+                  className: fieldErrors.student ? invalidFieldClass : fieldClass,
+                  value: form.student,
+                  "aria-invalid": !!fieldErrors.student,
+                  onChange: (event) => {
+                    const nextStudent = students.find((item) => String(item.id) === event.target.value);
+                    updateForm("student", event.target.value);
+                    setAdmissionLookup(
+                      nextStudent ? `${nextStudent.admission_number} - ${nextStudent.first_name} ${nextStudent.last_name}` : "",
+                    );
+                    setAdmissionOpen(false);
+                    setLastPayment(null);
+                  },
+                  children: [
+                    jsxRuntime.jsx("option", { value: "", children: "Select student" }),
+                    students.map((item) =>
+                      jsxRuntime.jsxs(
+                        "option",
+                        {
+                          value: item.id,
+                          children: [item.admission_number, " - ", item.first_name, " ", item.last_name],
+                        },
+                        item.id,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                }),
               }),
-            }),
-            jsxRuntime.jsx(Field, {
-              label: "Amount",
-              error: fieldErrors.amount,
-              children: jsxRuntime.jsx("input", {
-                type: "number",
-                min: "0.01",
-                step: "0.01",
-                className: fieldErrors.amount ? invalidFieldClass : fieldClass,
-                value: form.amount,
-                "aria-invalid": !!fieldErrors.amount,
-                onChange: (event) => updateForm("amount", event.target.value),
-                placeholder: "500.00",
+              jsxRuntime.jsx(Field, {
+                label: "Amount",
+                error: fieldErrors.amount,
+                children: jsxRuntime.jsx("input", {
+                  type: "number",
+                  min: "0.01",
+                  step: "0.01",
+                  className: fieldErrors.amount ? invalidFieldClass : fieldClass,
+                  value: form.amount,
+                  "aria-invalid": !!fieldErrors.amount,
+                  onChange: (event) => updateForm("amount", event.target.value),
+                  placeholder: "500.00",
+                }),
               }),
-            }),
-            jsxRuntime.jsx(Field, {
-              label: "Payment Method",
-              error: fieldErrors.payment_method,
-              hint: isStripeFlow
-                ? "This launches a hosted Stripe card checkout and records the payment after the webhook confirms success."
-                : "Manual methods record the payment immediately in the ledger.",
-              children: jsxRuntime.jsxs("select", {
-                className: fieldErrors.payment_method ? invalidFieldClass : fieldClass,
-                value: form.payment_method,
-                "aria-invalid": !!fieldErrors.payment_method,
-                onChange: (event) => {
-                  const nextMethod = event.target.value;
-                  updateForm("payment_method", nextMethod);
-                  if (nextMethod !== "Stripe Checkout") {
-                    setStripeSession(null);
-                  }
-                },
+              jsxRuntime.jsx(Field, {
+                label: "Payment Method",
+                error: fieldErrors.payment_method,
+                hint: isStripeFlow
+                  ? "This launches a hosted Stripe card checkout and records the payment after the webhook confirms success."
+                  : "Manual methods record the payment immediately in the ledger.",
+                children: jsxRuntime.jsxs("select", {
+                  className: fieldErrors.payment_method ? invalidFieldClass : fieldClass,
+                  value: form.payment_method,
+                  "aria-invalid": !!fieldErrors.payment_method,
+                  onChange: (event) => {
+                    const nextMethod = event.target.value;
+                    updateForm("payment_method", nextMethod);
+                    setLastPayment(null);
+                    if (nextMethod !== "Stripe Checkout") {
+                      setStripeSession(null);
+                    }
+                  },
+                  children: [
+                    jsxRuntime.jsx("option", { value: "", children: "Select method" }),
+                    PAYMENT_METHODS.map((method) => jsxRuntime.jsx("option", { value: method, children: method }, method)),
+                  ],
+                }),
+              }),
+              !isStripeFlow
+                ? jsxRuntime.jsx(Field, {
+                    label: "Payment Date",
+                    error: fieldErrors.payment_date,
+                    children: jsxRuntime.jsx("input", {
+                      type: "date",
+                      className: fieldErrors.payment_date ? invalidFieldClass : fieldClass,
+                      value: form.payment_date,
+                      "aria-invalid": !!fieldErrors.payment_date,
+                      onChange: (event) => updateForm("payment_date", event.target.value),
+                    }),
+                  })
+                : null,
+              jsxRuntime.jsx(Field, {
+                label: isStripeFlow ? "Internal Reference (Optional)" : "Reference Number",
+                error: fieldErrors.reference_number,
+                hint: isStripeFlow ? "Leave blank to auto-generate a Stripe launch reference." : "",
+                children: jsxRuntime.jsx("input", {
+                  className: fieldErrors.reference_number ? invalidFieldClass : fieldClass,
+                  value: form.reference_number,
+                  "aria-invalid": !!fieldErrors.reference_number,
+                  onChange: (event) => updateForm("reference_number", event.target.value),
+                  placeholder: isStripeFlow ? "STR-FASTTRACK-001" : "RCPT-1001",
+                }),
+              }),
+              jsxRuntime.jsx(Field, {
+                label: "Notes",
+                children: jsxRuntime.jsx("textarea", {
+                  className: fieldClass,
+                  value: form.notes,
+                  onChange: (event) => updateForm("notes", event.target.value),
+                  rows: 3,
+                }),
+              }),
+              isStripeFlow
+                ? jsxRuntime.jsx(StripeSummary, {
+                    session: stripeSession,
+                    onOpen: openStripeCheckout,
+                    onReset: resetStripeSession,
+                  })
+                : null,
+              jsxRuntime.jsxs("div", {
+                className: "flex flex-wrap gap-2",
                 children: [
-                  jsxRuntime.jsx("option", { value: "", children: "Select method" }),
-                  PAYMENT_METHODS.map((method) => jsxRuntime.jsx("option", { value: method, children: method }, method)),
+                  jsxRuntime.jsx("button", {
+                    className:
+                      "rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-900 disabled:cursor-not-allowed disabled:opacity-70",
+                    type: "submit",
+                    disabled: submitting,
+                    children: submitting
+                      ? isStripeFlow
+                        ? "Creating checkout..."
+                        : "Saving..."
+                      : isStripeFlow
+                      ? "Create Stripe checkout"
+                      : "Record payment",
+                  }),
+                  jsxRuntime.jsx("button", {
+                    className: "rounded-xl border border-white/[0.09] px-4 py-2 text-sm text-slate-200",
+                    type: "button",
+                    onClick: () => navigate("/modules/finance/payments"),
+                    children: "Cancel",
+                  }),
                 ],
               }),
-            }),
-            !isStripeFlow
-              ? jsxRuntime.jsx(Field, {
-                  label: "Payment Date",
-                  error: fieldErrors.payment_date,
-                  children: jsxRuntime.jsx("input", {
-                    type: "date",
-                    className: fieldErrors.payment_date ? invalidFieldClass : fieldClass,
-                    value: form.payment_date,
-                    "aria-invalid": !!fieldErrors.payment_date,
-                    onChange: (event) => updateForm("payment_date", event.target.value),
-                  }),
-                })
-              : null,
-            jsxRuntime.jsx(Field, {
-              label: isStripeFlow ? "Internal Reference (Optional)" : "Reference Number",
-              error: fieldErrors.reference_number,
-              hint: isStripeFlow ? "Leave blank to auto-generate a Stripe launch reference." : "",
-              children: jsxRuntime.jsx("input", {
-                className: fieldErrors.reference_number ? invalidFieldClass : fieldClass,
-                value: form.reference_number,
-                "aria-invalid": !!fieldErrors.reference_number,
-                onChange: (event) => updateForm("reference_number", event.target.value),
-                placeholder: isStripeFlow ? "STR-FASTTRACK-001" : "RCPT-1001",
-              }),
-            }),
-            jsxRuntime.jsx(Field, {
-              label: "Notes",
-              children: jsxRuntime.jsx("textarea", {
-                className: fieldClass,
-                value: form.notes,
-                onChange: (event) => updateForm("notes", event.target.value),
-                rows: 3,
-              }),
-            }),
-            isStripeFlow
-              ? jsxRuntime.jsx(StripeSummary, {
-                  session: stripeSession,
-                  onOpen: openStripeCheckout,
-                  onReset: resetStripeSession,
-                })
-              : null,
-            jsxRuntime.jsxs("div", {
-              className: "flex flex-wrap gap-2",
-              children: [
-                jsxRuntime.jsx("button", {
-                  className:
-                    "rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-900 disabled:cursor-not-allowed disabled:opacity-70",
-                  type: "submit",
-                  disabled: submitting,
-                  children: submitting
-                    ? isStripeFlow
-                      ? "Creating checkout..."
-                      : "Saving..."
-                    : isStripeFlow
-                    ? "Create Stripe checkout"
-                    : "Record payment",
-                }),
-                jsxRuntime.jsx("button", {
-                  className: "rounded-xl border border-white/[0.09] px-4 py-2 text-sm text-slate-200",
-                  type: "button",
-                  onClick: () => navigate("/modules/finance/payments"),
-                  children: "Cancel",
-                }),
-              ],
-            }),
-          ],
-        }),
+            ],
+          }),
+          lastPayment
+            ? jsxRuntime.jsx(PaymentReceiptPanel, {
+                payment: lastPayment,
+                student,
+                onOpenReceipt: () => openReceipt("pdf"),
+                onOpenReceiptJson: () => openReceipt("json"),
+                onCopySms: copySmsMessage,
+                onReset: resetPaymentForm,
+              })
+            : null,
+        ],
       }),
       jsxRuntime.jsx(StudentContext, {
         student,

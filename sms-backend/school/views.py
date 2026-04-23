@@ -50,6 +50,7 @@ from communication.services import send_email_placeholder, send_sms_placeholder
 from common.media_urls import build_absolute_media_url
 from reporting.models import AuditLog
 from .control_plane import build_control_plane_summary
+from .payment_receipts import build_payment_receipt_payload
 
 # ---------------------------------------------------------------------------
 # CSV formula-injection defence
@@ -826,7 +827,10 @@ class PaymentViewSet(viewsets.ModelViewSet):
     pagination_class = FinanceResultsPagination
 
     def get_queryset(self):
-        queryset = super().get_queryset().select_related('student')
+        queryset = super().get_queryset().select_related('student').prefetch_related(
+            'allocations__invoice',
+            'vote_head_allocations__vote_head',
+        )
         search = self.request.query_params.get('search')
         student = self.request.query_params.get('student')
         payment_method = self.request.query_params.get('payment_method')
@@ -884,6 +888,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 notes=serializer.validated_data.get('notes', '')
             )
             # IPSAS: Auto double-entry journal — DR Cash & Bank / CR Accounts Receivable
+            response_status = status.HTTP_201_CREATED if getattr(payment, "_was_created", True) else status.HTTP_200_OK
             amount = float(payment.amount or 0)
             if amount > 0:
                 cash = _journal_get_or_create_account('1000', 'Cash and Bank', 'ASSET')
@@ -900,7 +905,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
                     ],
                 )
             response_serializer = self.get_serializer(payment)
-            return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+            return Response(response_serializer.data, status=response_status)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -945,18 +950,24 @@ class PaymentViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'], url_path='receipt')
     def receipt(self, request, pk=None):
         payment = self.get_object()
+        receipt = build_payment_receipt_payload(payment, request=request)
+        if request.query_params.get("format") == "json":
+            return Response(receipt)
+
+        receipt_no = receipt["receipt_no"] or payment.id
         lines = [
-            f"Receipt: {payment.receipt_number or 'N/A'}",
-            f"Reference: {payment.reference_number}",
-            f"Student: {payment.student}",
-            f"Amount: {payment.amount}",
-            f"Method: {payment.payment_method}",
-            f"Date: {payment.payment_date}",
-            f"Status: {'Reversed' if not payment.is_active else 'Active'}",
+            f"Receipt: {receipt['receipt_no'] or 'N/A'}",
+            f"Transaction Code: {receipt['transaction_code'] or 'N/A'}",
+            f"Student: {receipt['student']}",
+            f"Admission No: {receipt['admission_number']}",
+            f"Amount: {receipt['amount']}",
+            f"Method: {receipt['method']}",
+            f"Date: {receipt['date']}",
+            f"Status: {receipt['status']}",
         ]
         content = "\n".join(lines)
         response = HttpResponse(content, content_type="text/plain")
-        response["Content-Disposition"] = f'attachment; filename="receipt_{payment.id}.txt"'
+        response["Content-Disposition"] = f'attachment; filename="receipt_{receipt_no}.txt"'
         return response
 
     @action(detail=True, methods=['post'], url_path='reversal-request')
@@ -6072,6 +6083,23 @@ class VoteHeadPaymentAllocationViewSet(viewsets.ModelViewSet):
             qs = qs.filter(vote_head_id=vote_head_id)
         return qs
 
+    def perform_create(self, serializer):
+        allocation, created = VoteHeadPaymentAllocation.objects.update_or_create(
+            payment=serializer.validated_data['payment'],
+            vote_head=serializer.validated_data['vote_head'],
+            defaults={'amount': serializer.validated_data['amount']},
+        )
+        allocation._was_created = created
+        serializer.instance = allocation
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        response_status = status.HTTP_201_CREATED if getattr(serializer.instance, "_was_created", True) else status.HTTP_200_OK
+        return Response(serializer.data, status=response_status, headers=headers)
+
 
 # ==========================================
 # CASHBOOK & BANKBOOK
@@ -6439,13 +6467,17 @@ class FinanceReceiptPdfView(APIView):
         from io import BytesIO
 
         try:
-            payment = Payment.objects.select_related('student').get(pk=pk)
+            payment = Payment.objects.select_related('student').prefetch_related(
+                'allocations__invoice',
+                'vote_head_allocations__vote_head',
+            ).get(pk=pk)
         except Payment.DoesNotExist:
             return Response({'detail': 'Payment not found.'}, status=status.HTTP_404_NOT_FOUND)
 
+        payload = build_payment_receipt_payload(payment)
         tenant_meta = _resolve_tenant_pdf_meta(request)
         buffer = BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=A4, title=f"Receipt {payment.receipt_number}")
+        doc = SimpleDocTemplate(buffer, pagesize=A4, title=f"Receipt {payload['receipt_no']}")
         styles = getSampleStyleSheet()
         story = []
 
@@ -6467,21 +6499,24 @@ class FinanceReceiptPdfView(APIView):
         story.append(Spacer(1, 8))
 
         details = [
-            ['Receipt No.', _safe_cell(payment.receipt_number)],
-            ['Date', _safe_cell(payment.payment_date.strftime('%d %b %Y') if payment.payment_date else '')],
-            ['Student', f"{payment.student.first_name} {payment.student.last_name}".strip()],
-            ['Admission No.', _safe_cell(payment.student.admission_number)],
-            ['Amount', f"KES {float(payment.amount):,.2f}"],
-            ['Method', _safe_cell(payment.payment_method)],
-            ['Reference', _safe_cell(payment.reference_number)],
+            ['Receipt No.', _safe_cell(payload['receipt_no'])],
+            ['Date', _safe_cell(payload['date'] or '')],
+            ['Student', _safe_cell(payload['student'])],
+            ['Admission No.', _safe_cell(payload['admission_number'])],
+            ['Amount', f"KES {payload['amount']:,.2f}"],
+            ['Method', _safe_cell(payload['method'])],
+            ['Transaction Code', _safe_cell(payload['transaction_code'])],
         ]
 
-        vote_allocs = VoteHeadPaymentAllocation.objects.filter(payment=payment).select_related('vote_head')
-        if vote_allocs.exists():
+        vote_allocs = payload['vote_head_allocations']
+        if vote_allocs:
             story.append(Spacer(1, 8))
             alloc_rows = [['Vote Head', 'Amount']]
-            for va in vote_allocs:
-                alloc_rows.append([_safe_cell(va.vote_head.name), f"KES {float(va.amount):,.2f}"])
+            for allocation in vote_allocs:
+                alloc_rows.append([
+                    _safe_cell(allocation['vote_head']),
+                    f"KES {allocation['amount']:,.2f}",
+                ])
             alloc_table = Table(alloc_rows, colWidths=[200, 120])
             alloc_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
@@ -6520,7 +6555,7 @@ class FinanceReceiptPdfView(APIView):
         buffer.close()
 
         response = HttpResponse(pdf_data, content_type='application/pdf')
-        response['Content-Disposition'] = f'attachment; filename="receipt_{payment.receipt_number}.pdf"'
+        response['Content-Disposition'] = f'attachment; filename="receipt_{payload["receipt_no"]}.pdf"'
         return response
 
 
@@ -8915,6 +8950,7 @@ class PaymentsBulkImportView(APIView):
                     payment_method=(row.get('payment_method') or '').strip(),
                     reference_number=(row.get('reference') or '').strip(),
                     notes=(row.get('notes') or '').strip(),
+                    send_notifications=False,
                 )
                 payment_date = _parse_import_date(row.get('payment_date'))
                 if payment_date is not None:

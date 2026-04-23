@@ -84,7 +84,7 @@ function FeesPage() {
   const [flash, setFlash] = React.useState(null);
   const [paymentOpen, setPaymentOpen] = React.useState(false);
   const [selectedInvoice, setSelectedInvoice] = React.useState(null);
-  const [paymentMethod, setPaymentMethod] = React.useState("stripe");
+  const [paymentMethod, setPaymentMethod] = React.useState("mpesa");
   const [paymentAmount, setPaymentAmount] = React.useState("");
   const [phone, setPhone] = React.useState("");
   const [paymentError, setPaymentError] = React.useState(null);
@@ -167,7 +167,7 @@ function FeesPage() {
   const hasOverdue = invoices.some((invoice) => normalizeStatus(invoice.status) === "overdue");
   const outstandingInvoices = invoices.filter((invoice) => Number(invoice.balance ?? 0) > 0);
 
-  const openPaymentModal = (invoice, preferredMethod = "stripe") => {
+  const openPaymentModal = (invoice, preferredMethod = "mpesa") => {
     clearPolling();
     setSelectedInvoice(invoice);
     setPaymentMethod(preferredMethod);
@@ -387,10 +387,10 @@ function FeesPage() {
             outstandingInvoices[0] &&
               jsx("button", {
                 type: "button",
-                onClick: () => openPaymentModal(outstandingInvoices[0], "stripe"),
+                onClick: () => openPaymentModal(outstandingInvoices[0], "mpesa"),
                 className:
-                  "rounded-xl border border-emerald-400/40 bg-emerald-400/15 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-400/20 sm:ml-auto",
-                children: "Pay next invoice",
+                  "w-full rounded-xl border border-emerald-400/40 bg-emerald-400/15 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-400/20 sm:ml-auto sm:w-auto",
+                children: "Pay now",
               }),
           ],
         }),
@@ -501,11 +501,11 @@ function FeesPage() {
                             invoiceBalance > 0 &&
                               jsx("button", {
                                 type: "button",
-                                onClick: () => openPaymentModal(invoice, "stripe"),
-                                className:
-                                  "rounded-xl border border-emerald-400/35 bg-emerald-400/10 px-4 py-2 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-400/15",
-                                children: "Pay now",
-                              }),
+                              onClick: () => openPaymentModal(invoice, "mpesa"),
+                              className:
+                                "rounded-xl border border-emerald-400/35 bg-emerald-400/10 px-4 py-2 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-400/15",
+                              children: "Pay now",
+                            }),
                           ],
                         }),
                       ],
@@ -522,7 +522,7 @@ function FeesPage() {
           children: [
             jsx("h2", { className: "text-sm font-semibold text-slate-300", children: "Payment History" }),
             jsx("div", {
-              className: "overflow-hidden rounded-2xl",
+              className: "overflow-x-auto rounded-2xl",
               style: panelStyle,
               children: jsxs("table", {
                 className: "w-full text-sm",
@@ -530,7 +530,7 @@ function FeesPage() {
                   jsx("thead", {
                     children: jsx("tr", {
                       className: "border-b border-white/[0.07]",
-                      children: ["Date", "Amount", "Method", "Reference"].map((label) =>
+                      children: ["Date", "Amount", "Method", "Reference", "Receipt"].map((label) =>
                         jsx(
                           "th",
                           {
@@ -564,6 +564,22 @@ function FeesPage() {
                             jsx("td", {
                               className: "px-4 py-3 font-mono text-xs text-slate-500",
                               children: payment.transaction_reference || "--",
+                            }),
+                            jsx("td", {
+                              className: "px-4 py-3",
+                              children: payment.receipt_url
+                                ? jsx("a", {
+                                    href: payment.receipt_url,
+                                    target: "_blank",
+                                    rel: "noreferrer",
+                                    className:
+                                      "inline-flex rounded-full border border-white/[0.1] px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-300 transition hover:bg-white/[0.04]",
+                                    children: "Receipt",
+                                  })
+                                : jsx("span", {
+                                    className: "text-xs text-slate-600",
+                                    children: "--",
+                                  }),
                             }),
                           ],
                         },
@@ -613,8 +629,8 @@ function FeesPage() {
                 jsx("div", {
                   className: "grid grid-cols-3 gap-2 rounded-2xl bg-slate-900/70 p-1",
                   children: [
-                    { id: "stripe", label: "Card / Stripe" },
                     { id: "mpesa", label: "M-Pesa" },
+                    { id: "stripe", label: "Card / Stripe" },
                     { id: "bank", label: "Bank transfer" },
                   ].map((method) =>
                     jsx(

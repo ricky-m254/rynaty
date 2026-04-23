@@ -1,6 +1,7 @@
 from datetime import timedelta
 from unittest.mock import patch, MagicMock
 
+from django.core.management import call_command
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.utils import timezone
@@ -14,6 +15,8 @@ from clients.models import (
     Domain,
     FeatureFlag,
     GlobalSuperAdmin,
+    SubscriptionInvoice,
+    SubscriptionPayment,
     SubscriptionPlan,
     TenantSubscription,
     ImpersonationSession,
@@ -43,6 +46,9 @@ from clients.platform_views import (
     PlatformSettingViewSet,
     PlatformRestoreJobViewSet,
     PlatformSupportTicketViewSet,
+    PlatformSubscriptionInvoiceViewSet,
+    PlatformSubscriptionPaymentViewSet,
+    PlatformSubscriptionPaymentMpesaCallbackView,
 )
 
 User = get_user_model()
@@ -147,7 +153,7 @@ class PlatformStep4HardeningTests(TestCase):
         force_authenticate(create_request, user=self.requester)
         create_response = PlatformImpersonationSessionViewSet.as_view({"post": "create"})(create_request)
         self.assertEqual(create_response.status_code, 400)
-        self.assertIn("duration_minutes", create_response.data)
+        self.assertIn("duration_minutes", create_response.data["error"]["details"])
 
         valid_request = self.factory.post(
             "/api/platform/impersonation-sessions/",
@@ -795,6 +801,130 @@ class PlatformAnalyticsDeepIntegrationTests(TestCase):
         self.assertEqual(storage_response.status_code, 200)
         self.assertIn("points", storage_response.data)
 
+    def test_revenue_analytics_projection_and_risk_signals(self):
+        today = timezone.now().date()
+        current_month_start = today.replace(day=1)
+        previous_month_start = (current_month_start - timedelta(days=1)).replace(day=1)
+
+        primary_subscription = TenantSubscription.objects.create(
+            tenant=self.tenant,
+            plan=self.plan,
+            status=TenantSubscription.STATUS_ACTIVE,
+            billing_cycle=TenantSubscription.BILLING_MONTHLY,
+            starts_on=previous_month_start,
+            next_billing_date=today + timedelta(days=5),
+            is_current=True,
+        )
+
+        risk_tenant = Tenant.objects.create(
+            schema_name="platform_analytics_risk",
+            name="Platform Analytics Risk School",
+            status=Tenant.STATUS_ACTIVE,
+            paid_until=today - timedelta(days=2),
+            is_active=True,
+        )
+        risk_plan = SubscriptionPlan.objects.create(
+            code="PRO",
+            name="Pro",
+            monthly_price="120.00",
+            annual_price="1200.00",
+            max_students=500,
+            max_storage_gb=20,
+            enabled_modules=["FINANCE", "STUDENTS"],
+        )
+        risk_subscription = TenantSubscription.objects.create(
+            tenant=risk_tenant,
+            plan=risk_plan,
+            status=TenantSubscription.STATUS_ACTIVE,
+            billing_cycle=TenantSubscription.BILLING_MONTHLY,
+            starts_on=previous_month_start,
+            next_billing_date=today - timedelta(days=2),
+            is_current=True,
+        )
+
+        first_paid_invoice = SubscriptionInvoice.objects.create(
+            tenant=self.tenant,
+            subscription=primary_subscription,
+            invoice_number="AN-REV-001",
+            billing_cycle=TenantSubscription.BILLING_MONTHLY,
+            status=SubscriptionInvoice.STATUS_PAID,
+            currency="USD",
+            amount="150.00",
+            tax_amount="0.00",
+            discount_amount="0.00",
+            total_amount="150.00",
+            period_start=previous_month_start,
+            period_end=current_month_start - timedelta(days=1),
+            due_date=previous_month_start + timedelta(days=10),
+        )
+        SubscriptionInvoice.objects.filter(id=first_paid_invoice.id).update(
+            issued_at=timezone.now() - timedelta(days=40),
+            paid_at=timezone.now() - timedelta(days=39),
+        )
+
+        second_paid_invoice = SubscriptionInvoice.objects.create(
+            tenant=self.tenant,
+            subscription=primary_subscription,
+            invoice_number="AN-REV-002",
+            billing_cycle=TenantSubscription.BILLING_MONTHLY,
+            status=SubscriptionInvoice.STATUS_PAID,
+            currency="USD",
+            amount="200.00",
+            tax_amount="0.00",
+            discount_amount="0.00",
+            total_amount="200.00",
+            period_start=current_month_start,
+            period_end=current_month_start + timedelta(days=27),
+            due_date=current_month_start + timedelta(days=10),
+        )
+        SubscriptionInvoice.objects.filter(id=second_paid_invoice.id).update(
+            issued_at=timezone.now() - timedelta(days=10),
+            paid_at=timezone.now() - timedelta(days=9),
+        )
+
+        overdue_invoice = SubscriptionInvoice.objects.create(
+            tenant=risk_tenant,
+            subscription=risk_subscription,
+            invoice_number="AN-OVD-001",
+            billing_cycle=TenantSubscription.BILLING_MONTHLY,
+            status=SubscriptionInvoice.STATUS_OVERDUE,
+            currency="USD",
+            amount="120.00",
+            tax_amount="0.00",
+            discount_amount="0.00",
+            total_amount="120.00",
+            period_start=previous_month_start,
+            period_end=current_month_start - timedelta(days=1),
+            due_date=today - timedelta(days=2),
+        )
+        SubscriptionInvoice.objects.filter(id=overdue_invoice.id).update(
+            issued_at=timezone.now() - timedelta(days=2),
+        )
+
+        kpi_request = self.factory.get("/api/platform/analytics/business-kpis/")
+        force_authenticate(kpi_request, user=self.admin)
+        kpi_response = PlatformAnalyticsViewSet.as_view({"get": "business_kpis"})(kpi_request)
+        self.assertEqual(kpi_response.status_code, 200)
+        self.assertIn("forecast", kpi_response.data)
+        self.assertIn("risk_summary", kpi_response.data)
+        self.assertGreaterEqual(int(kpi_response.data["risk_summary"]["total"]), 1)
+        self.assertEqual(kpi_response.data["forecast"]["trend"], "growing")
+
+        revenue_request = self.factory.get("/api/platform/analytics/revenue/")
+        force_authenticate(revenue_request, user=self.admin)
+        revenue_response = PlatformAnalyticsViewSet.as_view({"get": "revenue"})(revenue_request)
+        self.assertEqual(revenue_response.status_code, 200)
+        self.assertIn("monthly_paid_trend", revenue_response.data)
+        self.assertIn("plan_breakdown", revenue_response.data)
+        self.assertIn("risk_signals", revenue_response.data)
+        self.assertGreaterEqual(len(revenue_response.data["risk_signals"]), 1)
+
+        growth_request = self.factory.get("/api/platform/analytics/tenant-growth/")
+        force_authenticate(growth_request, user=self.admin)
+        growth_response = PlatformAnalyticsViewSet.as_view({"get": "tenant_growth"})(growth_request)
+        self.assertEqual(growth_response.status_code, 200)
+        self.assertIn("by_month", growth_response.data)
+
 
 class PlatformSettingsAndAdminUsersTests(TestCase):
     def setUp(self):
@@ -905,6 +1035,233 @@ class PlatformSettingsAndAdminUsersTests(TestCase):
         self.assertEqual(rows["stripe"]["status"], "connected")
         self.assertEqual(rows["sendgrid"]["status"], "error")
         self.assertEqual(rows["zoom"]["status"], "disconnected")
+
+
+class PlatformTenantBillingLifecycleTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.tenant = Tenant.objects.create(
+            schema_name="platform_billing_school",
+            name="Platform Billing School",
+            status=Tenant.STATUS_ACTIVE,
+            paid_until=timezone.now().date() - timedelta(days=1),
+            is_active=True,
+        )
+        Domain.objects.create(domain="platform-billing.localhost", tenant=cls.tenant, is_primary=True)
+        cls.plan = SubscriptionPlan.objects.create(
+            code="BUSINESS",
+            name="Business",
+            monthly_price="500.00",
+            annual_price="5000.00",
+            max_students=300,
+            max_storage_gb=20,
+            is_active=True,
+        )
+        cls.subscription = TenantSubscription.objects.create(
+            tenant=cls.tenant,
+            plan=cls.plan,
+            billing_cycle=TenantSubscription.BILLING_MONTHLY,
+            status=TenantSubscription.STATUS_ACTIVE,
+            starts_on=timezone.now().date() - timedelta(days=30),
+            ends_on=timezone.now().date() - timedelta(days=1),
+            next_billing_date=timezone.now().date() - timedelta(days=1),
+            grace_period_days=7,
+            is_current=True,
+        )
+        cls.invoice = SubscriptionInvoice.objects.create(
+            tenant=cls.tenant,
+            subscription=cls.subscription,
+            invoice_number="SC-2026-0001",
+            billing_cycle=TenantSubscription.BILLING_MONTHLY,
+            status=SubscriptionInvoice.STATUS_PENDING,
+            currency="USD",
+            amount="500.00",
+            tax_amount="0.00",
+            discount_amount="0.00",
+            total_amount="500.00",
+            period_start=timezone.now().date() - timedelta(days=30),
+            period_end=timezone.now().date() - timedelta(days=1),
+            due_date=timezone.now().date() - timedelta(days=1),
+        )
+
+    def setUp(self):
+        self.factory = APIRequestFactory()
+        self.admin = User.objects.create_user(username="platform_billing_admin", password="test123")
+        GlobalSuperAdmin.objects.create(user=self.admin, is_active=True)
+
+    def test_subscription_payment_create_approve_and_reactivate_tenant(self):
+        create_request = self.factory.post(
+            "/api/platform/subscription-payments/",
+            {
+                "invoice": self.invoice.id,
+                "amount": "500.00",
+                "method": "M-Pesa",
+                "status": "PENDING",
+                "transaction_id": "MPESA-TXN-001",
+                "metadata": {"source": "callback"},
+            },
+            format="json",
+        )
+        force_authenticate(create_request, user=self.admin)
+        create_response = PlatformSubscriptionPaymentViewSet.as_view({"post": "create"})(create_request)
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(create_response.data["status"], SubscriptionPayment.STATUS_PENDING)
+        payment_id = create_response.data["id"]
+        self.assertEqual(SubscriptionPayment.objects.filter(invoice=self.invoice).count(), 1)
+
+        approve_request = self.factory.post(f"/api/platform/subscription-payments/{payment_id}/approve/", {}, format="json")
+        force_authenticate(approve_request, user=self.admin)
+        approve_response = PlatformSubscriptionPaymentViewSet.as_view({"post": "approve"})(approve_request, pk=payment_id)
+        self.assertEqual(approve_response.status_code, 200)
+        self.assertEqual(approve_response.data["status"], SubscriptionPayment.STATUS_PAID)
+
+        self.tenant.refresh_from_db()
+        self.subscription.refresh_from_db()
+        self.invoice.refresh_from_db()
+        payment = SubscriptionPayment.objects.get(id=payment_id)
+        self.assertEqual(payment.status, SubscriptionPayment.STATUS_PAID)
+        self.assertEqual(self.invoice.status, SubscriptionInvoice.STATUS_PAID)
+        self.assertEqual(self.subscription.status, TenantSubscription.STATUS_ACTIVE)
+        self.assertEqual(self.tenant.status, Tenant.STATUS_ACTIVE)
+        self.assertTrue(self.tenant.is_active)
+        self.assertEqual(self.tenant.paid_until, self.invoice.period_end)
+
+    def test_subscription_payment_reject_and_retry_verification(self):
+        payment = SubscriptionPayment.objects.create(
+            invoice=self.invoice,
+            amount="500.00",
+            method="M-Pesa",
+            status=SubscriptionPayment.STATUS_PENDING,
+            transaction_id="MPESA-TXN-RETRY",
+            metadata={"source": "callback"},
+        )
+
+        reject_request = self.factory.post(
+            f"/api/platform/subscription-payments/{payment.id}/reject/",
+            {"reason": "Amount mismatch"},
+            format="json",
+        )
+        force_authenticate(reject_request, user=self.admin)
+        reject_response = PlatformSubscriptionPaymentViewSet.as_view({"post": "reject"})(reject_request, pk=payment.id)
+        self.assertEqual(reject_response.status_code, 200)
+        self.assertEqual(reject_response.data["status"], SubscriptionPayment.STATUS_FAILED)
+
+        retry_request = self.factory.post(
+            f"/api/platform/subscription-payments/{payment.id}/retry-verification/",
+            {"reason": "Re-check gateway callback"},
+            format="json",
+        )
+        force_authenticate(retry_request, user=self.admin)
+        retry_response = PlatformSubscriptionPaymentViewSet.as_view({"post": "retry_verification"})(retry_request, pk=payment.id)
+        self.assertEqual(retry_response.status_code, 200)
+        self.assertEqual(retry_response.data["status"], SubscriptionPayment.STATUS_PENDING)
+        payment.refresh_from_db()
+        self.assertEqual(payment.metadata["verification_retry_count"], 1)
+
+    def test_subscription_payment_create_is_idempotent_for_transaction_code(self):
+        payload = {
+            "invoice": self.invoice.id,
+            "amount": "500.00",
+            "method": "M-Pesa",
+            "status": "PENDING",
+            "transaction_id": "MPESA-TXN-IDEMPOTENT",
+        }
+        request1 = self.factory.post("/api/platform/subscription-payments/", payload, format="json")
+        force_authenticate(request1, user=self.admin)
+        response1 = PlatformSubscriptionPaymentViewSet.as_view({"post": "create"})(request1)
+        self.assertEqual(response1.status_code, 201)
+
+        request2 = self.factory.post("/api/platform/subscription-payments/", payload, format="json")
+        force_authenticate(request2, user=self.admin)
+        response2 = PlatformSubscriptionPaymentViewSet.as_view({"post": "create"})(request2)
+        self.assertEqual(response2.status_code, 201)
+        self.assertEqual(response1.data["id"], response2.data["id"])
+        self.assertEqual(SubscriptionPayment.objects.filter(transaction_id="MPESA-TXN-IDEMPOTENT").count(), 1)
+
+    def _mpesa_callback_payload(
+        self,
+        *,
+        transaction_id: str,
+        amount: str,
+        result_code: int = 0,
+        result_desc: str = "The service request is processed successfully.",
+        reference: str | None = None,
+    ):
+        return {
+            "ResultCode": result_code,
+            "ResultDesc": result_desc,
+            "TransID": transaction_id,
+            "TransAmount": amount,
+            "BillRefNumber": reference or self.invoice.invoice_number,
+            "MSISDN": "254700000001",
+            "TransTime": "20260423123045",
+        }
+
+    def test_platform_mpesa_callback_settles_invoice_and_tenant(self):
+        payload = self._mpesa_callback_payload(transaction_id="MPESA-CALLBACK-001", amount="500.00")
+        request = self.factory.post("/api/platform/subscription-payments/mpesa/callback/", payload, format="json")
+        response = PlatformSubscriptionPaymentMpesaCallbackView.as_view()(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["processed"])
+
+        payment = SubscriptionPayment.objects.get(transaction_id="MPESA-CALLBACK-001")
+        self.invoice.refresh_from_db()
+        self.subscription.refresh_from_db()
+        self.tenant.refresh_from_db()
+
+        self.assertEqual(payment.status, SubscriptionPayment.STATUS_PAID)
+        self.assertEqual(self.invoice.status, SubscriptionInvoice.STATUS_PAID)
+        self.assertEqual(self.invoice.external_reference, "MPESA-CALLBACK-001")
+        self.assertEqual(self.subscription.status, TenantSubscription.STATUS_ACTIVE)
+        self.assertEqual(self.tenant.status, Tenant.STATUS_ACTIVE)
+        self.assertTrue(self.tenant.is_active)
+        self.assertEqual(self.tenant.paid_until, self.invoice.period_end)
+
+    def test_platform_mpesa_callback_is_idempotent_for_replay(self):
+        payload = self._mpesa_callback_payload(transaction_id="MPESA-CALLBACK-REPLAY", amount="500.00")
+
+        request1 = self.factory.post("/api/platform/subscription-payments/mpesa/callback/", payload, format="json")
+        response1 = PlatformSubscriptionPaymentMpesaCallbackView.as_view()(request1)
+        self.assertEqual(response1.status_code, 200)
+        self.assertTrue(response1.data["processed"])
+
+        request2 = self.factory.post("/api/platform/subscription-payments/mpesa/callback/", payload, format="json")
+        response2 = PlatformSubscriptionPaymentMpesaCallbackView.as_view()(request2)
+        self.assertEqual(response2.status_code, 200)
+        self.assertTrue(response2.data["processed"])
+        self.assertTrue(response2.data.get("duplicate"))
+
+        self.assertEqual(SubscriptionPayment.objects.filter(transaction_id="MPESA-CALLBACK-REPLAY").count(), 1)
+
+    def test_platform_mpesa_callback_rejects_amount_mismatch(self):
+        payload = self._mpesa_callback_payload(transaction_id="MPESA-CALLBACK-MISMATCH", amount="250.00")
+        request = self.factory.post("/api/platform/subscription-payments/mpesa/callback/", payload, format="json")
+        response = PlatformSubscriptionPaymentMpesaCallbackView.as_view()(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["processed"])
+
+        payment = SubscriptionPayment.objects.get(transaction_id="MPESA-CALLBACK-MISMATCH")
+        self.invoice.refresh_from_db()
+
+        self.assertEqual(payment.status, SubscriptionPayment.STATUS_FAILED)
+        self.assertEqual(self.invoice.status, SubscriptionInvoice.STATUS_OVERDUE)
+
+    def test_subscription_expiry_command_suspends_overdue_tenant(self):
+        call_command("check_subscription_expiry", force=True)
+        self.tenant.refresh_from_db()
+        self.subscription.refresh_from_db()
+        self.assertEqual(self.tenant.status, Tenant.STATUS_SUSPENDED)
+        self.assertFalse(self.tenant.is_active)
+        self.assertEqual(self.subscription.status, TenantSubscription.STATUS_SUSPENDED)
+        self.assertTrue(
+            PlatformActionLog.objects.filter(
+                action="SUSPEND",
+                model_name="Tenant",
+                object_id=str(self.tenant.id),
+            ).exists()
+        )
 
 
 class PlatformSupportImpersonationMonitoringHardeningTests(TestCase):

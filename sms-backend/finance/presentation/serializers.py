@@ -22,6 +22,13 @@ from school.models import (
     StudentOptionalCharge,
     VoteHead,
 )
+from school.payment_receipts import (
+    payment_receipt_number,
+    payment_receipt_urls,
+    payment_status_label,
+    payment_transaction_code,
+    payment_vote_head_summary,
+)
 
 
 class FinanceStudentRefSerializer(serializers.ModelSerializer):
@@ -279,6 +286,13 @@ class PaymentSerializer(serializers.ModelSerializer):
     allocations = PaymentAllocationSerializer(many=True, required=False)
     allocated_amount = serializers.SerializerMethodField()
     unallocated_amount = serializers.SerializerMethodField()
+    receipt_no = serializers.SerializerMethodField()
+    transaction_code = serializers.SerializerMethodField()
+    vote_head_summary = serializers.SerializerMethodField()
+    status = serializers.SerializerMethodField()
+    receipt_json_url = serializers.SerializerMethodField()
+    receipt_pdf_url = serializers.SerializerMethodField()
+    created_at = serializers.DateTimeField(source="payment_date", read_only=True)
     student_name = serializers.CharField(source="student", read_only=True)
 
     class Meta:
@@ -287,10 +301,15 @@ class PaymentSerializer(serializers.ModelSerializer):
             "id",
             "student",
             "payment_date",
+            "created_at",
             "amount",
             "payment_method",
             "reference_number",
+            "transaction_code",
             "receipt_number",
+            "receipt_no",
+            "vote_head_summary",
+            "status",
             "notes",
             "is_active",
             "reversed_at",
@@ -299,6 +318,8 @@ class PaymentSerializer(serializers.ModelSerializer):
             "allocations",
             "allocated_amount",
             "unallocated_amount",
+            "receipt_json_url",
+            "receipt_pdf_url",
             "student_name",
         ]
         read_only_fields = ["payment_date", "receipt_number", "reversed_at", "reversed_by"]
@@ -310,6 +331,26 @@ class PaymentSerializer(serializers.ModelSerializer):
     def get_unallocated_amount(self, obj):
         total = obj.allocations.aggregate(total=models.Sum("amount_allocated"))["total"] or 0
         return obj.amount - total
+
+    def get_receipt_no(self, obj):
+        return payment_receipt_number(obj)
+
+    def get_transaction_code(self, obj):
+        return payment_transaction_code(obj)
+
+    def get_vote_head_summary(self, obj):
+        return payment_vote_head_summary(obj)
+
+    def get_status(self, obj):
+        return payment_status_label(obj)
+
+    def get_receipt_json_url(self, obj):
+        request = self.context.get("request")
+        return payment_receipt_urls(obj, request=request)["receipt_json_url"]
+
+    def get_receipt_pdf_url(self, obj):
+        request = self.context.get("request")
+        return payment_receipt_urls(obj, request=request)["receipt_pdf_url"]
 
 
 class InvoiceAdjustmentSerializer(serializers.ModelSerializer):

@@ -366,4 +366,37 @@ class FinanceGovernanceActivationPrepTests(TenantTestBase):
         self.assertEqual(staged_response.status_code, live_response.status_code)
         self.assertEqual(staged_response.data, live_response.data)
 
+    def test_vote_head_allocation_create_is_idempotent_for_same_pair(self):
+        payment = Payment.objects.create(
+            student=self.student,
+            amount=Decimal("3200.00"),
+            payment_method="BANK",
+            reference_number="GOV-PAY-002",
+            notes="Vote head idempotency test",
+            is_active=True,
+        )
+        vote_head = VoteHead.objects.create(
+            name="Library",
+            description="Library vote head",
+            allocation_percentage=Decimal("25.00"),
+            is_active=True,
+            order=3,
+        )
+        payload = {
+            "payment": payment.id,
+            "vote_head": vote_head.id,
+            "amount": "1200.00",
+        }
+        path = "/api/finance/vote-head-allocations/"
+
+        first_response = self._invoke(LiveVoteHeadPaymentAllocationViewSet, "post", "create", path, data=payload)
+        second_response = self._invoke(LiveVoteHeadPaymentAllocationViewSet, "post", "create", path, data=payload)
+
+        self.assertEqual(first_response.status_code, 201)
+        self.assertEqual(second_response.status_code, 200)
+        self.assertEqual(VoteHeadPaymentAllocation.objects.filter(payment=payment, vote_head=vote_head).count(), 1)
+        allocation = VoteHeadPaymentAllocation.objects.get(payment=payment, vote_head=vote_head)
+        self.assertEqual(str(allocation.amount), "1200.00")
+        self.assertEqual(second_response.data["amount"], "1200.00")
+
 

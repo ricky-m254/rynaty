@@ -1,13 +1,14 @@
 # Payments Launch Runbook
 
-This runbook covers the remaining fast-track launch work for tenant payments:
+This runbook covers the fast-track launch work for school fee collection and tenant payments:
 
 - confirm Stripe and M-Pesa configuration
 - confirm public webhook and callback URLs
 - validate one real bank CSV import in staging
 - recover failed webhook events without database access
+- keep the school receipt and tenant billing contracts aligned with the compiled UI
 
-It is intended for finance admins, bursars, and support staff working with the payment launch.
+It is intended for finance admins, bursars, platform admins, and support staff working with the payment launch.
 
 ## 1. Readiness Snapshot
 
@@ -202,3 +203,10 @@ If settlement fails after an event already landed:
 3. reprocess the event
 4. confirm payment creation and invoice update
 5. document the incident for support follow-up
+
+## 9. Evidence References
+
+Use these references when you need proof that the launch path was exercised:
+
+- `docs/finance_test_report.md` for the school finance baseline and callback smoke evidence
+- `docs/payments_phase5_go_no_go.md` for the combined school and tenant Phase 5 rollout decision

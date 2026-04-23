@@ -34,6 +34,7 @@ from finance.application.receivables import (
     is_admin_like,
     journal_get_or_create_account,
 )
+from school.payment_receipts import build_payment_receipt_payload
 from finance.presentation.serializers import (
     BalanceCarryForwardSerializer,
     CashbookEntrySerializer,
@@ -437,6 +438,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 reference_number=serializer.validated_data["reference_number"],
                 notes=serializer.validated_data.get("notes", ""),
             )
+            response_status = status.HTTP_201_CREATED if getattr(payment, "_was_created", True) else status.HTTP_200_OK
             amount = float(payment.amount or 0)
             if amount > 0:
                 cash = journal_get_or_create_account("1000", "Cash and Bank", "ASSET")
@@ -453,7 +455,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
                     ],
                 )
             response_serializer = self.get_serializer(payment)
-            return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+            return Response(response_serializer.data, status=response_status)
         except Exception as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -496,18 +498,24 @@ class PaymentViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["get"], url_path="receipt")
     def receipt(self, request, pk=None):
         payment = self.get_object()
+        receipt = build_payment_receipt_payload(payment, request=request)
+        if request.query_params.get("format") == "json":
+            return Response(receipt)
+
+        receipt_no = receipt["receipt_no"] or payment.id
         lines = [
-            f"Receipt: {payment.receipt_number or 'N/A'}",
-            f"Reference: {payment.reference_number}",
-            f"Student: {payment.student}",
-            f"Amount: {payment.amount}",
-            f"Method: {payment.payment_method}",
-            f"Date: {payment.payment_date}",
-            f"Status: {'Reversed' if not payment.is_active else 'Active'}",
+            f"Receipt: {receipt['receipt_no'] or 'N/A'}",
+            f"Transaction Code: {receipt['transaction_code'] or 'N/A'}",
+            f"Student: {receipt['student']}",
+            f"Admission No: {receipt['admission_number']}",
+            f"Amount: {receipt['amount']}",
+            f"Method: {receipt['method']}",
+            f"Date: {receipt['date']}",
+            f"Status: {receipt['status']}",
         ]
         content = "\n".join(lines)
         response = HttpResponse(content, content_type="text/plain")
-        response["Content-Disposition"] = f'attachment; filename="receipt_{payment.id}.txt"'
+        response["Content-Disposition"] = f'attachment; filename="receipt_{receipt_no}.txt"'
         return response
 
     @action(detail=True, methods=["post"], url_path="reversal-request")

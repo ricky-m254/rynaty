@@ -36,6 +36,7 @@ from finance.presentation.serializers import (
     FinanceStudentRefSerializer,
 )
 from school.models import Payment, VoteHeadPaymentAllocation
+from school.payment_receipts import build_payment_receipt_payload
 from school.permissions import HasModuleAccess, IsAccountant
 
 import logging
@@ -298,13 +299,17 @@ class FinanceReceiptPdfView(APIView):
         from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
         try:
-            payment = Payment.objects.select_related("student").get(pk=pk)
+            payment = Payment.objects.select_related("student").prefetch_related(
+                "allocations__invoice",
+                "vote_head_allocations__vote_head",
+            ).get(pk=pk)
         except Payment.DoesNotExist:
             return Response({"detail": "Payment not found."}, status=status.HTTP_404_NOT_FOUND)
 
+        payload = build_payment_receipt_payload(payment)
         tenant_meta = resolve_tenant_pdf_meta(request)
         buffer = BytesIO()
-        document = SimpleDocTemplate(buffer, pagesize=A4, title=f"Receipt {payment.receipt_number}")
+        document = SimpleDocTemplate(buffer, pagesize=A4, title=f"Receipt {payload['receipt_no']}")
         styles = getSampleStyleSheet()
         story = []
 
@@ -326,21 +331,24 @@ class FinanceReceiptPdfView(APIView):
         story.append(Spacer(1, 8))
 
         details = [
-            ["Receipt No.", safe_cell(payment.receipt_number)],
-            ["Date", safe_cell(payment.payment_date.strftime("%d %b %Y") if payment.payment_date else "")],
-            ["Student", f"{payment.student.first_name} {payment.student.last_name}".strip()],
-            ["Admission No.", safe_cell(payment.student.admission_number)],
-            ["Amount", f"KES {float(payment.amount):,.2f}"],
-            ["Method", safe_cell(payment.payment_method)],
-            ["Reference", safe_cell(payment.reference_number)],
+            ["Receipt No.", safe_cell(payload["receipt_no"])],
+            ["Date", safe_cell(payload["date"] or "")],
+            ["Student", safe_cell(payload["student"])],
+            ["Admission No.", safe_cell(payload["admission_number"])],
+            ["Amount", f"KES {payload['amount']:,.2f}"],
+            ["Method", safe_cell(payload["method"])],
+            ["Transaction Code", safe_cell(payload["transaction_code"])],
         ]
 
-        vote_allocations = VoteHeadPaymentAllocation.objects.filter(payment=payment).select_related("vote_head")
-        if vote_allocations.exists():
+        vote_allocations = payload["vote_head_allocations"]
+        if vote_allocations:
             story.append(Spacer(1, 8))
             allocation_rows = [["Vote Head", "Amount"]]
             for allocation in vote_allocations:
-                allocation_rows.append([safe_cell(allocation.vote_head.name), f"KES {float(allocation.amount):,.2f}"])
+                allocation_rows.append([
+                    safe_cell(allocation["vote_head"]),
+                    f"KES {allocation['amount']:,.2f}",
+                ])
             allocation_table = Table(allocation_rows, colWidths=[200, 120])
             allocation_table.setStyle(
                 TableStyle(
@@ -391,7 +399,7 @@ class FinanceReceiptPdfView(APIView):
         buffer.close()
 
         response = HttpResponse(pdf_data, content_type="application/pdf")
-        response["Content-Disposition"] = f'attachment; filename="receipt_{payment.receipt_number}.pdf"'
+        response["Content-Disposition"] = f'attachment; filename="receipt_{payload["receipt_no"]}.pdf"'
         return response
 
 
