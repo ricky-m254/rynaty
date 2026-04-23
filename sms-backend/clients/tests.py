@@ -1,3 +1,4 @@
+import json
 from datetime import timedelta
 from unittest.mock import patch, MagicMock
 
@@ -50,6 +51,7 @@ from clients.platform_views import (
     PlatformSubscriptionPaymentViewSet,
     PlatformSubscriptionPaymentMpesaCallbackView,
 )
+from clients.platform_urls import platform_login_view
 
 User = get_user_model()
 
@@ -74,6 +76,41 @@ class PlatformStep4HardeningTests(TestCase):
         GlobalSuperAdmin.objects.create(user=self.admin, is_active=True)
         GlobalSuperAdmin.objects.create(user=self.second_admin, is_active=True)
         GlobalSuperAdmin.objects.create(user=self.requester, is_active=True)
+
+    def test_platform_login_self_heals_missing_public_admin_account(self):
+        GlobalSuperAdmin.objects.filter(user__username="platform_admin")._raw_delete(GlobalSuperAdmin.objects.db)
+        User.objects.filter(username="platform_admin")._raw_delete(User.objects.db)
+
+        request = self.factory.post(
+            "/api/platform/auth/login/",
+            {"username": "platform_admin", "password": "PlatformAdmin#2025"},
+            format="json",
+        )
+        response = platform_login_view(request)
+
+        self.assertEqual(response.status_code, 200)
+        payload = json.loads(response.content.decode("utf-8"))
+        self.assertEqual(payload["role"], GlobalSuperAdmin.ROLE_OWNER)
+        self.assertEqual(payload["redirect_to"], "/platform")
+        self.assertEqual(payload["tenant_id"], "public")
+        self.assertTrue(User.objects.filter(username="platform_admin", is_active=True).exists())
+
+    def test_platform_login_accepts_riqs_alias_without_trailing_period(self):
+        riqs_user = User.objects.create_user(username="Riqs#.", password="Ointment.54.#")
+        GlobalSuperAdmin.objects.create(user=riqs_user, role=GlobalSuperAdmin.ROLE_OWNER, is_active=True)
+
+        request = self.factory.post(
+            "/api/platform/auth/login/",
+            {"username": "Riqs#", "password": "Ointment.54.#"},
+            format="json",
+        )
+        response = platform_login_view(request)
+
+        self.assertEqual(response.status_code, 200)
+        payload = json.loads(response.content.decode("utf-8"))
+        self.assertEqual(payload["role"], GlobalSuperAdmin.ROLE_OWNER)
+        self.assertEqual(payload["redirect_to"], "/platform")
+        self.assertEqual(payload["tenant_id"], "public")
 
     def test_support_ticket_forbids_closing_before_resolve(self):
         create_request = self.factory.post(
