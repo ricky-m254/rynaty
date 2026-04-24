@@ -564,7 +564,7 @@ function FeesPage() {
             ],
           }),
           jsx("div", {
-            className: "mt-6 flex flex-wrap gap-2",
+            className: "mt-6 inline-flex flex-wrap gap-1 rounded-full border border-slate-200 bg-[#e8ebf3] p-1",
             children: [
               { id: "invoices", label: `Invoices (${invoices.length})` },
               { id: "payments", label: `Payment History (${payments.length})` },
@@ -576,8 +576,8 @@ function FeesPage() {
                   onClick: () => setTab(item.id),
                   className: `rounded-full px-4 py-2 text-sm font-semibold transition ${
                     tab === item.id
-                      ? "bg-slate-900 text-white shadow-[0_12px_30px_rgba(15,23,42,0.16)]"
-                      : "border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
+                      ? "bg-white text-slate-950 shadow-sm"
+                      : "text-slate-700 hover:text-slate-950"
                   }`,
                   children: item.label,
                 },
@@ -823,6 +823,36 @@ function FeesPage() {
                       }),
                     ],
                   }),
+                  selectedInvoice?.balance
+                    ? jsx("div", {
+                        className: "flex flex-wrap gap-2",
+                        children: [
+                          {
+                            label: "Full Balance",
+                            value: toAmountInput(selectedInvoice.balance),
+                          },
+                          {
+                            label: "Half Payment",
+                            value: toAmountInput(Number(selectedInvoice.balance) / 2),
+                          },
+                        ].map((item) =>
+                          jsx(
+                            "button",
+                            {
+                              type: "button",
+                              onClick: () => {
+                                setPaymentAmount(item.value);
+                                setPaymentError(null);
+                              },
+                              className:
+                                "rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900",
+                              children: item.label,
+                            },
+                            item.label,
+                          ),
+                        ),
+                      })
+                    : null,
                   paymentMethod === "mpesa"
                     ? jsxs("label", {
                         className: "block text-sm text-slate-700",
@@ -866,34 +896,99 @@ function FeesPage() {
                         children: paymentStatus,
                       })
                     : null,
+                  paymentResult === "success" && paymentMethod !== "bank" && payments[0]
+                    ? jsxs("div", {
+                        className: "space-y-4 rounded-[24px] border border-emerald-200 bg-[linear-gradient(135deg,#ecfdf5,white)] p-5",
+                        children: [
+                          jsxs("div", {
+                            className: "text-center",
+                            children: [
+                              jsx("div", {
+                                className: "mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-xl text-emerald-600",
+                                children: "✓",
+                              }),
+                              jsx("h3", {
+                                className: "mt-3 text-xl font-semibold text-emerald-700",
+                                children: "Payment Successful!",
+                              }),
+                              jsx("p", {
+                                className: "mt-1 text-sm text-slate-500",
+                                children: `${formatCurrency(Number(paymentAmount || selectedInvoice?.balance || 0))} has been paid for ${selectedInvoice?.invoice_number || `Invoice #${selectedInvoice?.id || ""}`}`,
+                              }),
+                            ],
+                          }),
+                          jsx("div", {
+                            className: "rounded-[22px] border border-slate-200 bg-white/90 p-4",
+                            children: [
+                              {
+                                label: "M-Pesa Reference",
+                                value: payments[0].transaction_reference || "--",
+                              },
+                              {
+                                label: "Method",
+                                value: payments[0].payment_method || "--",
+                              },
+                              {
+                                label: "Transaction Date",
+                                value: formatDate(payments[0].payment_date),
+                              },
+                            ].map((item) =>
+                              jsxs(
+                                "div",
+                                {
+                                  className: "flex items-center justify-between gap-3 border-b border-slate-200 py-3 last:border-b-0",
+                                  children: [
+                                    jsx("span", { className: "text-sm text-slate-500", children: item.label }),
+                                    jsx("span", { className: "text-sm font-semibold text-slate-900", children: item.value }),
+                                  ],
+                                },
+                                item.label,
+                              ),
+                            ),
+                          }),
+                        ],
+                      })
+                    : null,
                   jsxs("div", {
                     className: "flex flex-col gap-2 sm:flex-row",
                     children: [
                       jsx("button", {
                         type: "button",
-                        onClick: submitPayment,
-                        disabled: submitting || polling,
+                        onClick:
+                          paymentResult === "success" && paymentMethod !== "bank" && payments[0]?.receipt_url
+                            ? () => {
+                                if (typeof window !== "undefined") {
+                                  window.open(payments[0].receipt_url, "_blank", "noopener,noreferrer");
+                                }
+                              }
+                            : submitPayment,
+                        disabled:
+                          paymentResult === "success" && paymentMethod !== "bank"
+                            ? !payments[0]?.receipt_url
+                            : submitting || polling,
                         className:
                           "flex-1 rounded-full bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60",
                         children:
-                          paymentMethod === "stripe"
-                            ? submitting
-                              ? "Preparing checkout..."
-                              : "Continue to Stripe"
-                            : paymentMethod === "bank"
+                          paymentResult === "success" && paymentMethod !== "bank"
+                            ? "Download Receipt"
+                            : paymentMethod === "stripe"
                               ? submitting
-                                ? "Creating transfer reference..."
-                                : "Create bank reference"
-                              : submitting
-                                ? "Sending STK push..."
-                                : "Send M-Pesa prompt",
+                                ? "Preparing checkout..."
+                                : "Continue to Stripe"
+                              : paymentMethod === "bank"
+                                ? submitting
+                                  ? "Creating transfer reference..."
+                                  : "Create bank reference"
+                                : submitting
+                                  ? "Sending STK push..."
+                                  : "Send M-Pesa prompt",
                       }),
                       jsx("button", {
                         type: "button",
                         onClick: closePaymentModal,
                         className:
                           "rounded-full border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900",
-                        children: paymentResult === "success" ? "Close" : "Cancel",
+                        children: paymentResult === "success" ? "Done" : "Cancel",
                       }),
                     ],
                   }),

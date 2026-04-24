@@ -1,21 +1,27 @@
-import { r as React, j as jsxRuntime, b as api } from "./index-D7ltaYVC.js";
+import { c as useLocation, r as React, j as jsxRuntime, b as api } from "./index-D7ltaYVC.js";
 import { a as downloadResponse, d as downloadBlob } from "./download-EzDvBC7h.js";
 import { e as getErrorMessage } from "./forms-ZJa1TpnO.js";
 
 const { jsx, jsxs } = jsxRuntime;
 
 const shellClass =
-  "rounded-[32px] border border-slate-200/80 bg-[#f6f7fb] p-5 shadow-[0_30px_80px_rgba(15,23,42,0.08)] md:p-7 xl:p-8";
+  "rounded-[32px] border border-slate-200/80 bg-[#f5f7fb] p-5 shadow-[0_28px_70px_rgba(15,23,42,0.08)] md:p-7 xl:p-8";
 const surfaceClass =
   "rounded-[28px] border border-slate-200/80 bg-white p-5 shadow-[0_22px_50px_rgba(15,23,42,0.06)]";
-const insetClass = "rounded-[24px] border border-slate-200 bg-slate-50/80 p-4";
+const insetClass = "rounded-[24px] border border-slate-200 bg-slate-50/85 p-4";
 const inputClass =
   "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-900/5";
 
 const normalizeList = (payload) => (Array.isArray(payload) ? payload : payload?.results ?? []);
 
+function go(path) {
+  if (typeof window !== "undefined") {
+    window.location.assign(path);
+  }
+}
+
 function money(value) {
-  return `KES ${Number(value ?? 0).toLocaleString("en-KE", {
+  return `Ksh ${Number(value ?? 0).toLocaleString("en-KE", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
@@ -31,7 +37,10 @@ function toneClass(value) {
       UNMATCHED: "border-amber-200 bg-amber-50 text-amber-700",
       FAILED: "border-rose-200 bg-rose-50 text-rose-700",
       IGNORED: "border-slate-200 bg-slate-100 text-slate-700",
-    }[String(value || "").toUpperCase()] ?? "border-slate-200 bg-slate-100 text-slate-700"
+      processed: "border-emerald-200 bg-emerald-50 text-emerald-700",
+      pending: "border-amber-200 bg-amber-50 text-amber-700",
+      error: "border-rose-200 bg-rose-50 text-rose-700",
+    }[String(value || "")] ?? "border-slate-200 bg-slate-100 text-slate-700"
   );
 }
 
@@ -46,7 +55,7 @@ function stringifyPayload(value) {
   if (typeof value === "string") return value;
   try {
     return JSON.stringify(value, null, 2);
-  } catch (error) {
+  } catch {
     return String(value);
   }
 }
@@ -63,28 +72,69 @@ function Notice({ tone = "success", message }) {
   });
 }
 
-function ActionChip({ active, onClick, children }) {
-  return jsx("button", {
-    type: "button",
-    onClick,
-    className: `rounded-full px-4 py-2 text-xs font-semibold transition ${
-      active
-        ? "bg-slate-900 text-white shadow-[0_12px_30px_rgba(15,23,42,0.16)]"
-        : "border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
-    }`,
-    children,
+function PortalSwitch({ active }) {
+  const links = [
+    { key: "student", label: "Student Portal", path: "/student-portal/fees" },
+    { key: "parent", label: "Parent Portal", path: "/modules/parent-portal/finance" },
+    { key: "bursar", label: "Bursar Portal", path: "/modules/finance" },
+  ];
+
+  return jsx("div", {
+    className: "inline-flex rounded-full border border-slate-200 bg-white p-1 shadow-[0_12px_30px_rgba(15,23,42,0.06)]",
+    children: links.map((link) =>
+      jsx(
+        "button",
+        {
+          type: "button",
+          onClick: () => go(link.path),
+          className: `rounded-full px-4 py-2 text-sm font-semibold transition ${
+            active === link.key
+              ? "bg-slate-900 text-white"
+              : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+          }`,
+          children: link.label,
+        },
+        link.key,
+      ),
+    ),
   });
 }
 
-function MetricCard({ label, value, detail }) {
+function FinanceTabs({ active }) {
+  const tabs = [
+    { key: "overview", label: "Overview", path: "/modules/finance" },
+    { key: "record", label: "Record Payment", path: "/modules/finance/payments/new" },
+    { key: "payments", label: "Payments", path: "/modules/finance/payments" },
+    { key: "reconciliation", label: "Reconciliation", path: "/modules/finance/reconciliation" },
+    { key: "events", label: "Gateway Events", path: "/modules/finance/reconciliation?pane=events" },
+    { key: "arrears", label: "Arrears", path: "/modules/finance/arrears" },
+  ];
+
+  return jsx("div", {
+    className: "rounded-full border border-slate-200 bg-[#e8ebf3] p-1",
+    children: tabs.map((tab) =>
+      jsx(
+        "button",
+        {
+          type: "button",
+          onClick: () => go(tab.path),
+          className: `rounded-full px-4 py-2 text-sm font-semibold transition ${
+            active === tab.key ? "bg-white text-slate-950 shadow-sm" : "text-slate-700 hover:text-slate-950"
+          }`,
+          children: tab.label,
+        },
+        tab.key,
+      ),
+    ),
+  });
+}
+
+function MetricCard({ label, value, detail, tone = "text-slate-950" }) {
   return jsxs("div", {
     className: surfaceClass,
     children: [
-      jsx("p", {
-        className: "text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400",
-        children: label,
-      }),
-      jsx("p", { className: "mt-3 text-2xl font-semibold text-slate-950", children: value }),
+      jsx("p", { className: "text-sm font-semibold text-slate-950", children: label }),
+      jsx("p", { className: `mt-8 text-[2rem] font-semibold tracking-tight ${tone}`, children: value }),
       jsx("p", { className: "mt-2 text-sm text-slate-500", children: detail }),
     ],
   });
@@ -99,15 +149,24 @@ function exportRows(rows, filename) {
 }
 
 function FinanceReconciliationPage() {
+  const location = useLocation();
+  const pane = React.useMemo(() => {
+    const params = new URLSearchParams(location.search || "");
+    return params.get("pane") === "events" ? "events" : "reconciliation";
+  }, [location.search]);
+
   const [transactions, setTransactions] = React.useState([]);
   const [events, setEvents] = React.useState([]);
   const [bankLines, setBankLines] = React.useState([]);
   const [bankStatus, setBankStatus] = React.useState("");
   const [bankSearch, setBankSearch] = React.useState("");
+  const [eventProvider, setEventProvider] = React.useState("");
+  const [eventState, setEventState] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState(null);
   const [success, setSuccess] = React.useState(null);
   const [importing, setImporting] = React.useState(false);
+  const [bulkMatching, setBulkMatching] = React.useState(false);
   const [lineAction, setLineAction] = React.useState(null);
   const [txAction, setTxAction] = React.useState(null);
   const [eventAction, setEventAction] = React.useState(null);
@@ -137,7 +196,7 @@ function FinanceReconciliationPage() {
   }, [loadWorkspace]);
 
   const runLineAction = async (lineId, action) => {
-    if (loading || txAction !== null || eventAction !== null || lineAction !== null) return;
+    if (loading || txAction !== null || eventAction !== null || lineAction !== null || bulkMatching) return;
     setLineAction({ lineId, action });
     setError(null);
     setSuccess(null);
@@ -152,8 +211,27 @@ function FinanceReconciliationPage() {
     }
   };
 
+  const bulkAutoMatch = async () => {
+    const candidates = filteredBankLines.filter((line) => String(line.status || "").toUpperCase() === "UNMATCHED");
+    if (candidates.length === 0 || loading || bulkMatching) return;
+    setBulkMatching(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      for (const line of candidates) {
+        await api.post(`/finance/reconciliation/bank-lines/${line.id}/auto-match/`);
+      }
+      setSuccess(`Auto-match completed for ${candidates.length} bank line${candidates.length === 1 ? "" : "s"}.`);
+      await loadWorkspace();
+    } catch (requestError) {
+      setError(getErrorMessage(requestError, "Bulk auto-match failed."));
+    } finally {
+      setBulkMatching(false);
+    }
+  };
+
   const markReconciled = async (transactionId) => {
-    if (loading || txAction !== null || eventAction !== null || lineAction !== null) return;
+    if (loading || txAction !== null || eventAction !== null || lineAction !== null || bulkMatching) return;
     setTxAction(transactionId);
     setError(null);
     setSuccess(null);
@@ -169,7 +247,7 @@ function FinanceReconciliationPage() {
   };
 
   const reprocessEvent = async (eventId) => {
-    if (loading || txAction !== null || eventAction !== null || lineAction !== null) return;
+    if (loading || txAction !== null || eventAction !== null || lineAction !== null || bulkMatching) return;
     setEventAction(eventId);
     setError(null);
     setSuccess(null);
@@ -215,17 +293,7 @@ function FinanceReconciliationPage() {
   const exportTransactions = () => {
     exportRows(
       [
-        [
-          "id",
-          "provider",
-          "external_id",
-          "amount",
-          "status",
-          "is_reconciled",
-          "student_name",
-          "invoice_number",
-          "created_at",
-        ],
+        ["id", "provider", "external_id", "amount", "status", "is_reconciled", "student_name", "invoice_number", "created_at"],
         ...transactions.map((row) => [
           row.id,
           row.provider,
@@ -269,22 +337,44 @@ function FinanceReconciliationPage() {
     }
   };
 
-  const filteredBankLines = bankLines.filter((line) => {
-    const statusMatch = !bankStatus || line.status === bankStatus;
-    const term = bankSearch.trim().toLowerCase();
-    const searchMatch =
-      !term ||
-      [line.reference, line.narration, line.source, line.matched_payment_reference, line.matched_gateway_external_id]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase()
-        .includes(term);
-    return statusMatch && searchMatch;
-  });
+  const filteredBankLines = React.useMemo(
+    () =>
+      bankLines.filter((line) => {
+        const statusMatch = !bankStatus || line.status === bankStatus;
+        const term = bankSearch.trim().toLowerCase();
+        const searchMatch =
+          !term ||
+          [line.reference, line.narration, line.source, line.matched_payment_reference, line.matched_gateway_external_id]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase()
+            .includes(term);
+        return statusMatch && searchMatch;
+      }),
+    [bankLines, bankSearch, bankStatus],
+  );
+
+  const filteredEvents = React.useMemo(
+    () =>
+      events.filter((row) => {
+        const providerMatch = !eventProvider || row.provider === eventProvider;
+        const stateLabel = row.error ? "error" : row.processed ? "processed" : "pending";
+        const stateMatch = !eventState || eventState === stateLabel;
+        return providerMatch && stateMatch;
+      }),
+    [eventProvider, eventState, events],
+  );
 
   const unmatchedCount = bankLines.filter((line) => String(line.status || "").toUpperCase() === "UNMATCHED").length;
-  const unclearedTransactions = transactions.filter((row) => !row.is_reconciled).length;
-  const failedEvents = events.filter((row) => !row.processed || row.error).length;
+  const matchedCount = bankLines.filter((line) => String(line.status || "").toUpperCase() === "MATCHED").length;
+  const clearedCount = bankLines.filter((line) => String(line.status || "").toUpperCase() === "CLEARED").length;
+  const ignoredCount = bankLines.filter((line) => String(line.status || "").toUpperCase() === "IGNORED").length;
+
+  const unprocessedEvents = events.filter((row) => !row.processed && !row.error).length;
+  const failedEvents = events.filter((row) => Boolean(row.error)).length;
+  const processedEvents = events.filter((row) => row.processed && !row.error).length;
+  const providers = Array.from(new Set(events.map((row) => row.provider).filter(Boolean))).sort();
+  const unreconciledTransactions = transactions.filter((row) => !row.is_reconciled);
 
   return jsxs("div", {
     className: "space-y-6",
@@ -293,425 +383,162 @@ function FinanceReconciliationPage() {
         className: shellClass,
         children: [
           jsxs("div", {
-            className: "flex flex-col gap-5 border-b border-slate-200 pb-6 lg:flex-row lg:items-end lg:justify-between",
+            className: "flex flex-col gap-4 border-b border-slate-200 pb-6 xl:flex-row xl:items-start xl:justify-between",
             children: [
               jsxs("div", {
-                className: "max-w-3xl",
                 children: [
-                  jsx("p", {
-                    className: "text-[11px] font-semibold uppercase tracking-[0.32em] text-slate-400",
-                    children: "Payment Management System",
-                  }),
                   jsx("h1", {
-                    className: "mt-3 text-3xl font-semibold tracking-tight text-slate-950 md:text-[2.5rem]",
-                    children: "Reconciliation & gateway recovery",
+                    className: "text-[2rem] font-semibold tracking-tight text-slate-950",
+                    children: "School Payment Management System",
                   }),
                   jsx("p", {
-                    className: "mt-3 max-w-2xl text-sm leading-6 text-slate-600",
-                    children:
-                      "Import statement lines, match funds cleanly, inspect webhook failures, and recover gateway events without leaving the bursar flow.",
+                    className: "mt-1 text-lg text-slate-600",
+                    children: pane === "events"
+                      ? "Monitor payment gateway events and recover failed webhook or callback processing."
+                      : "Review and reconcile bank statement lines with cleaner placement for matching and clearance.",
                   }),
                 ],
               }),
-              jsxs("div", {
-                className: "flex flex-wrap gap-2",
-                children: [
-                  jsx(ActionChip, { active: false, onClick: () => window.location.assign("/modules/finance"), children: "Overview" }),
-                  jsx(ActionChip, {
-                    active: false,
-                    onClick: () => window.location.assign("/modules/finance/payments/new"),
-                    children: "Record Payment",
-                  }),
-                  jsx(ActionChip, {
-                    active: false,
-                    onClick: () => window.location.assign("/modules/finance/payments"),
-                    children: "Payments",
-                  }),
-                  jsx(ActionChip, { active: true, onClick: () => {}, children: "Reconciliation" }),
-                ],
-              }),
+              jsx(PortalSwitch, { active: "bursar" }),
             ],
           }),
+          jsx("div", { className: "mt-6", children: jsx(FinanceTabs, { active: pane === "events" ? "events" : "reconciliation" }) }),
           jsx("div", {
             className: "mt-6 space-y-4",
             children: [jsx(Notice, { tone: "error", message: error }), jsx(Notice, { tone: "success", message: success })],
           }),
-          jsx("div", {
-            className: "mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4",
-            children: [
-              {
-                label: "Imported bank lines",
-                value: String(bankLines.length),
-                detail: `${unmatchedCount} still need review or matching.`,
-              },
-              {
-                label: "Gateway transactions",
-                value: String(transactions.length),
-                detail: `${unclearedTransactions} not yet marked reconciled.`,
-              },
-              {
-                label: "Webhook events",
-                value: String(events.length),
-                detail: `${failedEvents} need operator attention or reprocess.`,
-              },
-              {
-                label: "Visible bank value",
-                value: money(filteredBankLines.reduce((sum, line) => sum + Number(line.amount ?? 0), 0)),
-                detail: "Current search and status filters applied.",
-              },
-            ].map((card) =>
-              jsx(MetricCard, { label: card.label, value: card.value, detail: card.detail }, card.label),
-            ),
-          }),
-          jsxs("section", {
-            className: `${surfaceClass} mt-6`,
-            children: [
-              jsxs("div", {
-                className: "flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between",
+          pane === "events"
+            ? jsx("div", {
+                className: "mt-6 grid gap-4 md:grid-cols-3",
                 children: [
-                  jsxs("div", {
-                    children: [
-                      jsx("p", {
-                        className: "text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400",
-                        children: "Bank Reconciliation",
-                      }),
-                      jsx("h2", {
-                        className: "mt-2 text-xl font-semibold text-slate-950",
-                        children: "Statement line workspace",
-                      }),
-                      jsx("p", {
-                        className: "mt-1 text-sm text-slate-500",
-                        children:
-                          "Import CSV files, filter unmatched items, and use auto-match, clear, ignore, or unmatch with a cleaner review table.",
-                      }),
-                    ],
+                  jsx(MetricCard, {
+                    label: "Unprocessed Events",
+                    value: String(unprocessedEvents),
+                    detail: "Awaiting processing.",
+                    tone: "text-amber-600",
                   }),
-                  jsxs("div", {
-                    className: "flex flex-wrap gap-2",
-                    children: [
-                      jsx("label", {
-                        className:
-                          "cursor-pointer rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800",
-                        children: [
-                          importing ? "Importing..." : "Import CSV",
-                          jsx("input", {
-                            type: "file",
-                            accept: ".csv",
-                            className: "hidden",
-                            onChange: handleImport,
-                            disabled: importing,
-                          }),
-                        ],
-                      }),
-                      jsx("button", {
-                        type: "button",
-                        className:
-                          "rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900",
-                        onClick: exportBankLines,
-                        children: "Export bank lines",
-                      }),
-                    ],
+                  jsx(MetricCard, {
+                    label: "Failed Events",
+                    value: String(failedEvents),
+                    detail: "Require attention or reprocess.",
+                    tone: "text-rose-600",
+                  }),
+                  jsx(MetricCard, {
+                    label: "Processed",
+                    value: String(processedEvents),
+                    detail: "Successfully settled.",
+                    tone: "text-emerald-600",
+                  }),
+                ],
+              })
+            : jsx("div", {
+                className: "mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4",
+                children: [
+                  jsx(MetricCard, {
+                    label: "Unmatched Lines",
+                    value: String(unmatchedCount),
+                    detail: money(
+                      bankLines
+                        .filter((line) => String(line.status || "").toUpperCase() === "UNMATCHED")
+                        .reduce((sum, line) => sum + Number(line.amount ?? 0), 0),
+                    ),
+                    tone: "text-amber-600",
+                  }),
+                  jsx(MetricCard, {
+                    label: "Matched",
+                    value: String(matchedCount),
+                    detail: "Pending clearance.",
+                    tone: "text-sky-600",
+                  }),
+                  jsx(MetricCard, {
+                    label: "Cleared",
+                    value: String(clearedCount),
+                    detail: "Reconciled bank lines.",
+                    tone: "text-emerald-600",
+                  }),
+                  jsx(MetricCard, {
+                    label: "Total Lines",
+                    value: String(bankLines.length),
+                    detail: `${ignoredCount} ignored during review.`,
                   }),
                 ],
               }),
-              jsx("div", {
-                className: "mt-5 grid gap-3 lg:grid-cols-[1fr,1fr,auto]",
-                children: [
-                  jsxs("select", {
-                    className: inputClass,
-                    value: bankStatus,
-                    onChange: (event) => setBankStatus(event.target.value),
-                    children: [
-                      jsx("option", { value: "", children: "All statuses" }),
-                      jsx("option", { value: "UNMATCHED", children: "Unmatched" }),
-                      jsx("option", { value: "MATCHED", children: "Matched" }),
-                      jsx("option", { value: "CLEARED", children: "Cleared" }),
-                      jsx("option", { value: "IGNORED", children: "Ignored" }),
-                    ],
-                  }),
-                  jsx("input", {
-                    className: inputClass,
-                    placeholder: "Search narration, reference, source, or matched IDs",
-                    value: bankSearch,
-                    onChange: (event) => setBankSearch(event.target.value),
-                  }),
-                  jsx("div", {
-                    className: `${insetClass} flex items-center justify-center text-xs leading-5 text-slate-500`,
-                    children: "CSV requires statement_date and amount. Optional fields: value_date, reference, narration, source.",
-                  }),
-                ],
-              }),
-              jsx("div", {
-                className: "mt-5 overflow-x-auto rounded-[24px] border border-slate-200",
-                children: jsxs("table", {
-                  className: "min-w-[1200px] w-full text-left text-sm",
-                  children: [
-                    jsx("thead", {
-                      className: "bg-slate-50 text-[11px] uppercase tracking-[0.2em] text-slate-500",
-                      children: jsxs("tr", {
-                        children: [
-                          jsx("th", { className: "px-4 py-3 font-semibold", children: "Statement Date" }),
-                          jsx("th", { className: "px-4 py-3 font-semibold", children: "Amount" }),
-                          jsx("th", { className: "px-4 py-3 font-semibold", children: "Reference" }),
-                          jsx("th", { className: "px-4 py-3 font-semibold", children: "Narration" }),
-                          jsx("th", { className: "px-4 py-3 font-semibold", children: "Status" }),
-                          jsx("th", { className: "px-4 py-3 font-semibold", children: "Matched" }),
-                          jsx("th", { className: "px-4 py-3 font-semibold", children: "Actions" }),
-                        ],
-                      }),
-                    }),
-                    jsx("tbody", {
-                      className: "divide-y divide-slate-200",
-                      children:
-                        filteredBankLines.length === 0
-                          ? jsx("tr", {
-                              children: jsx("td", {
-                                className: "px-4 py-8 text-sm text-slate-500",
-                                colSpan: 7,
-                                children: loading ? "Loading bank lines..." : "No bank lines match the current filters.",
-                              }),
-                            })
-                          : filteredBankLines.map((line) =>
-                              jsxs(
-                                "tr",
-                                {
-                                  className: "align-top hover:bg-slate-50/80",
-                                  children: [
-                                    jsx("td", {
-                                      className: "px-4 py-4 text-slate-600",
-                                      children: formatDateTime(line.statement_date),
-                                    }),
-                                    jsx("td", {
-                                      className: "px-4 py-4 font-semibold text-slate-900",
-                                      children: money(line.amount),
-                                    }),
-                                    jsx("td", {
-                                      className: "px-4 py-4",
-                                      children: jsxs("div", {
-                                        children: [
-                                          jsx("p", { className: "font-medium text-slate-900", children: line.reference || "--" }),
-                                          jsx("p", {
-                                            className: "mt-1 text-xs text-slate-500",
-                                            children: `Value date: ${line.value_date || "--"} • Source: ${line.source || "--"}`,
-                                          }),
-                                        ],
-                                      }),
-                                    }),
-                                    jsx("td", {
-                                      className: "px-4 py-4 text-slate-600",
-                                      children: line.narration || "--",
-                                    }),
-                                    jsx("td", {
-                                      className: "px-4 py-4",
-                                      children: jsx("span", {
-                                        className: `inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${toneClass(line.status)}`,
-                                        children: line.status || "--",
-                                      }),
-                                    }),
-                                    jsx("td", {
-                                      className: "px-4 py-4",
-                                      children: jsxs("div", {
-                                        children: [
-                                          jsx("p", {
-                                            className: "text-sm font-medium text-slate-900",
-                                            children: line.matched_payment_reference || "--",
-                                          }),
-                                          jsx("p", {
-                                            className: "mt-1 text-xs text-slate-500",
-                                            children: line.matched_gateway_external_id || "No gateway match",
-                                          }),
-                                        ],
-                                      }),
-                                    }),
-                                    jsx("td", {
-                                      className: "px-4 py-4",
-                                      children: jsxs("div", {
-                                        className: "flex flex-wrap gap-2",
-                                        children: [
-                                          ["auto-match", "clear", "ignore", "unmatch"].map((action) =>
-                                            jsx(
-                                              "button",
-                                              {
-                                                type: "button",
-                                                className:
-                                                  "rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50",
-                                                onClick: () => runLineAction(line.id, action),
-                                                disabled: Boolean(lineAction),
-                                                children: action,
-                                              },
-                                              action,
-                                            ),
-                                          ),
-                                        ],
-                                      }),
-                                    }),
-                                  ],
-                                },
-                                line.id,
-                              ),
-                            ),
-                    }),
-                  ],
-                }),
-              }),
-            ],
-          }),
-          jsxs("div", {
-            className: "mt-6 grid gap-6 xl:grid-cols-2",
-            children: [
-              jsxs("section", {
-                className: surfaceClass,
+          pane === "events"
+            ? jsxs("section", {
+                className: `${surfaceClass} mt-6`,
                 children: [
                   jsxs("div", {
                     className: "flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between",
                     children: [
                       jsxs("div", {
                         children: [
-                          jsx("p", {
-                            className: "text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400",
-                            children: "Gateway Transactions",
-                          }),
-                          jsx("h2", {
-                            className: "mt-2 text-xl font-semibold text-slate-950",
-                            children: "Settlement monitor",
-                          }),
+                          jsx("h2", { className: "text-xl font-semibold text-slate-950", children: "Payment Gateway Events" }),
                           jsx("p", {
                             className: "mt-1 text-sm text-slate-500",
-                            children: "Track pending or successful external payments and mark them reconciled when the bank or ledger match is confirmed.",
+                            children: "Monitor and recover failed webhook or callback events with a compact payload viewer.",
                           }),
                         ],
                       }),
-                      jsx("button", {
-                        type: "button",
-                        className:
-                          "rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900",
-                        onClick: exportTransactions,
-                        children: "Export transactions",
-                      }),
-                    ],
-                  }),
-                  jsx("div", {
-                    className: "mt-5 overflow-x-auto rounded-[24px] border border-slate-200",
-                    children: jsxs("table", {
-                      className: "min-w-[900px] w-full text-left text-sm",
-                      children: [
-                        jsx("thead", {
-                          className: "bg-slate-50 text-[11px] uppercase tracking-[0.2em] text-slate-500",
-                          children: jsxs("tr", {
-                            children: [
-                              jsx("th", { className: "px-4 py-3 font-semibold", children: "Provider" }),
-                              jsx("th", { className: "px-4 py-3 font-semibold", children: "External ID" }),
-                              jsx("th", { className: "px-4 py-3 font-semibold", children: "Amount" }),
-                              jsx("th", { className: "px-4 py-3 font-semibold", children: "Status" }),
-                              jsx("th", { className: "px-4 py-3 font-semibold", children: "Reconciled" }),
-                              jsx("th", { className: "px-4 py-3 font-semibold", children: "Action" }),
-                            ],
-                          }),
-                        }),
-                        jsx("tbody", {
-                          className: "divide-y divide-slate-200",
-                          children:
-                            transactions.length === 0
-                              ? jsx("tr", {
-                                  children: jsx("td", {
-                                    className: "px-4 py-8 text-sm text-slate-500",
-                                    colSpan: 6,
-                                    children: loading ? "Loading transactions..." : "No gateway transactions found.",
-                                  }),
-                                })
-                              : transactions.map((row) =>
-                                  jsxs(
-                                    "tr",
-                                    {
-                                      className: "hover:bg-slate-50/80",
-                                      children: [
-                                        jsx("td", { className: "px-4 py-4 text-slate-700", children: row.provider || "--" }),
-                                        jsx("td", {
-                                          className: "px-4 py-4 font-mono text-xs text-slate-600",
-                                          children: row.external_id || "--",
-                                        }),
-                                        jsx("td", {
-                                          className: "px-4 py-4 font-semibold text-slate-900",
-                                          children: money(row.amount),
-                                        }),
-                                        jsx("td", {
-                                          className: "px-4 py-4",
-                                          children: jsx("span", {
-                                            className: `inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${toneClass(row.status)}`,
-                                            children: row.status || "--",
-                                          }),
-                                        }),
-                                        jsx("td", {
-                                          className: "px-4 py-4 text-slate-600",
-                                          children: row.is_reconciled ? "Yes" : "No",
-                                        }),
-                                        jsx("td", {
-                                          className: "px-4 py-4",
-                                          children: jsx("button", {
-                                            type: "button",
-                                            className:
-                                              "rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50",
-                                            onClick: () => markReconciled(row.id),
-                                            disabled: Boolean(txAction) || row.is_reconciled,
-                                            children: row.is_reconciled ? "Reconciled" : "Mark reconciled",
-                                          }),
-                                        }),
-                                      ],
-                                    },
-                                    row.id,
-                                  ),
-                                ),
-                        }),
-                      ],
-                    }),
-                  }),
-                ],
-              }),
-              jsxs("section", {
-                className: surfaceClass,
-                children: [
-                  jsxs("div", {
-                    className: "flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between",
-                    children: [
                       jsxs("div", {
+                        className: "flex flex-wrap gap-2",
                         children: [
-                          jsx("p", {
-                            className: "text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400",
-                            children: "Gateway Events",
+                          jsx("button", {
+                            type: "button",
+                            className:
+                              "rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900",
+                            onClick: loadWorkspace,
+                            children: "Refresh",
                           }),
-                          jsx("h2", {
-                            className: "mt-2 text-xl font-semibold text-slate-950",
-                            children: "Webhook recovery desk",
-                          }),
-                          jsx("p", {
-                            className: "mt-1 text-sm text-slate-500",
-                            children: "Inspect raw event payloads, see processing errors, and re-run supported failures directly from this table.",
+                          jsx("button", {
+                            type: "button",
+                            className:
+                              "rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900",
+                            onClick: exportEvents,
+                            children: "Export events",
                           }),
                         ],
                       }),
-                      jsx("button", {
-                        type: "button",
-                        className:
-                          "rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900",
-                        onClick: exportEvents,
-                        children: "Export events",
+                    ],
+                  }),
+                  jsx("div", {
+                    className: "mt-5 grid gap-3 lg:grid-cols-2",
+                    children: [
+                      jsxs("select", {
+                        className: inputClass,
+                        value: eventProvider,
+                        onChange: (event) => setEventProvider(event.target.value),
+                        children: [
+                          jsx("option", { value: "", children: "All providers" }),
+                          providers.map((provider) => jsx("option", { value: provider, children: provider }, provider)),
+                        ],
+                      }),
+                      jsxs("select", {
+                        className: inputClass,
+                        value: eventState,
+                        onChange: (event) => setEventState(event.target.value),
+                        children: [
+                          jsx("option", { value: "", children: "All status" }),
+                          jsx("option", { value: "pending", children: "Pending" }),
+                          jsx("option", { value: "processed", children: "Processed" }),
+                          jsx("option", { value: "error", children: "Failed" }),
+                        ],
                       }),
                     ],
                   }),
                   jsx("div", {
                     className: "mt-5 overflow-x-auto rounded-[24px] border border-slate-200",
                     children: jsxs("table", {
-                      className: "min-w-[900px] w-full text-left text-sm",
+                      className: "min-w-[980px] w-full text-left text-sm",
                       children: [
                         jsx("thead", {
                           className: "bg-slate-50 text-[11px] uppercase tracking-[0.2em] text-slate-500",
                           children: jsxs("tr", {
                             children: [
+                              jsx("th", { className: "px-4 py-3 font-semibold", children: "Event ID" }),
                               jsx("th", { className: "px-4 py-3 font-semibold", children: "Provider" }),
-                              jsx("th", { className: "px-4 py-3 font-semibold", children: "Event" }),
+                              jsx("th", { className: "px-4 py-3 font-semibold", children: "Type" }),
                               jsx("th", { className: "px-4 py-3 font-semibold", children: "Received" }),
-                              jsx("th", { className: "px-4 py-3 font-semibold", children: "Processed" }),
-                              jsx("th", { className: "px-4 py-3 font-semibold", children: "Error" }),
+                              jsx("th", { className: "px-4 py-3 font-semibold", children: "Status" }),
                               jsx("th", { className: "px-4 py-3 font-semibold", children: "Actions" }),
                             ],
                           }),
@@ -719,7 +546,7 @@ function FinanceReconciliationPage() {
                         jsx("tbody", {
                           className: "divide-y divide-slate-200",
                           children:
-                            events.length === 0
+                            filteredEvents.length === 0
                               ? jsx("tr", {
                                   children: jsx("td", {
                                     className: "px-4 py-8 text-sm text-slate-500",
@@ -727,26 +554,24 @@ function FinanceReconciliationPage() {
                                     children: loading ? "Loading events..." : "No webhook events found.",
                                   }),
                                 })
-                              : events.map((row) =>
-                                  jsxs(
+                              : filteredEvents.map((row) => {
+                                  const eventTone = row.error ? "error" : row.processed ? "processed" : "pending";
+                                  const eventLabel = row.error ? "Failed" : row.processed ? "Processed" : "Pending";
+                                  return jsxs(
                                     React.Fragment,
                                     {
                                       children: [
                                         jsxs("tr", {
-                                          className: "align-top hover:bg-slate-50/80",
+                                          className: `align-top ${row.error ? "bg-rose-50/40" : ""}`,
                                           children: [
+                                            jsx("td", {
+                                              className: "px-4 py-4 font-mono text-xs text-slate-700",
+                                              children: row.event_id || row.id,
+                                            }),
                                             jsx("td", { className: "px-4 py-4 text-slate-700", children: row.provider || "--" }),
                                             jsx("td", {
-                                              className: "px-4 py-4",
-                                              children: jsxs("div", {
-                                                children: [
-                                                  jsx("p", { className: "font-medium text-slate-900", children: row.event_type || "--" }),
-                                                  jsx("p", {
-                                                    className: "mt-1 font-mono text-xs text-slate-500",
-                                                    children: row.event_id || "--",
-                                                  }),
-                                                ],
-                                              }),
+                                              className: "px-4 py-4 text-slate-700",
+                                              children: row.event_type || "--",
                                             }),
                                             jsx("td", {
                                               className: "px-4 py-4 text-slate-600",
@@ -754,16 +579,21 @@ function FinanceReconciliationPage() {
                                             }),
                                             jsx("td", {
                                               className: "px-4 py-4",
-                                              children: jsx("span", {
-                                                className: `inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${
-                                                  row.processed ? toneClass("SUCCEEDED") : toneClass("FAILED")
-                                                }`,
-                                                children: row.processed ? "Processed" : "Pending",
+                                              children: jsxs("div", {
+                                                className: "space-y-1",
+                                                children: [
+                                                  jsx("span", {
+                                                    className: `inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${toneClass(eventTone)}`,
+                                                    children: eventLabel,
+                                                  }),
+                                                  row.error
+                                                    ? jsx("p", {
+                                                        className: "max-w-[260px] text-xs text-rose-600",
+                                                        children: row.error,
+                                                      })
+                                                    : null,
+                                                ],
                                               }),
-                                            }),
-                                            jsx("td", {
-                                              className: "px-4 py-4 text-slate-600",
-                                              children: row.error || "--",
                                             }),
                                             jsx("td", {
                                               className: "px-4 py-4",
@@ -781,7 +611,7 @@ function FinanceReconciliationPage() {
                                                   jsx("button", {
                                                     type: "button",
                                                     className:
-                                                      "rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50",
+                                                      "rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50",
                                                     onClick: () => reprocessEvent(row.id),
                                                     disabled: Boolean(eventAction),
                                                     children: "Reprocess",
@@ -807,16 +637,330 @@ function FinanceReconciliationPage() {
                                       ],
                                     },
                                     row.id,
-                                  ),
-                                ),
+                                  );
+                                }),
                         }),
                       ],
                     }),
                   }),
                 ],
+              })
+            : jsxs(React.Fragment, {
+                children: [
+                  jsxs("section", {
+                    className: `${surfaceClass} mt-6`,
+                    children: [
+                      jsxs("div", {
+                        className: "flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between",
+                        children: [
+                          jsxs("div", {
+                            children: [
+                              jsx("h2", { className: "text-xl font-semibold text-slate-950", children: "Bank Statement Lines" }),
+                              jsx("p", {
+                                className: "mt-1 text-sm text-slate-500",
+                                children: "Review and reconcile bank transactions with a cleaner match-first layout.",
+                              }),
+                            ],
+                          }),
+                          jsxs("div", {
+                            className: "flex flex-wrap gap-2",
+                            children: [
+                              jsx("label", {
+                                className:
+                                  "cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900",
+                                children: [
+                                  importing ? "Importing..." : "Import CSV",
+                                  jsx("input", {
+                                    type: "file",
+                                    accept: ".csv",
+                                    className: "hidden",
+                                    onChange: handleImport,
+                                    disabled: importing,
+                                  }),
+                                ],
+                              }),
+                              jsx("button", {
+                                type: "button",
+                                className:
+                                  "rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60",
+                                onClick: bulkAutoMatch,
+                                disabled: bulkMatching || filteredBankLines.length === 0,
+                                children: bulkMatching ? "Auto-matching..." : "Auto-Match All",
+                              }),
+                            ],
+                          }),
+                        ],
+                      }),
+                      jsx("div", {
+                        className: "mt-5 grid gap-3 lg:grid-cols-[1fr,1fr,auto]",
+                        children: [
+                          jsxs("select", {
+                            className: inputClass,
+                            value: bankStatus,
+                            onChange: (event) => setBankStatus(event.target.value),
+                            children: [
+                              jsx("option", { value: "", children: "All Statuses" }),
+                              jsx("option", { value: "UNMATCHED", children: "Unmatched" }),
+                              jsx("option", { value: "MATCHED", children: "Matched" }),
+                              jsx("option", { value: "CLEARED", children: "Cleared" }),
+                              jsx("option", { value: "IGNORED", children: "Ignored" }),
+                            ],
+                          }),
+                          jsx("input", {
+                            className: inputClass,
+                            placeholder: "Search narration, reference, source, or matched IDs",
+                            value: bankSearch,
+                            onChange: (event) => setBankSearch(event.target.value),
+                          }),
+                          jsx("div", {
+                            className: `${insetClass} flex items-center justify-center text-xs leading-5 text-slate-500`,
+                            children: "CSV requires statement_date and amount. Optional fields: value_date, reference, narration, source.",
+                          }),
+                        ],
+                      }),
+                      jsx("div", {
+                        className: "mt-5 overflow-x-auto rounded-[24px] border border-slate-200",
+                        children: jsxs("table", {
+                          className: "min-w-[1180px] w-full text-left text-sm",
+                          children: [
+                            jsx("thead", {
+                              className: "bg-slate-50 text-[11px] uppercase tracking-[0.2em] text-slate-500",
+                              children: jsxs("tr", {
+                                children: [
+                                  jsx("th", { className: "px-4 py-3 font-semibold", children: "Date" }),
+                                  jsx("th", { className: "px-4 py-3 font-semibold", children: "Amount" }),
+                                  jsx("th", { className: "px-4 py-3 font-semibold", children: "Reference" }),
+                                  jsx("th", { className: "px-4 py-3 font-semibold", children: "Narration" }),
+                                  jsx("th", { className: "px-4 py-3 font-semibold", children: "Source" }),
+                                  jsx("th", { className: "px-4 py-3 font-semibold", children: "Status" }),
+                                  jsx("th", { className: "px-4 py-3 font-semibold", children: "Match" }),
+                                  jsx("th", { className: "px-4 py-3 font-semibold", children: "Actions" }),
+                                ],
+                              }),
+                            }),
+                            jsx("tbody", {
+                              className: "divide-y divide-slate-200",
+                              children:
+                                filteredBankLines.length === 0
+                                  ? jsx("tr", {
+                                      children: jsx("td", {
+                                        className: "px-4 py-8 text-sm text-slate-500",
+                                        colSpan: 8,
+                                        children: loading ? "Loading bank lines..." : "No bank lines match the current filters.",
+                                      }),
+                                    })
+                                  : filteredBankLines.map((line) =>
+                                      jsxs(
+                                        "tr",
+                                        {
+                                          className: "align-top hover:bg-slate-50/80",
+                                          children: [
+                                            jsx("td", {
+                                              className: "px-4 py-4 text-slate-700",
+                                              children: jsxs("div", {
+                                                children: [
+                                                  jsx("p", { className: "font-semibold text-slate-900", children: formatDateTime(line.statement_date) }),
+                                                  jsx("p", {
+                                                    className: "mt-1 text-xs text-slate-500",
+                                                    children: `Value: ${formatDateTime(line.value_date)}`,
+                                                  }),
+                                                ],
+                                              }),
+                                            }),
+                                            jsx("td", {
+                                              className: "px-4 py-4 font-semibold text-slate-900",
+                                              children: money(line.amount),
+                                            }),
+                                            jsx("td", {
+                                              className: "px-4 py-4 text-slate-700",
+                                              children: line.reference || "--",
+                                            }),
+                                            jsx("td", {
+                                              className: "max-w-[280px] px-4 py-4 text-slate-600",
+                                              children: line.narration || "--",
+                                            }),
+                                            jsx("td", {
+                                              className: "px-4 py-4",
+                                              children: jsx("span", {
+                                                className: "inline-flex rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700",
+                                                children: line.source || "--",
+                                              }),
+                                            }),
+                                            jsx("td", {
+                                              className: "px-4 py-4",
+                                              children: jsx("span", {
+                                                className: `inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${toneClass(line.status)}`,
+                                                children: line.status || "--",
+                                              }),
+                                            }),
+                                            jsx("td", {
+                                              className: "px-4 py-4",
+                                              children: jsxs("div", {
+                                                children: [
+                                                  jsx("p", {
+                                                    className: "text-sm font-medium text-slate-900",
+                                                    children: line.matched_payment_reference || "--",
+                                                  }),
+                                                  jsx("p", {
+                                                    className: "mt-1 text-xs text-slate-500",
+                                                    children: line.matched_gateway_external_id || "No gateway match",
+                                                  }),
+                                                ],
+                                              }),
+                                            }),
+                                            jsx("td", {
+                                              className: "px-4 py-4",
+                                              children: jsxs("div", {
+                                                className: "flex flex-wrap gap-2",
+                                                children: [
+                                                  jsx("button", {
+                                                    type: "button",
+                                                    className:
+                                                      "rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50",
+                                                    onClick: () => runLineAction(line.id, "auto-match"),
+                                                    disabled: Boolean(lineAction),
+                                                    children: "Match",
+                                                  }),
+                                                  jsx("button", {
+                                                    type: "button",
+                                                    className:
+                                                      "rounded-full bg-slate-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50",
+                                                    onClick: () => runLineAction(line.id, "clear"),
+                                                    disabled: Boolean(lineAction),
+                                                    children: "Clear",
+                                                  }),
+                                                  jsx("button", {
+                                                    type: "button",
+                                                    className:
+                                                      "rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50",
+                                                    onClick: () => runLineAction(line.id, "ignore"),
+                                                    disabled: Boolean(lineAction),
+                                                    children: "Ignore",
+                                                  }),
+                                                  jsx("button", {
+                                                    type: "button",
+                                                    className:
+                                                      "rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50",
+                                                    onClick: () => runLineAction(line.id, "unmatch"),
+                                                    disabled: Boolean(lineAction),
+                                                    children: "Unmatch",
+                                                  }),
+                                                ],
+                                              }),
+                                            }),
+                                          ],
+                                        },
+                                        line.id,
+                                      ),
+                                    ),
+                            }),
+                          ],
+                        }),
+                      }),
+                    ],
+                  }),
+                  jsxs("section", {
+                    className: `${surfaceClass} mt-6`,
+                    children: [
+                      jsxs("div", {
+                        className: "flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between",
+                        children: [
+                          jsxs("div", {
+                            children: [
+                              jsx("h2", { className: "text-xl font-semibold text-slate-950", children: "Gateway Settlement Watch" }),
+                              jsx("p", {
+                                className: "mt-1 text-sm text-slate-500",
+                                children: "Keep unreconciled external transactions visible without crowding the main bank-lines table.",
+                              }),
+                            ],
+                          }),
+                          jsxs("div", {
+                            className: "flex flex-wrap gap-2",
+                            children: [
+                              jsx("button", {
+                                type: "button",
+                                className:
+                                  "rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900",
+                                onClick: exportBankLines,
+                                children: "Export bank lines",
+                              }),
+                              jsx("button", {
+                                type: "button",
+                                className:
+                                  "rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900",
+                                onClick: exportTransactions,
+                                children: "Export transactions",
+                              }),
+                            ],
+                          }),
+                        ],
+                      }),
+                      jsx("div", {
+                        className: "mt-4 space-y-3",
+                        children:
+                          unreconciledTransactions.length === 0
+                            ? jsx("div", {
+                                className: `${insetClass} text-sm text-slate-500`,
+                                children: "All visible gateway transactions are already reconciled.",
+                              })
+                            : unreconciledTransactions.map((row) =>
+                                jsxs(
+                                  "div",
+                                  {
+                                    className: "rounded-[24px] border border-slate-200 bg-white p-4",
+                                    children: [
+                                      jsxs("div", {
+                                        className: "flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between",
+                                        children: [
+                                          jsxs("div", {
+                                            children: [
+                                              jsx("p", {
+                                                className: "text-base font-semibold text-slate-950",
+                                                children: row.external_id || "--",
+                                              }),
+                                              jsx("p", {
+                                                className: "mt-1 text-sm text-slate-500",
+                                                children: `${row.provider || "--"} • ${formatDateTime(row.created_at)}`,
+                                              }),
+                                              jsx("p", {
+                                                className: "mt-1 text-sm text-slate-600",
+                                                children: row.student_name || row.invoice_number || "Gateway transaction",
+                                              }),
+                                            ],
+                                          }),
+                                          jsxs("div", {
+                                            className: "flex flex-wrap items-center gap-3",
+                                            children: [
+                                              jsx("span", {
+                                                className: "text-lg font-semibold text-slate-950",
+                                                children: money(row.amount),
+                                              }),
+                                              jsx("span", {
+                                                className: `inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${toneClass(row.status)}`,
+                                                children: row.status || "--",
+                                              }),
+                                              jsx("button", {
+                                                type: "button",
+                                                className:
+                                                  "rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50",
+                                                onClick: () => markReconciled(row.id),
+                                                disabled: Boolean(txAction),
+                                                children: "Mark reconciled",
+                                              }),
+                                            ],
+                                          }),
+                                        ],
+                                      }),
+                                    ],
+                                  },
+                                  row.id,
+                                ),
+                              ),
+                      }),
+                    ],
+                  }),
+                ],
               }),
-            ],
-          }),
         ],
       }),
     ],

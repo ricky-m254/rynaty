@@ -1,1 +1,454 @@
-import{u as H,r as a,b as h,j as e}from"./index-D7ltaYVC.js";import{P as M}from"./PrintButton-BqR3sctp.js";import{P as U}from"./PageHero-Ct90nOAG.js";const o=r=>r.toLocaleString("en-KE",{minimumFractionDigits:2}),V=(r,m)=>{const n=r?.response?.data;if(typeof n=="string"&&n.trim())return n;if(n&&typeof n=="object"){const d=Object.values(n).flat();if(d.length)return d.join(" ")}return m},L=r=>r==="OVERDUE"?"bg-red-500/20 text-red-300":r==="PARTIALLY_PAID"?"bg-amber-500/20 text-amber-300":"bg-orange-500/20 text-orange-300";function Q(){const r=H(),[m,n]=a.useState([]),[d,D]=a.useState(""),[c,I]=a.useState("student"),[N,g]=a.useState([]),[y,v]=a.useState([]),[u,w]=a.useState(!1),[_,S]=a.useState(0),[i,P]=a.useState("arrears"),[C,$]=a.useState([]),[F,T]=a.useState(!1),[K,p]=a.useState(!1),[l,x]=a.useState({student:"",from_term:"",to_term:"",amount:"",notes:""}),[k,A]=a.useState(!1),[E,j]=a.useState(""),[G,R]=a.useState([]);a.useEffect(()=>{h.get("/finance/terms/").then(t=>n(t.data.results??t.data)),h.get("/finance/ref/students/").then(t=>R((t.data.results??t.data).map(s=>({id:s.id,name:`${s.first_name} ${s.last_name}`.trim(),admission_number:s.admission_number}))))},[]);const O=async()=>{w(!0);const t={group_by:c};d&&(t.term=d);const s=await h.get("/finance/reports/arrears/",{params:t});c==="class"?(v(s.data.data||[]),g([]),S((s.data.data||[]).reduce((b,f)=>b+f.total_balance,0))):(g(s.data.results||[]),v([]),S((s.data.results||[]).reduce((b,f)=>b+f.balance_due,0))),w(!1)},B=async()=>{T(!0);const t=await h.get("/finance/carry-forwards/");$(t.data.results??t.data),T(!1)};a.useEffect(()=>{i==="arrears"?O():B()},[i,d,c]);const z=async()=>{A(!0),j("");try{await h.post("/finance/carry-forwards/",{student:parseInt(l.student),from_term:parseInt(l.from_term),to_term:parseInt(l.to_term),amount:l.amount,notes:l.notes}),p(!1),B()}catch(t){j(V(t,"Failed to save."))}finally{A(!1)}};return e.jsxs("section",{className:"col-span-12 grid grid-cols-12 gap-6",children:[e.jsxs("header",{className:"col-span-12 rounded-2xl glass-panel p-6",children:[e.jsx("button",{onClick:()=>r("/modules/finance"),className:"mb-4 flex items-center gap-1 text-sm text-slate-400 hover:text-slate-200 transition",children:"← Back to Finance"}),e.jsxs("div",{className:"flex flex-wrap items-start justify-between gap-4",children:[e.jsx(U,{badge:"FINANCE",badgeColor:"emerald",title:"Fee Arrears",subtitle:"Students with outstanding fee balances",icon:"💰"}),e.jsxs("div",{children:[e.jsx("h1",{className:"text-2xl font-display font-bold text-white",children:"Arrears Management"}),e.jsx("p",{className:"mt-1 text-sm text-slate-400",children:"Track outstanding balances and carry forwards between terms"})]}),i==="carry-forward"&&e.jsx("button",{onClick:()=>{x({student:"",from_term:"",to_term:"",amount:"",notes:""}),j(""),p(!0)},className:"rounded-xl bg-emerald-500 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-600",children:"+ Add Carry Forward"}),e.jsx(M,{})]}),e.jsx("div",{className:"mt-4 flex gap-4 border-b border-white/[0.09]",children:["arrears","carry-forward"].map(t=>e.jsx("button",{onClick:()=>P(t),className:`pb-3 text-sm font-medium border-b-2 -mb-px transition ${i===t?"border-emerald-400 text-emerald-300":"border-transparent text-slate-500 hover:text-slate-300"}`,children:t==="arrears"?"Arrears List":"Carry Forwards"},t))})]}),i==="arrears"&&e.jsxs(e.Fragment,{children:[e.jsxs("div",{className:"col-span-12 flex flex-wrap gap-4 items-center",children:[e.jsxs("div",{className:"flex items-center gap-2 text-sm text-slate-400",children:[e.jsx("span",{children:"Term:"}),e.jsxs("select",{className:"rounded-xl border border-white/[0.09] bg-slate-950 px-3 py-1.5 text-sm text-white outline-none focus:border-emerald-400",value:d,onChange:t=>D(t.target.value),children:[e.jsx("option",{value:"",children:"All Terms"}),m.map(t=>e.jsx("option",{value:t.id,children:t.name},t.id))]})]}),e.jsxs("div",{className:"flex items-center gap-2 text-sm text-slate-400",children:[e.jsx("span",{children:"Group by:"}),e.jsxs("select",{className:"rounded-xl border border-white/[0.09] bg-slate-950 px-3 py-1.5 text-sm text-white outline-none focus:border-emerald-400",value:c,onChange:t=>I(t.target.value),children:[e.jsx("option",{value:"student",children:"Student"}),e.jsx("option",{value:"class",children:"Class"})]})]}),_>0&&e.jsxs("div",{className:"ml-auto rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-2 text-sm text-red-300",children:["Total Outstanding: ",e.jsxs("strong",{children:["KES ",o(_)]})]})]}),u&&e.jsx("p",{className:"col-span-12 text-slate-400 text-sm",children:"Loading…"}),!u&&c==="student"&&e.jsx("section",{className:"col-span-12 rounded-2xl glass-panel overflow-x-auto",children:e.jsxs("table",{className:"w-full text-sm text-slate-200",children:[e.jsx("thead",{children:e.jsxs("tr",{className:"border-b border-white/[0.09] text-xs uppercase tracking-wider text-slate-500",children:[e.jsx("th",{className:"px-5 py-4 text-left",children:"Invoice"}),e.jsx("th",{className:"px-5 py-4 text-left",children:"Student"}),e.jsx("th",{className:"px-5 py-4 text-left",children:"Adm. No."}),e.jsx("th",{className:"px-5 py-4 text-left",children:"Class"}),e.jsx("th",{className:"px-5 py-4 text-left",children:"Term"}),e.jsx("th",{className:"px-5 py-4 text-right",children:"Billed"}),e.jsx("th",{className:"px-5 py-4 text-right",children:"Balance Due"}),e.jsx("th",{className:"px-5 py-4 text-center",children:"Status"}),e.jsx("th",{className:"px-5 py-4 text-left",children:"Due Date"})]})}),e.jsxs("tbody",{className:"divide-y divide-slate-800/60",children:[N.length===0&&e.jsx("tr",{children:e.jsx("td",{colSpan:9,className:"py-10 text-center text-slate-500",children:"No outstanding arrears found."})}),N.map(t=>e.jsxs("tr",{className:"hover:bg-white/[0.02] transition",children:[e.jsx("td",{className:"px-5 py-3 font-mono text-xs text-slate-400",children:t.invoice_number}),e.jsx("td",{className:"px-5 py-3 font-medium text-white",children:e.jsx("button",{onClick:()=>r(`/modules/finance/ledger?student=${t.student_id}`),className:"hover:text-emerald-400 transition text-left",children:t.student_name})}),e.jsx("td",{className:"px-5 py-3 text-slate-500 text-xs",children:t.admission_number}),e.jsx("td",{className:"px-5 py-3 text-slate-400",children:t.class_name}),e.jsx("td",{className:"px-5 py-3 text-slate-400",children:t.term}),e.jsx("td",{className:"px-5 py-3 text-right font-mono text-slate-300",children:o(t.total_amount)}),e.jsx("td",{className:"px-5 py-3 text-right font-mono font-semibold text-red-400",children:o(t.balance_due)}),e.jsx("td",{className:"px-5 py-3 text-center",children:e.jsx("span",{className:`rounded-full px-2 py-0.5 text-xs font-medium ${L(t.status)}`,children:t.status})}),e.jsx("td",{className:"px-5 py-3 text-slate-500 text-xs",children:t.due_date})]},t.invoice_id))]})]})}),!u&&c==="class"&&e.jsxs("div",{className:"col-span-12 space-y-4",children:[y.length===0&&e.jsx("p",{className:"text-slate-500 text-center py-10",children:"No outstanding arrears found."}),y.map(t=>e.jsxs("section",{className:"rounded-2xl glass-panel overflow-hidden",children:[e.jsxs("div",{className:"flex items-center justify-between px-5 py-3 border-b border-white/[0.09]",children:[e.jsxs("div",{children:[e.jsx("span",{className:"font-semibold text-white",children:t.class_name}),e.jsxs("span",{className:"ml-3 text-slate-500 text-sm",children:[t.student_count," student",t.student_count!==1?"s":""]})]}),e.jsxs("span",{className:"font-semibold text-red-400",children:["KES ",o(t.total_balance)]})]}),e.jsxs("table",{className:"w-full text-sm text-slate-200",children:[e.jsx("thead",{children:e.jsxs("tr",{className:"text-xs uppercase tracking-wider text-slate-600",children:[e.jsx("th",{className:"px-5 py-2 text-left",children:"Student"}),e.jsx("th",{className:"px-5 py-2 text-left",children:"Term"}),e.jsx("th",{className:"px-5 py-2 text-right",children:"Balance Due"}),e.jsx("th",{className:"px-5 py-2 text-center",children:"Status"})]})}),e.jsx("tbody",{className:"divide-y divide-slate-800/60",children:t.invoices.map(s=>e.jsxs("tr",{className:"hover:bg-white/[0.02] transition",children:[e.jsxs("td",{className:"px-5 py-2 text-slate-300",children:[s.student_name," ",e.jsxs("span",{className:"text-slate-600 text-xs",children:["(",s.admission_number,")"]})]}),e.jsx("td",{className:"px-5 py-2 text-slate-400",children:s.term}),e.jsx("td",{className:"px-5 py-2 text-right font-mono font-semibold text-red-400",children:o(s.balance_due)}),e.jsx("td",{className:"px-5 py-2 text-center",children:e.jsx("span",{className:`rounded-full px-2 py-0.5 text-xs font-medium ${L(s.status)}`,children:s.status})})]},s.invoice_id))})]})]},t.class_name))]})]}),i==="carry-forward"&&e.jsxs(e.Fragment,{children:[F&&e.jsx("p",{className:"col-span-12 text-slate-400 text-sm",children:"Loading…"}),!F&&e.jsx("section",{className:"col-span-12 rounded-2xl glass-panel overflow-x-auto",children:e.jsxs("table",{className:"w-full text-sm text-slate-200",children:[e.jsx("thead",{children:e.jsxs("tr",{className:"border-b border-white/[0.09] text-xs uppercase tracking-wider text-slate-500",children:[e.jsx("th",{className:"px-5 py-4 text-left",children:"Student"}),e.jsx("th",{className:"px-5 py-4 text-left",children:"Adm. No."}),e.jsx("th",{className:"px-5 py-4 text-left",children:"From Term"}),e.jsx("th",{className:"px-5 py-4 text-left",children:"To Term"}),e.jsx("th",{className:"px-5 py-4 text-right",children:"Amount (KES)"}),e.jsx("th",{className:"px-5 py-4 text-left",children:"Notes"}),e.jsx("th",{className:"px-5 py-4 text-left",children:"Created"})]})}),e.jsxs("tbody",{className:"divide-y divide-slate-800/60",children:[C.length===0&&e.jsx("tr",{children:e.jsx("td",{colSpan:7,className:"py-10 text-center text-slate-500",children:"No carry forwards recorded yet."})}),C.map(t=>e.jsxs("tr",{className:"hover:bg-white/[0.02] transition",children:[e.jsx("td",{className:"px-5 py-3 font-medium text-white",children:t.student_name}),e.jsx("td",{className:"px-5 py-3 text-slate-500 text-xs",children:t.student_admission_number}),e.jsx("td",{className:"px-5 py-3 text-slate-400",children:t.from_term_name}),e.jsx("td",{className:"px-5 py-3 text-slate-400",children:t.to_term_name}),e.jsx("td",{className:"px-5 py-3 text-right font-mono font-semibold text-red-400",children:o(parseFloat(t.amount))}),e.jsx("td",{className:"px-5 py-3 text-slate-500",children:t.notes||"—"}),e.jsx("td",{className:"px-5 py-3 text-slate-600 text-xs",children:new Date(t.created_at).toLocaleDateString()})]},t.id))]})]})})]}),K&&e.jsx("div",{className:"fixed inset-0 z-50 flex items-center justify-center bg-black/60",children:e.jsxs("div",{className:"w-full max-w-md rounded-2xl border border-white/[0.09] bg-[#0d1421] p-6 shadow-2xl",children:[e.jsx("h2",{className:"mb-4 text-lg font-semibold text-white",children:"Add Balance Carry Forward"}),E&&e.jsx("p",{className:"mb-3 text-sm text-red-400",children:E}),e.jsxs("div",{className:"space-y-3",children:[e.jsxs("div",{children:[e.jsx("label",{className:"mb-1 block text-xs text-slate-400",children:"Student"}),e.jsxs("select",{className:"w-full rounded-xl border border-white/[0.09] bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400",value:l.student,onChange:t=>x(s=>({...s,student:t.target.value})),children:[e.jsx("option",{value:"",children:"Select student…"}),G.map(t=>e.jsxs("option",{value:t.id,children:[t.name," (",t.admission_number,")"]},t.id))]})]}),e.jsxs("div",{className:"grid grid-cols-2 gap-3",children:[e.jsxs("div",{children:[e.jsx("label",{className:"mb-1 block text-xs text-slate-400",children:"From Term"}),e.jsxs("select",{className:"w-full rounded-xl border border-white/[0.09] bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400",value:l.from_term,onChange:t=>x(s=>({...s,from_term:t.target.value})),children:[e.jsx("option",{value:"",children:"Select…"}),m.map(t=>e.jsx("option",{value:t.id,children:t.name},t.id))]})]}),e.jsxs("div",{children:[e.jsx("label",{className:"mb-1 block text-xs text-slate-400",children:"To Term"}),e.jsxs("select",{className:"w-full rounded-xl border border-white/[0.09] bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400",value:l.to_term,onChange:t=>x(s=>({...s,to_term:t.target.value})),children:[e.jsx("option",{value:"",children:"Select…"}),m.map(t=>e.jsx("option",{value:t.id,children:t.name},t.id))]})]})]}),e.jsxs("div",{children:[e.jsx("label",{className:"mb-1 block text-xs text-slate-400",children:"Amount (KES)"}),e.jsx("input",{type:"number",min:"0",step:"0.01",className:"w-full rounded-xl border border-white/[0.09] bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400",value:l.amount,onChange:t=>x(s=>({...s,amount:t.target.value}))})]}),e.jsxs("div",{children:[e.jsx("label",{className:"mb-1 block text-xs text-slate-400",children:"Notes"}),e.jsx("input",{className:"w-full rounded-xl border border-white/[0.09] bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400",value:l.notes,onChange:t=>x(s=>({...s,notes:t.target.value}))})]})]}),e.jsxs("div",{className:"mt-5 flex justify-end gap-3",children:[e.jsx("button",{onClick:()=>p(!1),className:"rounded-xl border border-white/[0.09] px-4 py-2 text-sm text-slate-300 hover:bg-slate-800",children:"Cancel"}),e.jsx("button",{onClick:z,disabled:k,className:"rounded-xl bg-emerald-500 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-600 disabled:opacity-50",children:k?"Saving…":"Save"})]})]})})]})}export{Q as default};
+import { u as useNavigate, r as React, b as api, j as jsxRuntime } from "./index-D7ltaYVC.js";
+
+const { jsx, jsxs } = jsxRuntime;
+
+const shellClass =
+  "rounded-[32px] border border-slate-200/80 bg-[#f5f7fb] p-5 shadow-[0_28px_70px_rgba(15,23,42,0.08)] md:p-7 xl:p-8";
+const surfaceClass =
+  "rounded-[28px] border border-slate-200/80 bg-white p-5 shadow-[0_22px_50px_rgba(15,23,42,0.06)]";
+const inputClass =
+  "rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-900/5";
+
+function go(path) {
+  if (typeof window !== "undefined") {
+    window.location.assign(path);
+  }
+}
+
+function money(value) {
+  return `Ksh ${Number(value ?? 0).toLocaleString("en-KE", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+function daysOverdue(value) {
+  if (!value) return 0;
+  const due = new Date(value);
+  if (Number.isNaN(due.getTime())) return 0;
+  const today = new Date();
+  const diff = Math.floor((today.setHours(0, 0, 0, 0) - due.setHours(0, 0, 0, 0)) / 86400000);
+  return Math.max(0, diff);
+}
+
+function PortalSwitch({ active }) {
+  const links = [
+    { key: "student", label: "Student Portal", path: "/student-portal/fees" },
+    { key: "parent", label: "Parent Portal", path: "/modules/parent-portal/finance" },
+    { key: "bursar", label: "Bursar Portal", path: "/modules/finance/arrears" },
+  ];
+
+  return jsx("div", {
+    className: "inline-flex rounded-full border border-slate-200 bg-white p-1 shadow-[0_12px_30px_rgba(15,23,42,0.06)]",
+    children: links.map((link) =>
+      jsx(
+        "button",
+        {
+          type: "button",
+          onClick: () => go(link.path),
+          className: `rounded-full px-4 py-2 text-sm font-semibold transition ${
+            active === link.key
+              ? "bg-slate-900 text-white"
+              : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+          }`,
+          children: link.label,
+        },
+        link.key,
+      ),
+    ),
+  });
+}
+
+function FinanceTabs({ active }) {
+  const tabs = [
+    { key: "overview", label: "Overview", path: "/modules/finance" },
+    { key: "record", label: "Record Payment", path: "/modules/finance/payments/new" },
+    { key: "payments", label: "Payments", path: "/modules/finance/payments" },
+    { key: "reconciliation", label: "Reconciliation", path: "/modules/finance/reconciliation" },
+    { key: "events", label: "Gateway Events", path: "/modules/finance/reconciliation?pane=events" },
+    { key: "arrears", label: "Arrears", path: "/modules/finance/arrears" },
+  ];
+
+  return jsx("div", {
+    className: "rounded-full border border-slate-200 bg-[#e8ebf3] p-1",
+    children: tabs.map((tab) =>
+      jsx(
+        "button",
+        {
+          type: "button",
+          onClick: () => go(tab.path),
+          className: `rounded-full px-4 py-2 text-sm font-semibold transition ${
+            active === tab.key ? "bg-white text-slate-950 shadow-sm" : "text-slate-700 hover:text-slate-950"
+          }`,
+          children: tab.label,
+        },
+        tab.key,
+      ),
+    ),
+  });
+}
+
+function MetricCard({ label, value, detail, tone }) {
+  return jsxs("div", {
+    className: surfaceClass,
+    children: [
+      jsx("p", { className: "text-sm font-semibold text-slate-950", children: label }),
+      jsx("p", { className: `mt-8 text-[2rem] font-semibold tracking-tight ${tone}`, children: value }),
+      jsx("p", { className: "mt-2 text-sm text-slate-500", children: detail }),
+    ],
+  });
+}
+
+function groupStudentBalances(rows) {
+  const grouped = new Map();
+  rows.forEach((row) => {
+    const key = `${row.student_name}::${row.admission_number}`;
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        key,
+        student_name: row.student_name,
+        admission_number: row.admission_number,
+        class_name: row.class_name,
+        total_balance: 0,
+        max_overdue_days: 0,
+        invoices: [],
+      });
+    }
+    const entry = grouped.get(key);
+    entry.total_balance += Number(row.balance_due ?? 0);
+    entry.max_overdue_days = Math.max(entry.max_overdue_days, daysOverdue(row.due_date));
+    entry.invoices.push(row);
+  });
+
+  return Array.from(grouped.values()).sort((left, right) => right.total_balance - left.total_balance);
+}
+
+function FinanceArrearsPage() {
+  const navigate = useNavigate();
+  const [terms, setTerms] = React.useState([]);
+  const [term, setTerm] = React.useState("");
+  const [rows, setRows] = React.useState([]);
+  const [carryForwards, setCarryForwards] = React.useState([]);
+  const [showCarryForwards, setShowCarryForwards] = React.useState(false);
+  const [loading, setLoading] = React.useState(true);
+  const [carryLoading, setCarryLoading] = React.useState(false);
+  const [error, setError] = React.useState(null);
+
+  React.useEffect(() => {
+    let active = true;
+
+    (async () => {
+      try {
+        const [termsResponse, arrearsResponse] = await Promise.all([
+          api.get("/finance/terms/"),
+          api.get("/finance/reports/arrears/", { params: term ? { term, group_by: "student" } : { group_by: "student" } }),
+        ]);
+        if (!active) return;
+        setTerms(Array.isArray(termsResponse.data?.results) ? termsResponse.data.results : termsResponse.data ?? []);
+        setRows(Array.isArray(arrearsResponse.data?.results) ? arrearsResponse.data.results : []);
+      } catch (loadError) {
+        if (active) {
+          setError("Unable to load the arrears view right now.");
+        }
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [term]);
+
+  React.useEffect(() => {
+    if (!showCarryForwards) return undefined;
+    let active = true;
+    setCarryLoading(true);
+
+    api
+      .get("/finance/carry-forwards/")
+      .then((response) => {
+        if (active) {
+          setCarryForwards(Array.isArray(response.data?.results) ? response.data.results : response.data ?? []);
+        }
+      })
+      .catch(() => {
+        if (active) setCarryForwards([]);
+      })
+      .finally(() => {
+        if (active) setCarryLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [showCarryForwards]);
+
+  const studentBalances = groupStudentBalances(rows);
+  const totalOutstanding = studentBalances.reduce((sum, row) => sum + row.total_balance, 0);
+  const overdueStudents = studentBalances.filter((row) => row.max_overdue_days > 0);
+  const longestOverdue = overdueStudents.reduce((max, row) => Math.max(max, row.max_overdue_days), 0);
+
+  return jsxs("div", {
+    className: "space-y-6",
+    children: [
+      jsxs("section", {
+        className: shellClass,
+        children: [
+          jsxs("div", {
+            className: "flex flex-col gap-4 border-b border-slate-200 pb-6 xl:flex-row xl:items-start xl:justify-between",
+            children: [
+              jsxs("div", {
+                children: [
+                  jsx("h1", {
+                    className: "text-[2rem] font-semibold tracking-tight text-slate-950",
+                    children: "School Payment Management System",
+                  }),
+                  jsx("p", {
+                    className: "mt-1 text-lg text-slate-600",
+                    children: "Arrears follow-up, outstanding balances, and carry-forward visibility.",
+                  }),
+                ],
+              }),
+              jsx(PortalSwitch, { active: "bursar" }),
+            ],
+          }),
+          error
+            ? jsx("div", {
+                className: "mt-5 rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700",
+                children: error,
+              })
+            : null,
+          jsx("div", {
+            className: "mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4",
+            children: [
+              {
+                label: "Students With Balances",
+                value: String(studentBalances.length),
+                detail: "Active accounts that need bursar follow-up",
+                tone: "text-slate-950",
+              },
+              {
+                label: "Total Arrears",
+                value: money(totalOutstanding),
+                detail: "Open balance across overdue and partial invoices",
+                tone: "text-red-600",
+              },
+              {
+                label: "Overdue Students",
+                value: String(overdueStudents.length),
+                detail: longestOverdue > 0 ? `${longestOverdue} days is the longest ageing` : "No aged balances today",
+                tone: "text-orange-600",
+              },
+              {
+                label: "Carry Forwards",
+                value: String(carryForwards.length),
+                detail: showCarryForwards ? "Desk currently visible below" : "Open the desk when you need term carry-forward history",
+                tone: "text-slate-950",
+              },
+            ].map((card) =>
+              jsx(
+                MetricCard,
+                {
+                  label: card.label,
+                  value: card.value,
+                  detail: card.detail,
+                  tone: card.tone,
+                },
+                card.label,
+              ),
+            ),
+          }),
+          jsx("div", { className: "mt-6", children: jsx(FinanceTabs, { active: "arrears" }) }),
+          jsxs("section", {
+            className: `${surfaceClass} mt-6`,
+            children: [
+              jsxs("div", {
+                className: "flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between",
+                children: [
+                  jsxs("div", {
+                    children: [
+                      jsx("h2", {
+                        className: "text-[1.35rem] font-semibold text-slate-950",
+                        children: "Students with Arrears",
+                      }),
+                      jsx("p", {
+                        className: "mt-1 text-lg text-slate-500",
+                        children: "Outstanding balances requiring follow-up",
+                      }),
+                    ],
+                  }),
+                  jsxs("div", {
+                    className: "flex flex-wrap gap-3",
+                    children: [
+                      jsxs("select", {
+                        className: inputClass,
+                        value: term,
+                        onChange: (event) => setTerm(event.target.value),
+                        children: [
+                          jsx("option", { value: "", children: "All Terms" }),
+                          terms.map((item) =>
+                            jsx("option", { value: item.id, children: item.name }, item.id),
+                          ),
+                        ],
+                      }),
+                      jsx("button", {
+                        type: "button",
+                        onClick: () => setShowCarryForwards((current) => !current),
+                        className:
+                          "rounded-full border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-950",
+                        children: showCarryForwards ? "Hide Carry Forwards" : "Show Carry Forwards",
+                      }),
+                    ],
+                  }),
+                ],
+              }),
+              loading
+                ? jsx("div", {
+                    className: "mt-6 rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500",
+                    children: "Loading arrears records...",
+                  })
+                : studentBalances.length === 0
+                  ? jsx("div", {
+                      className: "mt-6 rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500",
+                      children: "No arrears were found for the selected term.",
+                    })
+                  : jsxs("div", {
+                      className: "mt-6 space-y-4",
+                      children: [
+                        jsx("div", {
+                          className: "flex justify-end",
+                          children: jsx("span", {
+                            className: "inline-flex rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-600",
+                            children: `${studentBalances.length} Students`,
+                          }),
+                        }),
+                        studentBalances.map((row) =>
+                          jsxs(
+                            "div",
+                            {
+                              className: "rounded-[24px] border border-slate-200 bg-white p-4 shadow-[0_14px_35px_rgba(15,23,42,0.04)]",
+                              children: [
+                                jsxs("div", {
+                                  className: "flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between",
+                                  children: [
+                                    jsxs("div", {
+                                      children: [
+                                        jsx("p", {
+                                          className: "text-[1.35rem] font-semibold text-slate-950",
+                                          children: row.student_name,
+                                        }),
+                                        jsx("p", {
+                                          className: "mt-1 text-base text-slate-500",
+                                          children: `${row.class_name || "Class pending"} • ${row.admission_number || "Admission pending"}`,
+                                        }),
+                                      ],
+                                    }),
+                                    row.max_overdue_days > 0
+                                      ? jsx("span", {
+                                          className: "inline-flex rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-600",
+                                          children: `${row.max_overdue_days} days overdue`,
+                                        })
+                                      : jsx("span", {
+                                          className: "inline-flex rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-500",
+                                          children: "Not past due",
+                                        }),
+                                  ],
+                                }),
+                                jsxs("button", {
+                                  type: "button",
+                                  className:
+                                    "mt-4 block w-full rounded-[18px] bg-rose-50 px-5 py-4 text-left transition hover:bg-rose-100",
+                                  onClick: () => navigate(`/modules/finance/ledger?student=${encodeURIComponent(row.admission_number || "")}`),
+                                  children: [
+                                    jsx("span", {
+                                      className: "text-sm text-slate-500",
+                                      children: "Total Arrears",
+                                    }),
+                                    jsx("span", {
+                                      className: "float-right text-[1.75rem] font-semibold tracking-tight text-red-600",
+                                      children: money(row.total_balance),
+                                    }),
+                                  ],
+                                }),
+                              ],
+                            },
+                            row.key,
+                          ),
+                        ),
+                      ],
+                    }),
+            ],
+          }),
+          showCarryForwards
+            ? jsxs("section", {
+                className: `${surfaceClass} mt-6`,
+                children: [
+                  jsx("h2", {
+                    className: "text-[1.35rem] font-semibold text-slate-950",
+                    children: "Carry Forward Desk",
+                  }),
+                  jsx("p", {
+                    className: "mt-1 text-lg text-slate-500",
+                    children: "Term-to-term balances already recorded in the system.",
+                  }),
+                  carryLoading
+                    ? jsx("div", {
+                        className: "mt-6 rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500",
+                        children: "Loading carry forwards...",
+                      })
+                    : carryForwards.length === 0
+                      ? jsx("div", {
+                          className: "mt-6 rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500",
+                          children: "No carry forwards are recorded yet.",
+                        })
+                      : jsx("div", {
+                          className: "mt-6 overflow-x-auto rounded-[24px] border border-slate-200",
+                          children: jsxs("table", {
+                            className: "min-w-[880px] w-full text-left text-sm",
+                            children: [
+                              jsx("thead", {
+                                className: "bg-slate-50 text-[11px] uppercase tracking-[0.18em] text-slate-500",
+                                children: jsxs("tr", {
+                                  children: [
+                                    jsx("th", { className: "px-4 py-3 font-semibold", children: "Student" }),
+                                    jsx("th", { className: "px-4 py-3 font-semibold", children: "Admission No." }),
+                                    jsx("th", { className: "px-4 py-3 font-semibold", children: "From Term" }),
+                                    jsx("th", { className: "px-4 py-3 font-semibold", children: "To Term" }),
+                                    jsx("th", { className: "px-4 py-3 font-semibold", children: "Amount" }),
+                                    jsx("th", { className: "px-4 py-3 font-semibold", children: "Notes" }),
+                                  ],
+                                }),
+                              }),
+                              jsx("tbody", {
+                                className: "divide-y divide-slate-200",
+                                children: carryForwards.map((row) =>
+                                  jsxs(
+                                    "tr",
+                                    {
+                                      children: [
+                                        jsx("td", { className: "px-4 py-4 font-medium text-slate-950", children: row.student_name }),
+                                        jsx("td", { className: "px-4 py-4 text-slate-600", children: row.student_admission_number }),
+                                        jsx("td", { className: "px-4 py-4 text-slate-600", children: row.from_term_name }),
+                                        jsx("td", { className: "px-4 py-4 text-slate-600", children: row.to_term_name }),
+                                        jsx("td", { className: "px-4 py-4 font-semibold text-slate-950", children: money(row.amount) }),
+                                        jsx("td", { className: "px-4 py-4 text-slate-600", children: row.notes || "—" }),
+                                      ],
+                                    },
+                                    row.id,
+                                  ),
+                                ),
+                              }),
+                            ],
+                          }),
+                        }),
+                ],
+              })
+            : null,
+        ],
+      }),
+    ],
+  });
+}
+
+export { FinanceArrearsPage as default };

@@ -1,1 +1,507 @@
-import{r as n,j as e,b as g}from"./index-D7ltaYVC.js";import{d as S}from"./index-FXKipDrd.js";import{n as M}from"./pagination-DjjjzeDo.js";import{P as ee}from"./PageHero-Ct90nOAG.js";import{c as te}from"./createLucideIcon-BLtbVmUp.js";import{W as se}from"./wallet-CmsOqfo7.js";import{T as O}from"./trending-down-Des9Xkdg.js";import{C as D}from"./circle-alert-QkR7CaoT.js";import{R as $}from"./refresh-cw-DOVkzt4u.js";import{T as W}from"./trending-up-D6eCU7oO.js";import{C as B}from"./credit-card-pJ6qZy3c.js";import{C as H}from"./chart-no-axes-column-CcJMQ47i.js";import{D as ae}from"./dollar-sign-BsYV7G3i.js";import{R as y,X as j,Y as v,F as N,I as U,E as q,H as G,v as V}from"./BarChart-CcHEhvSw.js";import{L as X}from"./LineChart-BnyFOdmS.js";import{C as k,L as h}from"./Line-Cimfn-YW.js";const le=te("ReceiptText",[["path",{d:"M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z",key:"q3az6g"}],["path",{d:"M14 8H8",key:"1l3xfs"}],["path",{d:"M16 12H8",key:"1fr5h0"}],["path",{d:"M13 16H8",key:"wsln4y"}]]),b={background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.07)"},c=a=>"Ksh "+Number(a).toLocaleString("en-KE",{minimumFractionDigits:2}),re=(a,d)=>{const r=a?.response?.data;if(typeof r=="string"&&r.trim())return r;if(r&&typeof r=="object"){const p=r.detail;if(typeof p=="string"&&p.trim())return p;const o=Object.values(r).find(x=>Array.isArray(x)?x.length>0:typeof x=="string"&&x.trim().length>0);if(Array.isArray(o)&&typeof o[0]=="string")return o[0];if(typeof o=="string")return o}return d},Y=a=>{if(!a)return null;try{const d=S.parseISO(a);return Number.isNaN(d.getTime())?null:S.format(d,"MMM yyyy")}catch{return null}},oe=a=>{if(!a)return null;try{const d=S.parseISO(a);return Number.isNaN(d.getTime())?null:d}catch{return null}},w={background:"#0b1120",border:"1px solid rgba(255,255,255,0.1)",borderRadius:12,color:"#e2e8f0"};function ke(){const[a,d]=n.useState(null),[r,p]=n.useState([]),[o,x]=n.useState([]),[C,J]=n.useState([]),[L,P]=n.useState(!0),[z,F]=n.useState(!1),[T,u]=n.useState(null),E=async(t=!1)=>{t?P(!0):F(!0),u(null);try{const[l,s,i,m]=await Promise.all([g.get("/finance/summary/"),g.get("/finance/invoices/"),g.get("/finance/payments/"),g.get("/finance/expenses/")]);d(l.data),p(M(s.data).items),x(M(i.data).items),J(M(m.data).items)}catch(l){const s=l?.response?.status;u(s===401?"Session expired. Please log in again.":s===403?"Access denied. Ensure this user has the FINANCE module and proper role.":s===404?"Finance endpoints not found. Verify tenant routing.":re(l,"Unable to load finance data. Please try again."))}finally{P(!1),F(!1)}};n.useEffect(()=>{E(!0)},[]);const I=n.useMemo(()=>{const t=new Map;for(const l of o){const s=Y(l.payment_date);if(!s)continue;const i=t.get(s)??{inflow:0,outflow:0};i.inflow+=Number(l.amount),t.set(s,i)}for(const l of C){const s=Y(l.expense_date);if(!s)continue;const i=t.get(s)??{inflow:0,outflow:0};i.outflow+=Number(l.amount),t.set(s,i)}return Array.from(t.entries()).map(([l,s])=>({month:l,inflow:s.inflow,outflow:s.outflow,net:s.inflow-s.outflow}))},[C,o]),K=n.useMemo(()=>{const t=[{label:"0-30",value:0},{label:"31-60",value:0},{label:"61-90",value:0},{label:"90+",value:0}],l=new Date;return r.forEach(s=>{const i=oe(s.due_date);if(!i)return;const m=Number(s.balance_due??s.total_amount??0);if(m<=0)return;const R=S.differenceInCalendarDays(l,i);R<=30?t[0].value+=m:R<=60?t[1].value+=m:R<=90?t[2].value+=m:t[3].value+=m}),t},[r]),_=n.useMemo(()=>{const t=new Map;return o.forEach(l=>{const s=l.payment_method?.trim()||"Unknown";t.set(s,(t.get(s)??0)+Number(l.amount))}),Array.from(t.entries()).map(([l,s])=>({method:l,total:s}))},[o]),Z={"M-Pesa":"#10b981",Cash:"#f59e0b","Bank Transfer":"#0ea5e9",Cheque:"#a855f7",Unknown:"#64748b"},f=Number(a?.net_profit??0),A=a?Math.round(Number(a.cash_collected)/Math.max(Number(a.revenue_billed),1)*100):0,Q=[{label:"Revenue Billed",value:c(Number(a?.revenue_billed??0)),icon:le,color:"#10b981",from:"#064e3b",to:"#0f2a1d",sub:`${a?.active_students_count??0} students invoiced`},{label:"Cash Collected",value:c(Number(a?.cash_collected??0)),icon:se,color:"#0ea5e9",from:"#0c3047",to:"#071929",sub:`${A}% collection rate`},{label:"Total Expenses",value:c(Number(a?.total_expenses??0)),icon:O,color:"#f97316",from:"#431407",to:"#1c0a04",sub:"Jan – Mar 2025"},{label:"Outstanding",value:c(Number(a?.outstanding_receivables??0)),icon:D,color:"#f59e0b",from:"#451a03",to:"#1f0d02",sub:"Pending collections"}];return e.jsxs("div",{className:"space-y-6",children:[e.jsx(ee,{badge:"FINANCE",badgeColor:"emerald",title:"Finance Summary",subtitle:"IPSAS-compliant overview of school finances",icon:"💰"}),e.jsxs("div",{className:"relative overflow-hidden rounded-3xl px-6 py-9 md:px-10",style:{background:"linear-gradient(135deg, #071c11 0%, #0b1f34 50%, #150a2e 100%)"},children:[e.jsx("div",{className:"absolute inset-0 opacity-30",style:{backgroundImage:"radial-gradient(ellipse at 20% 50%, rgba(16,185,129,0.4) 0%, transparent 55%), radial-gradient(ellipse at 80% 30%, rgba(99,102,241,0.35) 0%, transparent 50%), radial-gradient(ellipse at 55% 90%, rgba(245,158,11,0.25) 0%, transparent 45%)"}}),e.jsxs("div",{className:"relative z-10 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6",children:[e.jsxs("div",{children:[e.jsxs("div",{className:"flex items-center gap-2 mb-3",children:[e.jsx("span",{className:"px-3 py-1 rounded-full text-xs font-bold",style:{background:"rgba(16,185,129,0.18)",color:"#34d399",border:"1px solid rgba(16,185,129,0.3)"},children:"IPSAS-COMPLIANT FINANCE"}),e.jsxs("span",{className:"flex items-center gap-1 text-xs font-semibold text-emerald-400",children:[e.jsx("span",{className:"w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"}),"Term 1 2025 Active"]})]}),e.jsxs("h1",{className:"text-3xl md:text-4xl font-display font-bold text-white leading-tight",children:["Finance & Accounts",e.jsx("br",{}),e.jsx("span",{style:{background:"linear-gradient(90deg, #10b981, #6366f1)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"},children:"Summary Overview"})]}),e.jsx("p",{className:"mt-2 text-slate-300 max-w-md text-sm",children:"Real-time financial health: revenues, expenses, cashflow, and IPSAS-compliant reporting for Term 1 2025."})]}),e.jsxs("div",{className:"flex flex-col gap-2 lg:items-end",children:[e.jsxs("button",{onClick:()=>{E(!1)},disabled:L||z,className:"flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all hover:scale-105 disabled:opacity-60",style:{background:"rgba(16,185,129,0.2)",color:"#34d399",border:"1px solid rgba(16,185,129,0.3)"},children:[e.jsx($,{size:14,className:z?"animate-spin":""}),z?"Refreshing…":"Refresh Data"]}),e.jsx("div",{className:"flex items-center gap-3 flex-wrap",children:[{label:"Net Profit",value:c(f),positive:f>=0},{label:"Collection Rate",value:`${A}%`,positive:A>=70}].map(t=>e.jsxs("div",{className:"rounded-xl px-3 py-2 text-center",style:{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.1)"},children:[e.jsx("p",{className:"text-sm font-bold",style:{color:t.positive?"#34d399":"#fca5a5"},children:t.value}),e.jsx("p",{className:"text-[10px] text-slate-400",children:t.label})]},t.label))})]})]})]}),T&&e.jsxs("div",{className:"rounded-2xl border border-rose-500/40 p-5 flex items-start gap-3",style:{background:"rgba(239,68,68,0.07)"},children:[e.jsx(D,{size:18,className:"text-rose-400 flex-shrink-0 mt-0.5"}),e.jsx("p",{className:"text-sm text-rose-300",children:T})]}),L&&e.jsxs("div",{className:"rounded-2xl p-6 flex items-center gap-3",style:b,children:[e.jsx($,{size:18,className:"text-emerald-400 animate-spin"}),e.jsx("p",{className:"text-sm text-slate-300",children:"Loading finance data…"})]}),e.jsx("div",{className:"grid grid-cols-2 lg:grid-cols-4 gap-4",children:Q.map(t=>e.jsxs("div",{className:"rounded-2xl p-5 relative overflow-hidden transition-all duration-200 hover:scale-[1.02]",style:{background:`linear-gradient(135deg, ${t.from}, ${t.to})`,border:`1px solid ${t.color}28`},children:[e.jsx("div",{className:"absolute top-3 right-3 w-9 h-9 rounded-xl flex items-center justify-center",style:{background:`${t.color}22`},children:e.jsx(t.icon,{size:18,style:{color:t.color}})}),e.jsx("div",{className:"absolute -bottom-6 -left-6 w-24 h-24 rounded-full opacity-20",style:{background:t.color,filter:"blur(20px)"}}),e.jsx("p",{className:"text-xs uppercase tracking-widest text-slate-400 mb-2 relative z-10",children:t.label}),e.jsx("p",{className:"text-xl font-bold text-white leading-tight relative z-10",children:t.value}),e.jsx("p",{className:"text-[11px] mt-1 font-medium relative z-10",style:{color:t.color},children:t.sub})]},t.label))}),e.jsxs("div",{className:"rounded-2xl p-5 flex items-center justify-between flex-wrap gap-4",style:f>=0?{background:"rgba(16,185,129,0.06)",border:"1px solid rgba(16,185,129,0.2)"}:{background:"rgba(239,68,68,0.06)",border:"1px solid rgba(239,68,68,0.2)"},children:[e.jsxs("div",{className:"flex items-center gap-3",children:[f>=0?e.jsx(W,{size:22,className:"text-emerald-400"}):e.jsx(O,{size:22,className:"text-rose-400"}),e.jsxs("div",{children:[e.jsx("p",{className:"text-xs text-slate-400 uppercase tracking-widest",children:"Net Financial Position"}),e.jsx("p",{className:"text-2xl font-display font-bold",style:{color:f>=0?"#34d399":"#fca5a5"},children:c(f)})]})]}),e.jsx("div",{className:"flex items-center gap-6",children:[{label:"Total Payments",value:o.length,icon:B,color:"#0ea5e9"},{label:"Expenses Logged",value:C.length,icon:H,color:"#f97316"},{label:"Invoices Raised",value:r.length,icon:ae,color:"#10b981"}].map(t=>e.jsxs("div",{className:"text-center",children:[e.jsx(t.icon,{size:14,style:{color:t.color},className:"mx-auto mb-0.5"}),e.jsx("p",{className:"text-lg font-bold text-white",children:t.value}),e.jsx("p",{className:"text-[10px] text-slate-500",children:t.label})]},t.label))})]}),e.jsxs("div",{className:"grid grid-cols-1 lg:grid-cols-7 gap-6",children:[e.jsxs("div",{className:"lg:col-span-4 rounded-2xl p-6 overflow-hidden",style:b,children:[e.jsxs("div",{className:"flex items-center gap-2 mb-1",children:[e.jsx(W,{size:14,className:"text-emerald-400"}),e.jsx("h2",{className:"text-base font-display font-bold text-white",children:"Operating Cashflow"})]}),e.jsx("p",{className:"text-xs text-slate-500 mb-4",children:"Payments collected vs. operating spend — net movement"}),e.jsx("div",{className:"h-64",children:e.jsx(y,{width:"100%",height:"100%",children:e.jsxs(X,{data:I,margin:{top:8,right:12,left:0,bottom:0},children:[e.jsx(k,{strokeDasharray:"4 4",stroke:"rgba(255,255,255,0.04)"}),e.jsx(j,{dataKey:"month",stroke:"#475569",tickLine:!1,axisLine:!1,tick:{fontSize:10}}),e.jsx(v,{stroke:"#475569",tickLine:!1,axisLine:!1,tick:{fontSize:10},tickFormatter:t=>`${(t/1e3).toFixed(0)}K`}),e.jsx(N,{contentStyle:w,formatter:t=>c(t)}),e.jsx(U,{wrapperStyle:{fontSize:11}}),e.jsx(h,{type:"monotone",dataKey:"inflow",name:"Inflow",stroke:"#10b981",strokeWidth:2.5,dot:{r:2},activeDot:{r:5}}),e.jsx(h,{type:"monotone",dataKey:"outflow",name:"Outflow",stroke:"#ef4444",strokeWidth:2.5,dot:{r:2},activeDot:{r:5}}),e.jsx(h,{type:"monotone",dataKey:"net",name:"Net",stroke:"#38bdf8",strokeWidth:2,strokeDasharray:"4 2",dot:{r:2},activeDot:{r:5}})]})})})]}),e.jsxs("div",{className:"lg:col-span-3 rounded-2xl p-6 overflow-hidden",style:b,children:[e.jsxs("div",{className:"flex items-center gap-2 mb-1",children:[e.jsx(D,{size:14,className:"text-amber-400"}),e.jsx("h2",{className:"text-base font-display font-bold text-white",children:"Debtors Ageing"})]}),e.jsx("p",{className:"text-xs text-slate-500 mb-4",children:"Outstanding balances by days past due"}),e.jsx("div",{className:"h-64",children:e.jsx(y,{width:"100%",height:"100%",children:e.jsxs(q,{data:K,margin:{top:8,right:8,left:0,bottom:0},children:[e.jsx(k,{strokeDasharray:"3 3",stroke:"rgba(255,255,255,0.04)"}),e.jsx(j,{dataKey:"label",stroke:"#475569",tick:{fontSize:10}}),e.jsx(v,{stroke:"#475569",tick:{fontSize:10},tickFormatter:t=>`${(t/1e3).toFixed(0)}K`}),e.jsx(N,{contentStyle:w,formatter:t=>c(t)}),e.jsx(G,{dataKey:"value",name:"Balance",radius:[6,6,0,0],children:K.map(t=>e.jsx(V,{fill:t.label==="0-30"?"#22c55e":t.label==="31-60"?"#f59e0b":t.label==="61-90"?"#f97316":"#ef4444"},t.label))})]})})})]})]}),e.jsxs("div",{className:"grid grid-cols-1 lg:grid-cols-7 gap-6",children:[e.jsxs("div",{className:"lg:col-span-4 rounded-2xl p-6 overflow-hidden",style:b,children:[e.jsxs("div",{className:"flex items-center gap-2 mb-1",children:[e.jsx(B,{size:14,className:"text-violet-400"}),e.jsx("h2",{className:"text-base font-display font-bold text-white",children:"Collections by Payment Method"})]}),e.jsx("p",{className:"text-xs text-slate-500 mb-4",children:"Revenue mix: M-Pesa, Cash, Bank Transfer, Cheque"}),e.jsx("div",{className:"h-64",children:e.jsx(y,{width:"100%",height:"100%",children:e.jsxs(q,{data:_,margin:{top:8,right:8,left:0,bottom:0},children:[e.jsx(k,{strokeDasharray:"3 3",stroke:"rgba(255,255,255,0.04)"}),e.jsx(j,{dataKey:"method",stroke:"#475569",tick:{fontSize:10}}),e.jsx(v,{stroke:"#475569",tick:{fontSize:10},tickFormatter:t=>`${(t/1e3).toFixed(0)}K`}),e.jsx(N,{contentStyle:w,formatter:t=>c(t)}),e.jsx(G,{dataKey:"total",name:"Collected",radius:[6,6,0,0],children:_.map(t=>e.jsx(V,{fill:Z[t.method]??"#6366f1"},t.method))})]})})})]}),e.jsxs("div",{className:"lg:col-span-3 rounded-2xl p-6 overflow-hidden",style:b,children:[e.jsxs("div",{className:"flex items-center gap-2 mb-1",children:[e.jsx(H,{size:14,className:"text-blue-400"}),e.jsx("h2",{className:"text-base font-display font-bold text-white",children:"Monthly Trend"})]}),e.jsx("p",{className:"text-xs text-slate-500 mb-4",children:"Collections vs. expenses month-over-month"}),e.jsx("div",{className:"h-64",children:e.jsx(y,{width:"100%",height:"100%",children:e.jsxs(X,{data:I,margin:{top:8,right:12,left:0,bottom:0},children:[e.jsx(k,{strokeDasharray:"4 4",stroke:"rgba(255,255,255,0.04)"}),e.jsx(j,{dataKey:"month",stroke:"#475569",tickLine:!1,axisLine:!1,tick:{fontSize:10}}),e.jsx(v,{stroke:"#475569",tickLine:!1,axisLine:!1,tick:{fontSize:10},tickFormatter:t=>`${(t/1e3).toFixed(0)}K`}),e.jsx(N,{contentStyle:w,formatter:t=>c(t)}),e.jsx(U,{wrapperStyle:{fontSize:11}}),e.jsx(h,{type:"monotone",dataKey:"inflow",name:"Collections",stroke:"#22c55e",strokeWidth:2.5,dot:{r:2},activeDot:{r:5}}),e.jsx(h,{type:"monotone",dataKey:"outflow",name:"Expenses",stroke:"#f97316",strokeWidth:2.5,dot:{r:2},activeDot:{r:5}})]})})})]})]})]})}export{ke as default};
+import { r as React, j as jsxRuntime, b as api } from "./index-D7ltaYVC.js";
+import { n as normalizePaginated } from "./pagination-DjjjzeDo.js";
+
+const { jsx, jsxs } = jsxRuntime;
+
+const shellClass =
+  "rounded-[32px] border border-slate-200/80 bg-[#f5f7fb] p-5 shadow-[0_28px_70px_rgba(15,23,42,0.08)] md:p-7 xl:p-8";
+const surfaceClass =
+  "rounded-[28px] border border-slate-200/80 bg-white p-5 shadow-[0_22px_50px_rgba(15,23,42,0.06)]";
+const mutedCardClass = "rounded-[24px] border border-slate-200 bg-slate-50/90 p-4";
+
+function go(path) {
+  if (typeof window !== "undefined") {
+    window.location.assign(path);
+  }
+}
+
+function money(value) {
+  return `Ksh ${Number(value ?? 0).toLocaleString("en-KE", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+function shortDate(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleDateString("en-KE", { month: "short", day: "numeric" });
+}
+
+function numberLabel(value, noun) {
+  const count = Number(value ?? 0);
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+function daysOverdue(value) {
+  if (!value) return 0;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 0;
+  const today = new Date();
+  const diff = Math.floor((today.setHours(0, 0, 0, 0) - date.setHours(0, 0, 0, 0)) / 86400000);
+  return Math.max(0, diff);
+}
+
+function aggregateByDate(payments) {
+  const totals = new Map();
+  payments.forEach((payment) => {
+    const rawDate = payment.payment_date || payment.created_at;
+    if (!rawDate) return;
+    const key = new Date(rawDate).toISOString().slice(0, 10);
+    totals.set(key, (totals.get(key) ?? 0) + Number(payment.amount ?? 0));
+  });
+  return Array.from(totals.entries())
+    .sort((left, right) => left[0].localeCompare(right[0]))
+    .slice(-8)
+    .map(([date, amount]) => ({
+      date,
+      label: shortDate(date),
+      amount,
+    }));
+}
+
+function buildSparklinePath(points, width, height, padding = 18) {
+  if (points.length === 0) return "";
+  if (points.length === 1) {
+    return `M ${padding} ${height - padding} L ${width - padding} ${height - padding}`;
+  }
+  const max = Math.max(...points.map((point) => point.amount), 1);
+  const step = (width - padding * 2) / (points.length - 1);
+  return points
+    .map((point, index) => {
+      const x = padding + step * index;
+      const y = height - padding - (point.amount / max) * (height - padding * 2);
+      return `${index === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`;
+    })
+    .join(" ");
+}
+
+function buildMethodBreakdown(payments) {
+  const palette = ["#10b981", "#3b82f6", "#f59e0b", "#0f172a", "#ef4444"];
+  const rows = [];
+  const lookup = new Map();
+
+  payments.forEach((payment) => {
+    const method = String(payment.payment_method || "Unknown").trim() || "Unknown";
+    if (!lookup.has(method)) {
+      const row = { method, amount: 0, count: 0, color: palette[rows.length % palette.length] };
+      lookup.set(method, row);
+      rows.push(row);
+    }
+    const row = lookup.get(method);
+    row.amount += Number(payment.amount ?? 0);
+    row.count += 1;
+  });
+
+  const total = rows.reduce((sum, row) => sum + row.amount, 0);
+  let currentAngle = 0;
+  const segments = rows.map((row) => {
+    const start = currentAngle;
+    currentAngle += total > 0 ? (row.amount / total) * 360 : 0;
+    return {
+      ...row,
+      share: total > 0 ? Math.round((row.amount / total) * 100) : 0,
+      start,
+      end: currentAngle,
+    };
+  });
+
+  return { rows: segments, total };
+}
+
+function PortalSwitch({ active }) {
+  const links = [
+    { key: "student", label: "Student Portal", path: "/student-portal/fees" },
+    { key: "parent", label: "Parent Portal", path: "/modules/parent-portal/finance" },
+    { key: "bursar", label: "Bursar Portal", path: "/modules/finance" },
+  ];
+
+  return jsx("div", {
+    className: "inline-flex rounded-full border border-slate-200 bg-white p-1 shadow-[0_12px_30px_rgba(15,23,42,0.06)]",
+    children: links.map((link) =>
+      jsx(
+        "button",
+        {
+          type: "button",
+          onClick: () => go(link.path),
+          className: `rounded-full px-4 py-2 text-sm font-semibold transition ${
+            active === link.key
+              ? "bg-slate-900 text-white"
+              : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+          }`,
+          children: link.label,
+        },
+        link.key,
+      ),
+    ),
+  });
+}
+
+function FinanceTabs({ active }) {
+  const tabs = [
+    { key: "overview", label: "Overview", path: "/modules/finance" },
+    { key: "record", label: "Record Payment", path: "/modules/finance/payments/new" },
+    { key: "payments", label: "Payments", path: "/modules/finance/payments" },
+    { key: "reconciliation", label: "Reconciliation", path: "/modules/finance/reconciliation" },
+    { key: "events", label: "Gateway Events", path: "/modules/finance/reconciliation?pane=events" },
+    { key: "arrears", label: "Arrears", path: "/modules/finance/arrears" },
+  ];
+
+  return jsx("div", {
+    className: "rounded-full border border-slate-200 bg-[#e8ebf3] p-1",
+    children: tabs.map((tab) =>
+      jsx(
+        "button",
+        {
+          type: "button",
+          onClick: () => go(tab.path),
+          className: `rounded-full px-4 py-2 text-sm font-semibold transition ${
+            active === tab.key ? "bg-white text-slate-950 shadow-sm" : "text-slate-700 hover:text-slate-950"
+          }`,
+          children: tab.label,
+        },
+        tab.key,
+      ),
+    ),
+  });
+}
+
+function MetricCard({ label, value, detail, tone }) {
+  return jsxs("div", {
+    className: surfaceClass,
+    children: [
+      jsx("p", { className: "text-sm font-semibold text-slate-950", children: label }),
+      jsx("p", { className: `mt-8 text-[2rem] font-semibold tracking-tight ${tone}`, children: value }),
+      jsx("p", { className: "mt-2 text-sm text-slate-500", children: detail }),
+    ],
+  });
+}
+
+function FinanceSummaryPage() {
+  const [summary, setSummary] = React.useState(null);
+  const [payments, setPayments] = React.useState([]);
+  const [invoices, setInvoices] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState(null);
+
+  React.useEffect(() => {
+    let active = true;
+
+    (async () => {
+      try {
+        const [summaryResponse, paymentsResponse, invoicesResponse] = await Promise.all([
+          api.get("/finance/summary/"),
+          api.get("/finance/payments/"),
+          api.get("/finance/invoices/"),
+        ]);
+        if (!active) return;
+        setSummary(summaryResponse.data ?? {});
+        setPayments(normalizePaginated(paymentsResponse.data).items);
+        setInvoices(normalizePaginated(invoicesResponse.data).items);
+      } catch (loadError) {
+        if (active) {
+          setError("Unable to load the bursar overview right now.");
+        }
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const totalCollected = Number(summary?.cash_collected ?? payments.reduce((sum, row) => sum + Number(row.amount ?? 0), 0));
+  const totalInvoiced = Number(
+    summary?.revenue_billed ?? invoices.reduce((sum, row) => sum + Number(row.total_amount ?? row.amount ?? 0), 0),
+  );
+  const outstanding = Number(
+    summary?.outstanding_receivables ??
+      invoices.reduce((sum, row) => sum + Number(row.balance_due ?? row.balance ?? 0), 0),
+  );
+  const overdueInvoices = invoices.filter(
+    (invoice) =>
+      Number(invoice.balance_due ?? invoice.balance ?? 0) > 0 &&
+      (String(invoice.status || "").toUpperCase() === "OVERDUE" || daysOverdue(invoice.due_date) > 0),
+  );
+  const overdueTotal = overdueInvoices.reduce((sum, row) => sum + Number(row.balance_due ?? row.balance ?? 0), 0);
+  const collectionRate = totalInvoiced > 0 ? Math.round((totalCollected / totalInvoiced) * 100) : 0;
+  const series = aggregateByDate(payments);
+  const sparklinePath = buildSparklinePath(series, 520, 250, 26);
+  const target = series.length > 0 ? series.reduce((sum, row) => sum + row.amount, 0) / series.length : 0;
+  const maxSeriesValue = Math.max(...series.map((row) => row.amount), target, 1);
+  const targetY = 250 - 26 - (target / maxSeriesValue) * (250 - 52);
+  const distribution = buildMethodBreakdown(payments);
+  const conic = distribution.rows.length
+    ? `conic-gradient(${distribution.rows
+        .map((row) => `${row.color} ${row.start}deg ${row.end}deg`)
+        .join(", ")})`
+    : "conic-gradient(#cbd5e1 0deg 360deg)";
+
+  return jsxs("div", {
+    className: "space-y-6",
+    children: [
+      jsxs("section", {
+        className: shellClass,
+        children: [
+          jsxs("div", {
+            className: "flex flex-col gap-4 border-b border-slate-200 pb-6 xl:flex-row xl:items-start xl:justify-between",
+            children: [
+              jsxs("div", {
+                children: [
+                  jsx("h1", {
+                    className: "text-[2rem] font-semibold tracking-tight text-slate-950",
+                    children: "School Payment Management System",
+                  }),
+                  jsx("p", {
+                    className: "mt-1 text-lg text-slate-600",
+                    children: "Collections, billing, reconciliation, and arrears in one bursar flow.",
+                  }),
+                ],
+              }),
+              jsx(PortalSwitch, { active: "bursar" }),
+            ],
+          }),
+          error
+            ? jsx("div", {
+                className: "mt-5 rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700",
+                children: error,
+              })
+            : null,
+          jsx("div", {
+            className: "mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4",
+            children: [
+              {
+                label: "Total Collected",
+                value: money(totalCollected),
+                detail: `${collectionRate}% collection rate`,
+                tone: "text-emerald-600",
+              },
+              {
+                label: "Total Invoiced",
+                value: money(totalInvoiced),
+                detail:
+                  invoices.length > 0
+                    ? `${shortDate(invoices[invoices.length - 1]?.invoice_date)} to ${shortDate(invoices[0]?.invoice_date)}`
+                    : "Current invoice register",
+                tone: "text-slate-950",
+              },
+              {
+                label: "Outstanding",
+                value: money(outstanding),
+                detail: "Pending collections",
+                tone: "text-orange-600",
+              },
+              {
+                label: "Overdue Fees",
+                value: money(overdueTotal),
+                detail: overdueInvoices.length > 0 ? "Requires attention" : "No overdue fees right now",
+                tone: "text-red-600",
+              },
+            ].map((card) =>
+              jsx(
+                MetricCard,
+                {
+                  label: card.label,
+                  value: card.value,
+                  detail: card.detail,
+                  tone: card.tone,
+                },
+                card.label,
+              ),
+            ),
+          }),
+          jsx("div", { className: "mt-6", children: jsx(FinanceTabs, { active: "overview" }) }),
+          loading
+            ? jsx("div", {
+                className: `${surfaceClass} mt-6 text-sm text-slate-500`,
+                children: "Loading overview metrics...",
+              })
+            : jsxs("div", {
+                className: "mt-6 grid gap-6 xl:grid-cols-2",
+                children: [
+                  jsxs("section", {
+                    className: surfaceClass,
+                    children: [
+                      jsx("h2", {
+                        className: "text-[1.35rem] font-semibold text-slate-950",
+                        children: "Payment Methods Distribution",
+                      }),
+                      jsx("p", {
+                        className: "mt-1 text-lg text-slate-500",
+                        children: "Breakdown by payment channel",
+                      }),
+                      jsxs("div", {
+                        className: "mt-8 grid gap-6 lg:grid-cols-[240px,1fr]",
+                        children: [
+                          jsx("div", {
+                            className: "mx-auto flex h-[240px] w-[240px] items-center justify-center rounded-full border border-slate-200 bg-slate-50",
+                            children: jsx("div", {
+                              className: "relative h-[160px] w-[160px] rounded-full",
+                              style: { background: conic },
+                              children: jsx("div", {
+                                className: "absolute inset-[28px] rounded-full bg-white",
+                              }),
+                            }),
+                          }),
+                          jsx("div", {
+                            className: "space-y-3",
+                            children:
+                              distribution.rows.length > 0
+                                ? distribution.rows.map((row) =>
+                                    jsxs(
+                                      "div",
+                                      {
+                                        className: mutedCardClass,
+                                        children: [
+                                          jsxs("div", {
+                                            className: "flex items-center justify-between gap-3",
+                                            children: [
+                                              jsxs("div", {
+                                                className: "flex items-center gap-3",
+                                                children: [
+                                                  jsx("span", {
+                                                    className: "h-3 w-3 rounded-full",
+                                                    style: { background: row.color },
+                                                  }),
+                                                  jsx("span", {
+                                                    className: "text-sm font-semibold text-slate-950",
+                                                    children: row.method,
+                                                  }),
+                                                ],
+                                              }),
+                                              jsx("span", {
+                                                className: "text-sm font-semibold text-slate-950",
+                                                children: `${row.share}%`,
+                                              }),
+                                            ],
+                                          }),
+                                          jsxs("div", {
+                                            className: "mt-3 flex items-center justify-between text-sm text-slate-500",
+                                            children: [jsx("span", { children: money(row.amount) }), jsx("span", { children: numberLabel(row.count, "txn") })],
+                                          }),
+                                        ],
+                                      },
+                                      row.method,
+                                    ),
+                                  )
+                                : jsx("p", {
+                                    className: "text-sm text-slate-500",
+                                    children: "No payment-method distribution is available yet.",
+                                  }),
+                          }),
+                        ],
+                      }),
+                    ],
+                  }),
+                  jsxs("section", {
+                    className: surfaceClass,
+                    children: [
+                      jsx("h2", {
+                        className: "text-[1.35rem] font-semibold text-slate-950",
+                        children: "Daily Collection Trend",
+                      }),
+                      jsx("p", {
+                        className: "mt-1 text-lg text-slate-500",
+                        children: "Last 8 payment days",
+                      }),
+                      jsx("div", {
+                        className: "mt-6 rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-6",
+                        children:
+                          series.length > 0
+                            ? jsx("svg", {
+                                viewBox: "0 0 520 250",
+                                className: "h-[320px] w-full",
+                                children: [
+                                  [58, 108, 158, 208].map((y) =>
+                                    jsx(
+                                      "line",
+                                      {
+                                        x1: "26",
+                                        x2: "494",
+                                        y1: String(y),
+                                        y2: String(y),
+                                        stroke: "#d7deea",
+                                        strokeDasharray: "4 6",
+                                      },
+                                      y,
+                                    ),
+                                  ),
+                                  jsx("line", {
+                                    x1: "26",
+                                    x2: "494",
+                                    y1: String(targetY),
+                                    y2: String(targetY),
+                                    stroke: "#94a3b8",
+                                    strokeDasharray: "6 8",
+                                  }),
+                                  jsx("path", {
+                                    d: sparklinePath,
+                                    fill: "none",
+                                    stroke: "#10b981",
+                                    strokeWidth: "3",
+                                    strokeLinecap: "round",
+                                    strokeLinejoin: "round",
+                                  }),
+                                  series.map((point, index) => {
+                                    const step = series.length > 1 ? (520 - 52) / (series.length - 1) : 0;
+                                    const x = 26 + step * index;
+                                    const y = 250 - 26 - (point.amount / maxSeriesValue) * (250 - 52);
+                                    return jsxs(
+                                      "g",
+                                      {
+                                        children: [
+                                          jsx("circle", {
+                                            cx: String(x),
+                                            cy: String(y),
+                                            r: "4",
+                                            fill: "#ffffff",
+                                            stroke: "#10b981",
+                                            strokeWidth: "2",
+                                          }),
+                                          jsx("text", {
+                                            x: String(x),
+                                            y: "236",
+                                            textAnchor: "middle",
+                                            fontSize: "12",
+                                            fill: "#64748b",
+                                            children: point.label,
+                                          }),
+                                        ],
+                                      },
+                                      point.date,
+                                    );
+                                  }),
+                                ],
+                              })
+                            : jsx("p", {
+                                className: "text-sm text-slate-500",
+                                children: "No collection trend is available yet.",
+                              }),
+                      }),
+                      jsx("div", {
+                        className: "mt-4 flex flex-wrap gap-4 text-sm",
+                        children: [
+                          jsxs("span", {
+                            className: "inline-flex items-center gap-2 text-emerald-600",
+                            children: [jsx("span", { className: "h-2.5 w-2.5 rounded-full bg-emerald-500" }), "Collected"],
+                          }),
+                          jsxs("span", {
+                            className: "inline-flex items-center gap-2 text-slate-500",
+                            children: [jsx("span", { className: "h-2.5 w-2.5 rounded-full bg-slate-400" }), "Target"],
+                          }),
+                        ],
+                      }),
+                    ],
+                  }),
+                ],
+              }),
+        ],
+      }),
+    ],
+  });
+}
+
+export { FinanceSummaryPage as default };
