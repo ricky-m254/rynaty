@@ -38,15 +38,24 @@ This task plan assumes the repo-backed payment baseline has already been verifie
 | Area | Current Status | Notes |
 |------|----------------|-------|
 | Portal payment entry points | Verified in repo | Parent and student portals already expose Stripe, M-Pesa, and bank-transfer initiation paths |
+| Finance admin payment workspace | Verified in repo | Finance payment list, receipt outputs, manual capture flow, student lookup, and Stripe checkout launch remain exposed in the compiled build |
 | Shared settlement and recovery paths | Verified in repo | Stripe webhook settlement, M-Pesa callback settlement, and gateway-event reprocess paths already exist |
 | Launch tooling | Verified in repo | readiness, test-connection, callback-url, gateway-event endpoints, and runbook are present |
-| Regression suites | Verified on April 19, 2026 | `school.test_finance_phase4` and `school.test_phase6_finance_collection_ops_activation_prep` passed |
+| Regression suites | Verified on April 23, 2026 | `clients.tests.PlatformTenantBillingLifecycleTests`, `parent_portal.tests.DemoSchoolPortalSmokeTests`, and `school.test_finance_phase4.FinancePhase4WebhookAndReconciliationTests` passed in a 39-test DB-backed rerun on the temp Postgres environment; the earlier April 19 finance suites also remain part of the baseline |
 | Tenant config validation | In Progress | `demo_school` local preflight now proves M-Pesa config + sandbox OAuth; Stripe is being left out of the current Kenya launch scope by decision |
 | Staging payment validation | In Progress | Local parent/student dry-runs now pass on `demo_school`, and a synthetic M-Pesa callback settlement completed end to end; live staging evidence still needs capture |
-| Real bank CSV validation | Pending | Synthetic import/match/clear now works locally, but a real statement sample is still required |
+| Real bank CSV validation | Blocked | Synthetic import/match/clear now works locally, but no real statement sample is present in the repo working folders and an external sample is still required |
 | Operator recovery drill | In Progress | Local failed-event inspection and manual reprocess simulation now pass; finance/support staging walkthrough and signoff still remain |
 
 The task statuses below refer to execution work in this plan, not to the repo capabilities already verified.
+
+As of April 23, 2026, the repo-backed tenant list has been narrowed to:
+
+- `demo_school` for local validation and preflight work
+- `olom` as the explicit runtime production tenant maintained by bootstrap
+- `demo_school_smoke_test` as smoke-test-only coverage and not a launch tenant
+
+Owner and credential confirmation still remains part of `TP-002`.
 
 ## Current Launch Scope Note
 
@@ -314,7 +323,7 @@ Status reflects the next meaningful action at plan time. Dependencies still gove
 | Task ID | Task | Priority | Phase | Status | Dependencies |
 |---------|------|----------|-------|--------|--------------|
 | TP-001 | Confirm launch tenant list | Critical | 0 | In Progress | None |
-| TP-002 | Confirm access and credentials ownership | Critical | 0 | Blocked | TP-001 |
+| TP-002 | Confirm access and credentials ownership | Critical | 0 | In Progress | TP-001 |
 | TP-003 | Freeze launch-candidate baseline | Critical | 0 | Complete | TP-001 |
 | TP-004 | Create evidence tracker | Critical | 0 | Complete | TP-001 |
 | TP-101 | Run readiness endpoint per tenant | Critical | 1 | In Progress | TP-001, TP-003 |

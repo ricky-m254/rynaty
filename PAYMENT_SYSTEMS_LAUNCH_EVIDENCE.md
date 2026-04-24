@@ -71,8 +71,8 @@ As of April 20, 2026, the current Kenya launch track is focusing on M-Pesa and b
 
 | Task ID | Task | Status | Evidence Location | Evidence Summary | Notes |
 |--------|------|--------|-------------------|------------------|-------|
-| TP-001 | Confirm launch tenant list | In Progress | `docs/finance_test_report.md`, `sms-backend/clients/management/commands/seed_platform_data.py`, `sms-backend/parent_portal/tests.py` | `demo_school` chosen as the local test tenant; `demo_school_smoke_test` remains a smoke-test-only reference tenant | Final staging/production launch list still needs owner confirmation |
-| TP-002 | Confirm access and credentials ownership | Blocked | TBD | TBD | Waiting on platform / finance owner confirmation |
+| TP-001 | Confirm launch tenant list | In Progress | `docs/finance_test_report.md`, `sms-backend/clients/management/commands/seed_platform_data.py`, `sms-backend/clients/management/commands/seed_olom_tenant.py`, `sms-backend/parent_portal/tests.py`, `sms-backend/start.sh` | Repo-backed launch list is now narrowed to `demo_school` for local validation and `olom` for the runtime production tenant; `demo_school_smoke_test` remains excluded as smoke-test-only coverage | Environment labels are now explicit; owner and credential confirmation still belongs to TP-002 |
+| TP-002 | Confirm access and credentials ownership | In Progress | `docs/payments_launch_runbook.md`, `QUICKSTART.md`, `sms-backend/config/settings.py`, `.replit` | Provisional functional owners are now mapped for database access, demo-tenant bootstrap, tenant M-Pesa settings, callback host control, and bank statement sourcing, but no human owner register is present in the repo | Human names are still missing for production Daraja credentials, callback host control, and real bank statement samples |
 | TP-003 | Freeze launch-candidate baseline | Complete | `PAYMENT_SYSTEMS_LAUNCH_EVIDENCE.md` | Baseline frozen at commit `e523470ebbf6d03d8ba4f2cced12d31dddd3edef` on `main` | Workspace note captured above |
 | TP-004 | Create evidence tracker | Complete | `PAYMENT_SYSTEMS_LAUNCH_EVIDENCE.md` | Central validation tracker created | Use this file to append results and links |
 | TP-101 | Run readiness endpoint per tenant | In Progress | `demo_school` local preflight via `FinanceLaunchReadinessView` on `test_sms_school_db` | `ready: false`; remaining blocking issues are Stripe-only and are currently outside the Kenya launch scope | Local test tenant uses HTTPS `demo.localhost`; `mpesa.callback_source: tenant_settings`; M-Pesa tenant config now passes local readiness |
@@ -80,15 +80,15 @@ As of April 20, 2026, the current Kenya launch track is focusing on M-Pesa and b
 | TP-103 | Validate M-Pesa test connection | In Progress | `demo_school` local preflight via `MpesaTestConnectionView` on `test_sms_school_db` | HTTP 200: connected to Daraja sandbox and obtained OAuth token successfully | Consumer key/secret were applied locally to `demo_school` without storing raw values in this tracker; final launch tenants still need replay once confirmed |
 | TP-104 | Validate public callback and webhook URLs | In Progress | `demo_school` local preflight via `MpesaCallbackUrlView` and readiness on `test_sms_school_db` | Callback URL resolves to `https://demo.localhost/api/finance/mpesa/callback/` with `source: tenant_settings` | Local callback proof is captured; external reachability still needs staging evidence |
 | TP-105 | Resolve tenant config gaps | In Progress | `demo_school` local readiness, callback, and portal simulations on `test_sms_school_db` | In-scope local gaps are largely closed for the Kenya rollout simulation | External callback proof and tenant-by-tenant confirmation still remain before calling this done |
-| TP-106 | Parent portal staging smoke test | In Progress | `demo_school` local dry-run via `ParentFinancePayView` on `test_sms_school_db`; `parent_portal.tests.DemoSchoolPortalSmokeTests` | Bank transfer returned HTTP `201` with manual reference; M-Pesa returned HTTP `201` with checkout request ID using mocked STK push; targeted portal smoke tests passed | Local portal behavior is proven; staging execution with live evidence still remains |
-| TP-107 | Student portal staging smoke test | In Progress | `demo_school` local dry-run via `StudentFinancePayView` on `test_sms_school_db`; `parent_portal.tests.DemoSchoolPortalSmokeTests` | Bank transfer returned HTTP `201` with manual reference; M-Pesa returned HTTP `201` with checkout request ID using mocked STK push; targeted portal smoke tests passed | Local portal behavior is proven; staging execution with live evidence still remains |
+| TP-106 | Parent portal staging smoke test | In Progress | `demo_school` local dry-run via `ParentFinancePayView` on `test_sms_school_db`; `parent_portal.tests.DemoSchoolPortalSmokeTests` | Bank transfer returned HTTP `201` with manual reference; M-Pesa returned HTTP `201` with checkout request ID using mocked STK push; targeted portal smoke tests passed and were re-covered by the April 23, 2026 39-test DB-backed rerun | Local portal behavior is proven; staging execution with live evidence still remains |
+| TP-107 | Student portal staging smoke test | In Progress | `demo_school` local dry-run via `StudentFinancePayView` on `test_sms_school_db`; `parent_portal.tests.DemoSchoolPortalSmokeTests` | Bank transfer returned HTTP `201` with manual reference; M-Pesa returned HTTP `201` with checkout request ID using mocked STK push; targeted portal smoke tests passed and were re-covered by the April 23, 2026 39-test DB-backed rerun | Local portal behavior is proven; staging execution with live evidence still remains |
 | TP-108 | Validate Stripe settlement end to end if Stripe is reintroduced later | Deferred | April 20, 2026 scope decision recorded in this tracker and `PAYMENT_SYSTEMS_TASK_PLAN.md` | Stripe settlement proof is not required for the current Kenya rollout | Reopen only if Stripe returns to launch scope |
-| TP-109 | M-Pesa end-to-end staging settlement | In Progress | `demo_school` local simulated settlement via `ParentFinancePayView` + `MpesaStkCallbackView` on `test_sms_school_db`; `school.test_finance_phase4.FinancePhase4WebhookAndReconciliationTests` | Initiation returned HTTP `201`; callback returned HTTP `200`; duplicate callback remained safe; transaction moved to `SUCCEEDED`; payment was created and invoice balance updated; targeted M-Pesa callback tests passed | Uses a synthetic callback payload against the real callback endpoint; live staging receipt/callback proof still required |
-| TP-110 | Collect real bank statement samples | Pending | TBD | TBD | Track bank name and sample owner |
-| TP-111 | Import real statement file | Blocked | `demo_school` local synthetic CSV simulation via `BankStatementLineViewSet.import_csv` on `test_sms_school_db`; `school.test_finance_phase4.FinancePhase4WebhookAndReconciliationTests` | Synthetic CSV import returned HTTP `201` and created two bank lines successfully; targeted CSV import test passed | Real bank statement sample is still required before this task can complete |
-| TP-112 | Validate reconciliation outcomes | Blocked | `demo_school` local synthetic CSV simulation via bank-line actions on `test_sms_school_db`; `school.test_finance_phase4.FinancePhase4WebhookAndReconciliationTests` | One line auto-matched, correction via `unmatch` was exercised, forced/manual match via `PATCH` was verified, the line was re-matched and cleared, one line remained `UNMATCHED`, ambiguous-match protection test passed, and manual match guardrails now reject direct status forcing while preserving safe `PATCH`-based matching | Mechanics are proven locally, but acceptance still requires a real bank statement sample |
-| TP-113 | Exercise failed-event inspection | In Progress | `demo_school` local simulated failed callback via `PaymentGatewayWebhookEventViewSet.list` on `test_sms_school_db`; `school.test_finance_phase4.FinancePhase4WebhookAndReconciliationTests` | Failed M-Pesa callback event appeared in `/api/finance/gateway/events/?provider=mpesa&processed=false`; targeted failed-event path test passed | Local operator path is proven; finance/support still need the staging walkthrough |
-| TP-114 | Exercise manual reprocess | In Progress | `demo_school` local simulated failed callback via `PaymentGatewayWebhookEventViewSet.reprocess` on `test_sms_school_db`; `school.test_finance_phase4.FinancePhase4WebhookAndReconciliationTests` | Reprocess returned HTTP `200`, cleared the event error, and created the missing payment after the gateway transaction was added; targeted reprocess test passed | Local operator path is proven; staging drill still remains |
+| TP-109 | M-Pesa end-to-end staging settlement | In Progress | `demo_school` local simulated settlement via `ParentFinancePayView` + `MpesaStkCallbackView` on `test_sms_school_db`; `school.test_finance_phase4.FinancePhase4WebhookAndReconciliationTests` | Initiation returned HTTP `201`; callback returned HTTP `200`; duplicate callback remained safe; transaction moved to `SUCCEEDED`; payment was created and invoice balance updated; targeted M-Pesa callback tests passed and were re-covered by the April 23, 2026 39-test DB-backed rerun | Uses a synthetic callback payload against the real callback endpoint; live staging receipt/callback proof still required |
+| TP-110 | Collect real bank statement samples | Blocked | Workspace search across `docs`, `attached_assets`, and `sms-backend` on April 23, 2026 | No real bank statement CSV/XLS/XLSX sample was found in the normal repo working folders; only reconciliation code paths and runbook references are present | External sample handoff is still required before TP-111 and TP-112 can proceed |
+| TP-111 | Import real statement file | Blocked | `demo_school` local synthetic CSV simulation via `BankStatementLineViewSet.import_csv` on `test_sms_school_db`; `school.test_finance_phase4.FinancePhase4WebhookAndReconciliationTests` | Synthetic CSV import returned HTTP `201` and created two bank lines successfully; targeted CSV import behavior passed and was re-covered by the April 23, 2026 39-test DB-backed rerun | Real bank statement sample is still required before this task can complete |
+| TP-112 | Validate reconciliation outcomes | Blocked | `demo_school` local synthetic CSV simulation via bank-line actions on `test_sms_school_db`; `school.test_finance_phase4.FinancePhase4WebhookAndReconciliationTests` | One line auto-matched, correction via `unmatch` was exercised, forced/manual match via `PATCH` was verified, the line was re-matched and cleared, one line remained `UNMATCHED`, ambiguous-match protection test passed, manual match guardrails rejected direct status forcing, and the path was re-covered by the April 23, 2026 39-test DB-backed rerun | Mechanics are proven locally, but acceptance still requires a real bank statement sample |
+| TP-113 | Exercise failed-event inspection | In Progress | `demo_school` local simulated failed callback via `PaymentGatewayWebhookEventViewSet.list` on `test_sms_school_db`; `school.test_finance_phase4.FinancePhase4WebhookAndReconciliationTests` | Failed M-Pesa callback event appeared in `/api/finance/gateway/events/?provider=mpesa&processed=false`; targeted failed-event path passed and was re-covered by the April 23, 2026 39-test DB-backed rerun | Local operator path is proven; finance/support still need the staging walkthrough |
+| TP-114 | Exercise manual reprocess | In Progress | `demo_school` local simulated failed callback via `PaymentGatewayWebhookEventViewSet.reprocess` on `test_sms_school_db`; `school.test_finance_phase4.FinancePhase4WebhookAndReconciliationTests` | Reprocess returned HTTP `200`, cleared the event error, and created the missing payment after the gateway transaction was added; targeted reprocess behavior passed and was re-covered by the April 23, 2026 39-test DB-backed rerun | Local operator path is proven; staging drill still remains |
 | TP-115 | Run support / bursar walkthrough | Pending | TBD | TBD | Signoff note or annotated runbook |
 | TP-116 | Produce launch go/no-go summary | Pending | TBD | TBD | Final decision note |
 
@@ -100,13 +100,108 @@ Fill this in before staging execution begins.
 
 | Tenant | Environment | Owner | Optional Stripe Owner | M-Pesa Owner | Bank Sample Owner | Notes |
 |--------|-------------|-------|--------------|--------------|-------------------|-------|
-| demo_school | Selected local test tenant | TBD | TBD | TBD | TBD | Chosen for local task execution; seeded into `test_sms_school_db`; readiness snapshot captured against `https://demo.localhost` |
-| demo_school_smoke_test | Test-only smoke tenant | N/A | N/A | N/A | N/A | Created in `sms-backend/parent_portal/tests.py`; useful for smoke coverage reference, not a launch tenant by default |
-| TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| demo_school | Local validation tenant | Platform Admin (provisional) | Platform Admin (deferred for current Kenya scope) | Finance Admin / Bursar (tenant credentials) + Platform Admin (callback host) | Finance Admin / Bursar | Chosen for local task execution; seeded into `test_sms_school_db`; readiness snapshot captured against `https://demo.localhost` |
+| olom | Production runtime tenant | Platform Admin (provisional) | Platform Admin (deferred unless Stripe returns to scope) | Finance Admin / Bursar (tenant credentials) + Platform Admin (callback host) | Finance Admin / Bursar | Explicitly maintained by `seed_olom_tenant`; production domain is `olom.rynatyschool.app`; startup bootstrap ensures the tenant/domain exist |
+| demo_school_smoke_test | Test-only smoke tenant | N/A | N/A | N/A | N/A | Created in `sms-backend/parent_portal/tests.py`; useful for smoke coverage reference, not a launch tenant |
 
 ---
 
 ## Local Preflight Notes
+
+### TP-001 repo-backed tenant confirmation
+
+The current repo identifies these tenant roles for launch validation:
+
+- `demo_school` is the local validation tenant used by the finance end-to-end report, portal smoke coverage, and platform demo seed data.
+- `olom` is the explicit runtime production tenant maintained by `seed_olom_tenant` with production domain `olom.rynatyschool.app`.
+- `demo_school_smoke_test` is only a smoke-test fixture and is excluded from the launch list.
+
+Additional caution:
+
+- a live tenant-table check against the local Django database was attempted on April 23, 2026
+- that check failed because the local PostgreSQL credentials for `postgres@localhost:5432` were not available in this workspace context
+- until TP-002 is closed, treat the list above as repo-backed confirmation rather than environment-owner confirmation
+
+### Role UI verification snapshot
+
+The current compiled frontend still exposes the payment interfaces required by the main launch users:
+
+- Super admin: `PlatformLayout-CNHzKJMQ.js`, `PlatformBillingPage-CEcBPZ52.js`, and `PlatformRevenueAnalyticsPage-BdFivJgi.js` expose billing navigation, tenant payment review actions, plan and subscription flows, and revenue analytics.
+- Finance admin: `FinancePaymentsPage-Dwws6qtb.js` and `FinancePaymentFormPage-Dh2R-Fpu.js` expose payment history, receipt access, reversal handling, student lookup, manual payment capture, and hosted Stripe checkout launch.
+- Parent and student users: `ParentPortalFinancePage-C4iG-P9o.js` and `StudentPortalFeesPage-LL9vjGLP.js` expose M-Pesa, bank-transfer, Stripe, receipt, and payment-history flows.
+- Supporting operator flow: `ApprovalsHubPage-B_1PnNAs.js` still parses cleanly in the current build.
+
+Verification performed on April 23, 2026:
+
+- `node --check sms-backend/frontend_build/assets/PlatformBillingPage-CEcBPZ52.js`
+- `node --check sms-backend/frontend_build/assets/PlatformLayout-CNHzKJMQ.js`
+- `node --check sms-backend/frontend_build/assets/PlatformRevenueAnalyticsPage-BdFivJgi.js`
+- `node --check sms-backend/frontend_build/assets/FinancePaymentsPage-Dwws6qtb.js`
+- `node --check sms-backend/frontend_build/assets/FinancePaymentFormPage-Dh2R-Fpu.js`
+- `node --check sms-backend/frontend_build/assets/ParentPortalFinancePage-C4iG-P9o.js`
+- `node --check sms-backend/frontend_build/assets/StudentPortalFeesPage-LL9vjGLP.js`
+- `node --check sms-backend/frontend_build/assets/ApprovalsHubPage-B_1PnNAs.js`
+- `node --check sms-backend/frontend_build/assets/AppShell-51i8-bQf.js`
+
+### April 23 DB-backed regression replay
+
+The payment verification cutoff was resumed against the temp PostgreSQL cluster at `artifacts/temp_pg_mpesa_ui_run2` on `localhost:55432`, using the repo venv and the preserved `test_sms_school_db` database.
+
+Command shape:
+
+- `manage.py test clients.tests.PlatformTenantBillingLifecycleTests parent_portal.tests.DemoSchoolPortalSmokeTests school.test_finance_phase4.FinancePhase4WebhookAndReconciliationTests --keepdb --noinput`
+
+Result summary:
+
+- 39 tests ran in 398.092 seconds
+- status: `OK`
+- Django reported `System check identified no issues (0 silenced).`
+- the existing test database for alias `default` was preserved
+
+Coverage proven again in this DB-backed rerun:
+
+- super-admin tenant billing lifecycle actions, callback settlement, idempotency, and expiry suspension
+- parent and student portal payment, invoice, and receipt flows
+- M-Pesa callback settlement, bank-line import/match paths, failed-event inspection, and manual reprocess
+
+Execution note:
+
+- the workspace venv had a broken `pkg_resources` namespace for `rest_framework_simplejwt`, so a test-only shim was injected through `PYTHONPATH` from `sms-backend/artifacts/test_shims/pkg_resources.py` for this verification run only
+
+### TP-002 technical ownership inputs
+
+The repo does identify where launch-critical configuration is expected to come from:
+
+- database access is driven by `DATABASE_URL` or the `POSTGRES_*` environment variables in `config.settings`
+- the shared demo bootstrap currently pins `DEMO_SCHEMA_NAME=demo_school` and `DEMO_TENANT_DOMAIN=demo.localhost` in `.replit`
+- launch operations expect tenant-level M-Pesa credentials to be stored in `TenantSettings.integrations.mpesa`
+- the launch runbook assigns the work operationally to finance admins, bursars, platform admins, and support staff, but it does not name specific humans
+
+Provisional functional-owner mapping for launch work:
+
+- platform admin owns runtime tenant bootstrap, public callback host correction, and environment-level database access
+- finance admin or bursar owns tenant-side payment configuration checks and the real bank statement sample needed for reconciliation validation
+- support staff own operator recovery familiarity and staged walkthrough coverage, but not payment credentials
+- Stripe remains deferred for the current Kenya launch scope, so its owner stays platform-admin-only unless the scope reopens
+
+Still unresolved:
+
+- the specific human who owns production Daraja credentials for `olom`
+- the specific human who controls the final public callback host / DNS path in staging or production
+- the specific human who will provide the real bank statement sample required by `TP-110` through `TP-112`
+
+### TP-110 workspace sample check
+
+On April 23, 2026, a targeted workspace search was run across `docs`, `attached_assets`, and `sms-backend` for bank statement and spreadsheet files.
+
+Result:
+
+- no real bank statement sample file was found in the normal repo working folders
+- the repo contains reconciliation endpoints, tests, and runbook instructions, but not the staging bank file needed for acceptance
+
+Implication:
+
+- `TP-110` is externally blocked on sample delivery rather than internally blocked on implementation
 
 ### demo_school setup
 

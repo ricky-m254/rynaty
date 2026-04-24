@@ -69,6 +69,32 @@ router.register(r"wallets/summary", PlatformTenantWalletSummaryView, basename="p
 _DEFAULT_PLATFORM_PASSWORD = "PlatformAdmin#2025"
 
 
+def _platform_login_username_candidates(username: str) -> list[str]:
+    """
+    Return candidate usernames for platform login in priority order.
+
+    We keep the exact username first so public platform users can log in with
+    the account they were given, then fall back to the historical Riqs# alias
+    pair for compatibility with older seed data.
+    """
+    normalized = (username or "").strip()
+    lowered = normalized.casefold()
+
+    if lowered == "platform_admin":
+        return ["platform_admin"]
+
+    if lowered in {"riqs#", "riqs#."}:
+        candidates = [normalized]
+        for alias in ("Riqs#", "Riqs#."):
+            if alias.casefold() == lowered:
+                continue
+            if alias not in candidates:
+                candidates.append(alias)
+        return candidates
+
+    return [normalized]
+
+
 def _ensure_platform_admin_user():
     """
     Make sure the public-schema platform admin account exists before login.
@@ -155,26 +181,40 @@ def platform_login_view(request):
     try:
         from django_tenants.utils import schema_context, get_public_schema_name
         with schema_context(get_public_schema_name()):
-            login_username = "Riqs#." if username.casefold() == "riqs#" else username
+            candidate_usernames = _platform_login_username_candidates(username)
 
-            if login_username.casefold() == "platform_admin":
+            if candidate_usernames and candidate_usernames[0].casefold() == "platform_admin":
                 _ensure_platform_admin_user()
 
             from django.contrib.auth.models import User
             from clients.models import GlobalSuperAdmin
             from rest_framework_simplejwt.tokens import RefreshToken
 
-            user = User.objects.filter(username__iexact=login_username, is_active=True).first()
-            if not user or not user.check_password(password):
+            user = None
+            gsa = None
+            password_match_without_gsa = None
+            for candidate_username in candidate_usernames:
+                candidate_user = User.objects.filter(username__iexact=candidate_username, is_active=True).first()
+                if not candidate_user or not candidate_user.check_password(password):
+                    continue
+
+                candidate_gsa = GlobalSuperAdmin.objects.filter(user=candidate_user, is_active=True).first()
+                if candidate_gsa:
+                    user = candidate_user
+                    gsa = candidate_gsa
+                    break
+
+                password_match_without_gsa = candidate_user
+
+            if not user:
+                if password_match_without_gsa:
+                    return JsonResponse(
+                        {"detail": "This account does not have platform admin access."},
+                        status=403,
+                    )
                 return JsonResponse(
                     {"detail": "No active platform admin account found with those credentials."},
                     status=401,
-                )
-            gsa = GlobalSuperAdmin.objects.filter(user=user, is_active=True).first()
-            if not gsa:
-                return JsonResponse(
-                    {"detail": "This account does not have platform admin access."},
-                    status=403,
                 )
 
             refresh = RefreshToken.for_user(user)

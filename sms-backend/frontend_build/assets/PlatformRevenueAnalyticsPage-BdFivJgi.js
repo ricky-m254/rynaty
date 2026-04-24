@@ -1,1 +1,649 @@
-import{r as a,j as e}from"./index-D7ltaYVC.js";import{p as c}from"./publicClient-BdJTy9AM.js";import{e as w}from"./forms-ZJa1TpnO.js";import{P as M}from"./PageHero-Ct90nOAG.js";import{R as g,E as A,X as N,Y as v,F as y,H as P}from"./BarChart-CcHEhvSw.js";import{C as k,L as C}from"./Line-Cimfn-YW.js";import{L as T}from"./LineChart-BnyFOdmS.js";function G(){const[s,S]=a.useState(null),[l,R]=a.useState(null),[d,_]=a.useState(null),[L,m]=a.useState(!0),[x,u]=a.useState(null);a.useEffect(()=>{let t=!0;return(async()=>{m(!0),u(null);const[r,i,o]=await Promise.allSettled([c.get("/platform/analytics/business-kpis/"),c.get("/platform/analytics/revenue/"),c.get("/platform/analytics/tenant-growth/")]);if(!t)return;r.status==="fulfilled"&&S(r.value.data),i.status==="fulfilled"&&R(i.value.data),o.status==="fulfilled"&&_(o.value.data);const f=[r,i,o].find($=>$.status==="rejected");f&&u(w(f.reason,"Unable to load revenue analytics.")),t&&m(!1)})(),()=>{t=!1}},[]);const p=a.useMemo(()=>(l?.monthly_paid_trend??[]).map(t=>({month:t.month.slice(0,7),paid:Number(t.total||"0")})),[l]),h=a.useMemo(()=>(d?.by_month??[]).map(t=>({month:t.month.slice(0,7),count:t.count})),[d]),b=a.useMemo(()=>(l?.plan_breakdown??[]).map(t=>({plan:t.plan__name??t.plan__code??"No Plan",count:t.count,total:Number(t.total||"0")})),[l]),j=s?Number(s.kpis.mrr):0;return e.jsxs("div",{className:"space-y-6",children:[e.jsx(M,{badge:"PLATFORM",badgeColor:"violet",title:"Revenue Analytics",subtitle:"SaaS health metrics — MRR, ARR, churn forecast, and risk",icon:"💰"}),x&&e.jsx("div",{className:"rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200",children:x}),L?e.jsx("div",{className:"rounded-2xl glass-panel p-6 text-center text-sm text-slate-400",children:"Loading revenue analytics…"}):e.jsxs(e.Fragment,{children:[e.jsx("div",{className:"grid grid-cols-2 gap-4 sm:grid-cols-5",children:[{label:"MRR",value:`$${Number(s?.kpis.mrr??0).toLocaleString()}`,sub:"Monthly recurring revenue",color:"#10b981"},{label:"ARR",value:`$${Number(s?.kpis.arr??0).toLocaleString()}`,sub:"Annualised run rate",color:"#3b82f6"},{label:"Monthly Churn",value:`${s?.kpis.monthly_churn_rate_percent??"0.00"}%`,sub:"Tenant churn rate",color:"#ef4444"},{label:"LTV Estimate",value:s?.kpis.ltv_estimate?`$${Number(s.kpis.ltv_estimate).toLocaleString()}`:"—",sub:"Average lifetime value",color:"#a78bfa"},{label:"Forecast Next Month",value:s?.kpis.forecast_next_month_revenue?`$${Number(s.kpis.forecast_next_month_revenue).toLocaleString()}`:"—",sub:`At risk: ${s?.risk_summary?.total??0} tenants`,color:"#f59e0b"}].map(t=>e.jsxs("div",{className:"rounded-2xl glass-panel p-4",children:[e.jsx("p",{className:"text-xs text-slate-500 uppercase tracking-wider",children:t.label}),e.jsx("p",{className:"mt-1 text-2xl font-bold font-mono",style:{color:t.color},children:t.value}),e.jsx("p",{className:"mt-0.5 text-[11px] text-slate-500",children:t.sub})]},t.label))}),e.jsxs("div",{className:"grid gap-4 sm:grid-cols-3",children:[e.jsxs("div",{className:"rounded-2xl glass-panel p-4",children:[e.jsx("p",{className:"text-xs text-slate-500 uppercase",children:"ARPT"}),e.jsxs("p",{className:"mt-1 text-xl font-bold font-mono text-sky-300",children:["$",Number(s?.kpis.arpt??0).toLocaleString()]}),e.jsx("p",{className:"text-[11px] text-slate-500",children:"Avg revenue per tenant"})]}),e.jsxs("div",{className:"rounded-2xl glass-panel p-4",children:[e.jsx("p",{className:"text-xs text-slate-500 uppercase",children:"Invoiced (Month)"}),e.jsxs("p",{className:"mt-1 text-xl font-bold font-mono text-amber-300",children:["$",Number(l?.invoiced_this_month??0).toLocaleString()]}),e.jsxs("p",{className:"text-[11px] text-slate-500",children:["Overdue: ",l?.overdue_invoices??0," invoices"]})]}),e.jsxs("div",{className:"rounded-2xl glass-panel p-4",children:[e.jsx("p",{className:"text-xs text-slate-500 uppercase",children:"Collected (Month)"}),e.jsxs("p",{className:"mt-1 text-xl font-bold font-mono text-emerald-300",children:["$",Number(l?.paid_this_month??0).toLocaleString()]}),e.jsxs("p",{className:"text-[11px] text-slate-500",children:["Overdue amount: $",Number(l?.overdue_amount??0).toLocaleString()]})]})]}),e.jsxs("div",{className:"grid gap-6 lg:grid-cols-2",children:[e.jsxs("div",{className:"rounded-2xl glass-panel p-6",children:[e.jsx("h2",{className:"mb-4 text-sm font-semibold text-slate-200",children:"Monthly Payments Collected"}),p.length>0?e.jsx("div",{className:"h-52",children:e.jsx(g,{width:"100%",height:"100%",children:e.jsxs(A,{data:p,children:[e.jsx(k,{stroke:"#1e293b",strokeDasharray:"3 3"}),e.jsx(N,{dataKey:"month",tick:{fill:"#94a3b8",fontSize:11}}),e.jsx(v,{tick:{fill:"#94a3b8",fontSize:11},tickFormatter:t=>`$${t}`}),e.jsx(y,{formatter:t=>[`$${t.toLocaleString()}`,"Paid"]}),e.jsx(P,{dataKey:"paid",fill:"#10b981",radius:[4,4,0,0]})]})})}):e.jsx("p",{className:"py-8 text-center text-sm text-slate-500",children:"No payment data yet."})]}),e.jsxs("div",{className:"rounded-2xl glass-panel p-6",children:[e.jsx("h2",{className:"mb-4 text-sm font-semibold text-slate-200",children:"New Tenants by Month"}),h.length>0?e.jsx("div",{className:"h-52",children:e.jsx(g,{width:"100%",height:"100%",children:e.jsxs(T,{data:h,children:[e.jsx(k,{stroke:"#1e293b",strokeDasharray:"3 3"}),e.jsx(N,{dataKey:"month",tick:{fill:"#94a3b8",fontSize:11}}),e.jsx(v,{tick:{fill:"#94a3b8",fontSize:11}}),e.jsx(y,{}),e.jsx(C,{type:"monotone",dataKey:"count",stroke:"#38bdf8",strokeWidth:2,dot:!1})]})})}):e.jsx("p",{className:"py-8 text-center text-sm text-slate-500",children:"No growth data yet."})]})]}),e.jsxs("div",{className:"grid gap-6 lg:grid-cols-2",children:[e.jsxs("div",{className:"rounded-2xl glass-panel p-6",children:[e.jsx("h2",{className:"mb-4 text-sm font-semibold text-slate-200",children:"Revenue by Plan"}),e.jsx("div",{className:"space-y-3",children:b.length>0?b.map(t=>{const n=j>0?Math.round(t.total/j*100):0;return e.jsxs("div",{children:[e.jsxs("div",{className:"flex items-center justify-between text-xs mb-1",children:[e.jsxs("span",{className:"text-slate-300",children:[t.plan," ",e.jsxs("span",{className:"text-slate-500",children:["(",t.count," tenants)"]})]}),e.jsxs("span",{className:"font-mono text-slate-200",children:["$",t.total.toLocaleString()," ",e.jsxs("span",{className:"text-slate-500",children:["(",n,"%)"]})]})]}),e.jsx("div",{className:"h-2 rounded-full bg-white/10",children:e.jsx("div",{className:"h-2 rounded-full bg-emerald-500",style:{width:`${n}%`}})})]},t.plan)}):e.jsx("p",{className:"text-sm text-slate-500",children:"No plan breakdown data yet."})})]}),e.jsxs("div",{className:"rounded-2xl glass-panel p-6",children:[e.jsx("h2",{className:"mb-4 text-sm font-semibold text-slate-200",children:"Tenant Segments"}),e.jsx("div",{className:"space-y-2",children:s&&Object.entries(s.tenant_segments).map(([t,n])=>e.jsxs("div",{className:"flex items-center justify-between text-sm",children:[e.jsx("span",{className:"text-slate-400 capitalize",children:t}),e.jsx("span",{className:`rounded-full px-2.5 py-0.5 text-xs font-semibold ${t==="active"?"bg-emerald-500/15 text-emerald-300":t==="trial"?"bg-blue-500/15 text-blue-300":t==="suspended"?"bg-amber-500/15 text-amber-300":"bg-white/10 text-slate-400"}`,children:n})]},t))})]})]})]})]})}export{G as default};
+import { r as React, j as jsxRuntime } from "./index-D7ltaYVC.js";
+import { p as publicClient } from "./publicClient-BdJTy9AM.js";
+import { e as getErrorMessage } from "./forms-ZJa1TpnO.js";
+import { P as PageHero } from "./PageHero-Ct90nOAG.js";
+import { R as ResponsiveContainer, E as BarChart, X as XAxis, Y as YAxis, F as Tooltip, H as Bar } from "./BarChart-CcHEhvSw.js";
+import { C as CartesianGrid, L as Line } from "./Line-Cimfn-YW.js";
+import { L as LineChart } from "./LineChart-BnyFOdmS.js";
+
+const { jsx, jsxs, Fragment } = jsxRuntime;
+
+const panelStyle = {
+  background: "rgba(255,255,255,0.025)",
+  border: "1px solid rgba(255,255,255,0.07)",
+};
+
+const formatMoney = (value) =>
+  `KES ${Number(value ?? 0).toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+const formatPercent = (value) =>
+  `${Number(value ?? 0).toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
+
+const formatDate = (value) => {
+  if (!value) return "--";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? String(value) : parsed.toLocaleDateString("en-KE", { month: "short", day: "numeric", year: "numeric" });
+};
+
+const formatMonth = (value) => {
+  if (!value) return "--";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? String(value).slice(0, 7) : parsed.toLocaleDateString("en-KE", { month: "short", year: "2-digit" });
+};
+
+const riskTone = (level) =>
+  (
+    {
+      high: "border-rose-500/30 bg-rose-500/10 text-rose-200",
+      medium: "border-amber-500/30 bg-amber-500/10 text-amber-200",
+      low: "border-sky-500/30 bg-sky-500/10 text-sky-200",
+    }[String(level || "").toLowerCase()] ?? "border-slate-500/30 bg-slate-500/10 text-slate-300"
+  );
+
+const confidenceTone = (value) =>
+  (
+    {
+      high: "border-emerald-500/30 bg-emerald-500/10 text-emerald-200",
+      medium: "border-amber-500/30 bg-amber-500/10 text-amber-200",
+      low: "border-slate-500/30 bg-slate-500/10 text-slate-300",
+    }[String(value || "").toLowerCase()] ?? "border-slate-500/30 bg-slate-500/10 text-slate-300"
+  );
+
+const trendTone = (value) =>
+  (
+    {
+      growing: "border-emerald-500/30 bg-emerald-500/10 text-emerald-200",
+      stable: "border-sky-500/30 bg-sky-500/10 text-sky-200",
+      declining: "border-rose-500/30 bg-rose-500/10 text-rose-200",
+    }[String(value || "").toLowerCase()] ?? "border-slate-500/30 bg-slate-500/10 text-slate-300"
+  );
+
+const segmentTone = (segment) =>
+  (
+    {
+      active: "bg-emerald-500/15 text-emerald-300",
+      trial: "bg-sky-500/15 text-sky-300",
+      suspended: "bg-amber-500/15 text-amber-300",
+      cancelled: "bg-rose-500/15 text-rose-300",
+      archived: "bg-slate-500/15 text-slate-300",
+      total: "bg-white/10 text-white",
+    }[String(segment || "").toLowerCase()] ?? "bg-white/10 text-slate-300"
+  );
+
+function StatCard({ label, value, detail, tone = "text-white" }) {
+  return jsxs("div", {
+    className: "rounded-2xl p-4",
+    style: panelStyle,
+    children: [
+      jsx("p", { className: "text-[11px] uppercase tracking-wide text-slate-500", children: label }),
+      jsx("p", { className: `mt-2 text-2xl font-semibold ${tone}`, children: value }),
+      jsx("p", { className: "mt-1 text-xs text-slate-500", children: detail }),
+    ],
+  });
+}
+
+function PlatformRevenueAnalyticsPage() {
+  const [overview, setOverview] = React.useState(null);
+  const [kpis, setKpis] = React.useState(null);
+  const [revenue, setRevenue] = React.useState(null);
+  const [growth, setGrowth] = React.useState(null);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState(null);
+
+  React.useEffect(() => {
+    let active = true;
+
+    (async () => {
+      setLoading(true);
+      setError(null);
+      const [overviewResult, kpiResult, revenueResult, growthResult] = await Promise.allSettled([
+        publicClient.get("/platform/analytics/overview/"),
+        publicClient.get("/platform/analytics/business-kpis/"),
+        publicClient.get("/platform/analytics/revenue/"),
+        publicClient.get("/platform/analytics/tenant-growth/"),
+      ]);
+
+      if (!active) return;
+
+      if (overviewResult.status === "fulfilled") {
+        setOverview(overviewResult.value.data);
+      }
+      if (kpiResult.status === "fulfilled") {
+        setKpis(kpiResult.value.data);
+      }
+      if (revenueResult.status === "fulfilled") {
+        setRevenue(revenueResult.value.data);
+      }
+      if (growthResult.status === "fulfilled") {
+        setGrowth(growthResult.value.data);
+      }
+
+      const failedResult = [overviewResult, kpiResult, revenueResult, growthResult].find((result) => result.status === "rejected");
+      if (failedResult) {
+        setError(getErrorMessage(failedResult.reason, "Unable to load revenue analytics."));
+      }
+
+      setLoading(false);
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const trendPoints = React.useMemo(
+    () =>
+      (revenue?.points ?? []).map((row) => ({
+        month: formatMonth(row.month),
+        paid: Number(row.paid || 0),
+        invoiced: Number(row.invoiced || 0),
+      })),
+    [revenue],
+  );
+
+  const growthPoints = React.useMemo(
+    () =>
+      (growth?.by_month ?? []).map((row) => ({
+        month: formatMonth(row.month),
+        created: Number(row.count || row.created || 0),
+      })),
+    [growth],
+  );
+
+  const planBreakdown = React.useMemo(
+    () =>
+      (revenue?.plan_breakdown ?? []).map((row) => ({
+        plan: row.plan__name ?? row.plan__code ?? "No plan",
+        code: row.plan__code ?? "NO_PLAN",
+        count: Number(row.count || 0),
+        total: Number(row.total || 0),
+      })),
+    [revenue],
+  );
+
+  const forecast = kpis?.forecast ?? revenue?.forecast ?? {};
+  const riskSummary = kpis?.risk_summary ?? revenue?.risk_summary ?? { total: 0, high: 0, medium: 0, low: 0 };
+  const riskSignals = revenue?.risk_signals ?? [];
+  const tenantSegments = kpis?.tenant_segments ?? overview?.tenants ?? {};
+  const currentMonthPaid = Number(overview?.revenue?.paid_this_month || 0);
+  const currentMonthInvoiced = Number(overview?.revenue?.invoiced_this_month || 0);
+  const currentMonthGap = Math.max(0, currentMonthInvoiced - currentMonthPaid);
+  const planContributionTotal = planBreakdown.reduce((sum, row) => sum + row.total, 0);
+
+  return jsxs("div", {
+    className: "grid grid-cols-12 gap-6",
+    children: [
+      jsx(PageHero, {
+        badge: "PLATFORM",
+        badgeColor: "violet",
+        title: "Revenue Analytics",
+        subtitle: "Track subscription health, collection pace, forecast direction, and the tenants most likely to churn or miss renewal.",
+        icon: "KES",
+      }),
+      error
+        ? jsx("div", {
+            className: "col-span-12 rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200",
+            children: error,
+          })
+        : null,
+      loading
+        ? jsx("div", {
+            className: "col-span-12 rounded-2xl p-6 text-center text-sm text-slate-400",
+            style: panelStyle,
+            children: "Loading revenue analytics...",
+          })
+        : null,
+      !loading
+        ? jsxs(Fragment, {
+            children: [
+              jsx("section", {
+                className: "col-span-12 grid gap-3 lg:grid-cols-6",
+                children: [
+                  {
+                    label: "MRR",
+                    value: formatMoney(kpis?.kpis?.mrr),
+                    detail: "Current monthly recurring run rate",
+                    tone: "text-emerald-200",
+                  },
+                  {
+                    label: "ARR",
+                    value: formatMoney(kpis?.kpis?.arr),
+                    detail: "Annualized recurring revenue",
+                    tone: "text-sky-200",
+                  },
+                  {
+                    label: "ARPT",
+                    value: formatMoney(kpis?.kpis?.arpt),
+                    detail: "Average recurring revenue per tenant",
+                    tone: "text-white",
+                  },
+                  {
+                    label: "Collected This Month",
+                    value: formatMoney(currentMonthPaid),
+                    detail: `${overview?.revenue?.overdue_invoices ?? 0} overdue invoice(s) still open`,
+                    tone: "text-emerald-200",
+                  },
+                  {
+                    label: "Invoiced This Month",
+                    value: formatMoney(currentMonthInvoiced),
+                    detail: currentMonthGap > 0 ? `${formatMoney(currentMonthGap)} still waiting to settle` : "Collections are matching current invoicing",
+                    tone: currentMonthGap > 0 ? "text-amber-200" : "text-sky-200",
+                  },
+                  {
+                    label: "At-Risk Tenants",
+                    value: String(riskSummary.total ?? 0),
+                    detail: `${riskSummary.high ?? 0} high risk, ${riskSummary.medium ?? 0} medium risk`,
+                    tone: (riskSummary.high ?? 0) > 0 ? "text-rose-200" : "text-white",
+                  },
+                ].map((item) =>
+                  jsx(
+                    StatCard,
+                    {
+                      label: item.label,
+                      value: item.value,
+                      detail: item.detail,
+                      tone: item.tone,
+                    },
+                    item.label,
+                  ),
+                ),
+              }),
+              jsx("section", {
+                className: "col-span-12 grid gap-4 xl:grid-cols-[1.35fr,0.65fr]",
+                children: [
+                  jsxs("div", {
+                    className: "rounded-2xl p-6",
+                    style: panelStyle,
+                    children: [
+                      jsx("p", {
+                        className: "text-[11px] uppercase tracking-wide text-slate-500",
+                        children: "Collection pulse",
+                      }),
+                      jsx("h2", {
+                        className: "mt-2 text-lg font-semibold text-white",
+                        children: "Paid versus invoiced trend",
+                      }),
+                      jsx("p", {
+                        className: "mt-1 text-sm text-slate-400",
+                        children: "Use the gap between these lines to spot months where billing issuance is outrunning collections.",
+                      }),
+                      trendPoints.length > 0
+                        ? jsx("div", {
+                            className: "mt-5 h-72",
+                            children: jsx(ResponsiveContainer, {
+                              width: "100%",
+                              height: "100%",
+                              children: jsxs(LineChart, {
+                                data: trendPoints,
+                                children: [
+                                  jsx(CartesianGrid, { stroke: "#1e293b", strokeDasharray: "3 3" }),
+                                  jsx(XAxis, { dataKey: "month", tick: { fill: "#94a3b8", fontSize: 11 } }),
+                                  jsx(YAxis, {
+                                    tick: { fill: "#94a3b8", fontSize: 11 },
+                                    tickFormatter: (value) => Number(value).toLocaleString("en-KE", { maximumFractionDigits: 0 }),
+                                  }),
+                                  jsx(Tooltip, {
+                                    formatter: (value, name) => [formatMoney(value), name === "paid" ? "Paid" : "Invoiced"],
+                                  }),
+                                  jsx(Line, {
+                                    type: "monotone",
+                                    dataKey: "invoiced",
+                                    stroke: "#f59e0b",
+                                    strokeWidth: 2,
+                                    dot: false,
+                                  }),
+                                  jsx(Line, {
+                                    type: "monotone",
+                                    dataKey: "paid",
+                                    stroke: "#10b981",
+                                    strokeWidth: 2,
+                                    dot: false,
+                                  }),
+                                ],
+                              }),
+                            }),
+                          })
+                        : jsx("p", {
+                            className: "mt-5 rounded-2xl border border-white/[0.07] bg-slate-950/70 p-4 text-sm text-slate-400",
+                            children: "No monthly billing data available yet.",
+                          }),
+                    ],
+                  }),
+                  jsxs("div", {
+                    className: "rounded-2xl p-6",
+                    style: panelStyle,
+                    children: [
+                      jsx("p", {
+                        className: "text-[11px] uppercase tracking-wide text-slate-500",
+                        children: "Forecast desk",
+                      }),
+                      jsx("h2", {
+                        className: "mt-2 text-lg font-semibold text-white",
+                        children: "Forward-looking revenue posture",
+                      }),
+                      jsxs("div", {
+                        className: "mt-4 flex flex-wrap gap-2",
+                        children: [
+                          jsx("span", {
+                            className: `inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${trendTone(forecast.trend)}`,
+                            children: String(forecast.trend || "stable").toUpperCase(),
+                          }),
+                          jsx("span", {
+                            className: `inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${confidenceTone(forecast.confidence)}`,
+                            children: `${String(forecast.confidence || "low").toUpperCase()} CONFIDENCE`,
+                          }),
+                        ],
+                      }),
+                      jsx("div", {
+                        className: "mt-4 grid gap-3",
+                        children: [
+                          { label: "Next month forecast", value: formatMoney(forecast.next_month_revenue) },
+                          { label: "Next quarter forecast", value: formatMoney(forecast.next_quarter_revenue) },
+                          { label: "Growth rate", value: formatPercent(forecast.growth_rate_percent) },
+                          { label: "Basis months", value: String(forecast.basis_months ?? 0) },
+                        ].map((item) =>
+                          jsxs(
+                            "div",
+                            {
+                              className: "rounded-2xl border border-white/[0.07] bg-slate-950/70 p-4",
+                              children: [
+                                jsx("p", { className: "text-xs uppercase tracking-wide text-slate-500", children: item.label }),
+                                jsx("p", { className: "mt-2 text-lg font-semibold text-white", children: item.value }),
+                              ],
+                            },
+                            item.label,
+                          ),
+                        ),
+                      }),
+                      jsx("div", {
+                        className: "mt-4 rounded-2xl border border-white/[0.07] bg-slate-950/70 p-4 text-sm text-slate-300",
+                        children: jsxs("div", {
+                          className: "grid gap-3 sm:grid-cols-2",
+                          children: [
+                            jsxs("div", {
+                              children: [
+                                jsx("p", { className: "text-xs uppercase tracking-wide text-slate-500", children: "Collection gap" }),
+                                jsx("p", { className: `mt-2 text-lg font-semibold ${currentMonthGap > 0 ? "text-amber-200" : "text-emerald-200"}`, children: formatMoney(currentMonthGap) }),
+                              ],
+                            }),
+                            jsxs("div", {
+                              children: [
+                                jsx("p", { className: "text-xs uppercase tracking-wide text-slate-500", children: "New tenants this month" }),
+                                jsx("p", { className: "mt-2 text-lg font-semibold text-sky-200", children: String(overview?.growth?.new_tenants_this_month ?? 0) }),
+                              ],
+                            }),
+                          ],
+                        }),
+                      }),
+                    ],
+                  }),
+                ],
+              }),
+              jsx("section", {
+                className: "col-span-12 grid gap-4 xl:grid-cols-[0.8fr,1.2fr]",
+                children: [
+                  jsxs("div", {
+                    className: "rounded-2xl p-6",
+                    style: panelStyle,
+                    children: [
+                      jsx("p", {
+                        className: "text-[11px] uppercase tracking-wide text-slate-500",
+                        children: "Plan mix",
+                      }),
+                      jsx("h2", {
+                        className: "mt-2 text-lg font-semibold text-white",
+                        children: "Recurring revenue by plan",
+                      }),
+                      jsx("div", {
+                        className: "mt-4 space-y-4",
+                        children:
+                          planBreakdown.length > 0
+                            ? planBreakdown.map((row) => {
+                                const share = planContributionTotal > 0 ? Math.round((row.total / planContributionTotal) * 100) : 0;
+                                return jsxs(
+                                  "div",
+                                  {
+                                    children: [
+                                      jsxs("div", {
+                                        className: "mb-2 flex items-center justify-between gap-3 text-sm",
+                                        children: [
+                                          jsxs("div", {
+                                            children: [
+                                              jsx("p", { className: "font-semibold text-white", children: row.plan }),
+                                              jsx("p", { className: "text-xs text-slate-500", children: `${row.count} tenant(s)` }),
+                                            ],
+                                          }),
+                                          jsx("p", { className: "font-medium text-emerald-300", children: formatMoney(row.total) }),
+                                        ],
+                                      }),
+                                      jsx("div", {
+                                        className: "h-2 rounded-full bg-white/10",
+                                        children: jsx("div", {
+                                          className: "h-2 rounded-full bg-emerald-500",
+                                          style: { width: `${share}%` },
+                                        }),
+                                      }),
+                                      jsx("p", { className: "mt-1 text-[11px] text-slate-500", children: `${share}% of active recurring value` }),
+                                    ],
+                                  },
+                                  row.code,
+                                );
+                              })
+                            : jsx("p", {
+                                className: "rounded-2xl border border-white/[0.07] bg-slate-950/70 p-4 text-sm text-slate-400",
+                                children: "No active plan contribution data yet.",
+                              }),
+                      }),
+                    ],
+                  }),
+                  jsxs("div", {
+                    className: "rounded-2xl p-6",
+                    style: panelStyle,
+                    children: [
+                      jsx("p", {
+                        className: "text-[11px] uppercase tracking-wide text-slate-500",
+                        children: "Growth and segments",
+                      }),
+                      jsx("h2", {
+                        className: "mt-2 text-lg font-semibold text-white",
+                        children: "Tenant growth curve",
+                      }),
+                      growthPoints.length > 0
+                        ? jsx("div", {
+                            className: "mt-5 h-64",
+                            children: jsx(ResponsiveContainer, {
+                              width: "100%",
+                              height: "100%",
+                              children: jsxs(BarChart, {
+                                data: growthPoints,
+                                children: [
+                                  jsx(CartesianGrid, { stroke: "#1e293b", strokeDasharray: "3 3" }),
+                                  jsx(XAxis, { dataKey: "month", tick: { fill: "#94a3b8", fontSize: 11 } }),
+                                  jsx(YAxis, { tick: { fill: "#94a3b8", fontSize: 11 } }),
+                                  jsx(Tooltip, { formatter: (value) => [value, "New tenants"] }),
+                                  jsx(Bar, { dataKey: "created", fill: "#38bdf8", radius: [4, 4, 0, 0] }),
+                                ],
+                              }),
+                            }),
+                          })
+                        : jsx("p", {
+                            className: "mt-5 rounded-2xl border border-white/[0.07] bg-slate-950/70 p-4 text-sm text-slate-400",
+                            children: "No tenant growth series available yet.",
+                          }),
+                      jsx("div", {
+                        className: "mt-5 grid gap-3 md:grid-cols-3",
+                        children: Object.entries(tenantSegments).map(([segment, count]) =>
+                          jsxs(
+                            "div",
+                            {
+                              className: "rounded-2xl border border-white/[0.07] bg-slate-950/70 p-4",
+                              children: [
+                                jsx("p", { className: "text-xs uppercase tracking-wide text-slate-500", children: segment.replace(/_/g, " ") }),
+                                jsx("span", {
+                                  className: `mt-3 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${segmentTone(segment)}`,
+                                  children: `${count} tenant(s)`,
+                                }),
+                              ],
+                            },
+                            segment,
+                          ),
+                        ),
+                      }),
+                    ],
+                  }),
+                ],
+              }),
+              jsx("section", {
+                className: "col-span-12 grid gap-4 xl:grid-cols-[0.55fr,1.45fr]",
+                children: [
+                  jsxs("div", {
+                    className: "rounded-2xl p-6",
+                    style: panelStyle,
+                    children: [
+                      jsx("p", {
+                        className: "text-[11px] uppercase tracking-wide text-slate-500",
+                        children: "Risk summary",
+                      }),
+                      jsx("h2", {
+                        className: "mt-2 text-lg font-semibold text-white",
+                        children: "Renewal and churn watchlist",
+                      }),
+                      jsx("div", {
+                        className: "mt-4 grid gap-3",
+                        children: [
+                          { label: "High risk", value: riskSummary.high ?? 0, tone: "text-rose-200" },
+                          { label: "Medium risk", value: riskSummary.medium ?? 0, tone: "text-amber-200" },
+                          { label: "Low risk", value: riskSummary.low ?? 0, tone: "text-sky-200" },
+                        ].map((item) =>
+                          jsxs(
+                            "div",
+                            {
+                              className: "rounded-2xl border border-white/[0.07] bg-slate-950/70 p-4",
+                              children: [
+                                jsx("p", { className: "text-xs uppercase tracking-wide text-slate-500", children: item.label }),
+                                jsx("p", { className: `mt-2 text-2xl font-semibold ${item.tone}`, children: String(item.value) }),
+                              ],
+                            },
+                            item.label,
+                          ),
+                        ),
+                      }),
+                      jsx("p", {
+                        className: "mt-4 text-sm text-slate-400",
+                        children: "Risk scoring combines overdue invoices, tenant status, settlement recency, and how near the next billing date is.",
+                      }),
+                    ],
+                  }),
+                  jsxs("div", {
+                    className: "rounded-2xl p-6",
+                    style: panelStyle,
+                    children: [
+                      jsx("p", {
+                        className: "text-[11px] uppercase tracking-wide text-slate-500",
+                        children: "Operator queue",
+                      }),
+                      jsx("h2", {
+                        className: "mt-2 text-lg font-semibold text-white",
+                        children: "Tenants needing billing follow-up",
+                      }),
+                      jsx("div", {
+                        className: "mt-4 space-y-3",
+                        children:
+                          riskSignals.length > 0
+                            ? riskSignals.map((signal) => {
+                                const highlights = [];
+                                if (signal.overdue_invoices) {
+                                  highlights.push(`${signal.overdue_invoices} overdue invoice(s)`);
+                                }
+                                if (Number(signal.overdue_amount || 0) > 0) {
+                                  highlights.push(`${formatMoney(signal.overdue_amount)} outstanding`);
+                                }
+                                if (signal.days_to_due != null) {
+                                  highlights.push(
+                                    signal.days_to_due < 0
+                                      ? `${Math.abs(signal.days_to_due)} day(s) past due`
+                                      : `${signal.days_to_due} day(s) to renewal`,
+                                  );
+                                }
+                                if (highlights.length === 0 && Array.isArray(signal.reasons) && signal.reasons.length > 0) {
+                                  highlights.push(signal.reasons[0]);
+                                }
+
+                                return jsxs(
+                                  "article",
+                                  {
+                                    className: "rounded-2xl border border-white/[0.07] bg-slate-950/70 p-4",
+                                    children: [
+                                      jsxs("div", {
+                                        className: "flex flex-wrap items-start justify-between gap-3",
+                                        children: [
+                                          jsxs("div", {
+                                            children: [
+                                              jsx("h3", { className: "text-base font-semibold text-white", children: signal.tenant_name }),
+                                              jsx("p", {
+                                                className: "mt-1 text-xs text-slate-500",
+                                                children: `${signal.schema_name} | ${signal.plan_name}`,
+                                              }),
+                                            ],
+                                          }),
+                                          jsx("span", {
+                                            className: `inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${riskTone(signal.risk_level)}`,
+                                            children: `${String(signal.risk_level || "low").toUpperCase()} RISK`,
+                                          }),
+                                        ],
+                                      }),
+                                      jsx("div", {
+                                        className: "mt-4 grid gap-3 md:grid-cols-4",
+                                        children: [
+                                          { label: "Risk score", value: String(signal.risk_score ?? 0) },
+                                          { label: "Tenant status", value: signal.status || "--" },
+                                          { label: "Next billing", value: formatDate(signal.next_billing_date || signal.paid_until) },
+                                          { label: "Paid until", value: formatDate(signal.paid_until) },
+                                        ].map((item) =>
+                                          jsxs(
+                                            "div",
+                                            {
+                                              children: [
+                                                jsx("p", { className: "text-[11px] uppercase tracking-wide text-slate-500", children: item.label }),
+                                                jsx("p", { className: "mt-1 text-sm font-medium text-slate-200", children: item.value }),
+                                              ],
+                                            },
+                                            item.label,
+                                          ),
+                                        ),
+                                      }),
+                                      jsx("div", {
+                                        className: "mt-4 flex flex-wrap gap-2",
+                                        children: highlights.map((item) =>
+                                          jsx(
+                                            "span",
+                                            {
+                                              className: "rounded-full border border-white/[0.08] bg-white/[0.03] px-2.5 py-1 text-xs text-slate-300",
+                                              children: item,
+                                            },
+                                            item,
+                                          ),
+                                        ),
+                                      }),
+                                    ],
+                                  },
+                                  signal.tenant_id,
+                                );
+                              })
+                            : jsx("p", {
+                                className: "rounded-2xl border border-white/[0.07] bg-slate-950/70 p-4 text-sm text-slate-400",
+                                children: "No at-risk tenants are currently flagged by the analytics engine.",
+                              }),
+                      }),
+                    ],
+                  }),
+                ],
+              }),
+            ],
+          })
+        : null,
+    ],
+  });
+}
+
+export { PlatformRevenueAnalyticsPage as default };

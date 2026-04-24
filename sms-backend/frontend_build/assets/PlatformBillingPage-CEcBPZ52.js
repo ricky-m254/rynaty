@@ -1,45 +1,1829 @@
-import{r as a,f as Se,h as _e,j as e}from"./index-D7ltaYVC.js";import{p as r}from"./publicClient-BdJTy9AM.js";import{n as E}from"./pagination-DjjjzeDo.js";import{e as u}from"./forms-ZJa1TpnO.js";import{P as Pe}from"./PageHero-Ct90nOAG.js";const g={background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.07)"},p="rounded-lg border border-white/[0.09] bg-slate-950 text-white px-3 py-2 text-sm",h="rounded-lg border border-white/[0.09] bg-slate-950 text-white px-3 py-2 text-sm",Ee={ACTIVE:"bg-emerald-500/20 text-emerald-300",TRIAL:"bg-sky-500/20 text-sky-300",SUSPENDED:"bg-amber-500/20 text-amber-300",CANCELLED:"bg-rose-500/20 text-rose-300"},we=[{code:"STARTER",name:"Starter",description:"For small schools with up to 50 students. KES 300/student/year. Includes 100 free SMS credits.",monthly_price:"1250.00",annual_price:"15000.00",max_students:50,max_storage_gb:5,enabled_modules:["CORE","STUDENTS","ACADEMICS","FINANCE"],is_active:!0},{code:"GROWTH",name:"Growth",description:"For growing schools with 51-200 students. KES 280/student/year. Includes 500 free SMS credits.",monthly_price:"5000.00",annual_price:"60000.00",max_students:200,max_storage_gb:20,enabled_modules:[],is_active:!0},{code:"PRO",name:"Pro",description:"For established schools with 201-500 students. KES 260/student/year. Includes 2,000 free SMS credits.",monthly_price:"12500.00",annual_price:"150000.00",max_students:500,max_storage_gb:50,enabled_modules:[],is_active:!0},{code:"ENTERPRISE",name:"Enterprise",description:"For large schools with 500+ students. KES 240/student/year. Includes 5,000+ free SMS credits. Custom pricing.",monthly_price:"12500.00",annual_price:"150000.00",max_students:9999,max_storage_gb:200,enabled_modules:[],is_active:!0},{code:"UNLIMITED",name:"Unlimited",description:"Unlimited students with high storage and white-label options.",monthly_price:"0.00",annual_price:"0.00",max_students:999999,max_storage_gb:500,enabled_modules:[],is_active:!0}],Ce={STARTER:{rate:300,sms:100,color:"border-slate-600/60"},GROWTH:{rate:280,sms:500,color:"border-sky-500/30"},PRO:{rate:260,sms:2e3,color:"border-violet-500/30"},PROFESSIONAL:{rate:260,sms:2e3,color:"border-violet-500/30"},ENTERPRISE:{rate:240,sms:5e3,color:"border-amber-500/30"},UNLIMITED:{rate:220,sms:1e4,color:"border-emerald-500/30"}};function Me(){const[f,xe]=a.useState([]),[k,me]=a.useState([]),[$,ue]=a.useState([]),[v,pe]=a.useState([]),[pt,ps]=a.useState([]),[pc,pC]=a.useState(null),[w,B]=a.useState(!0),[O,S]=a.useState(null),[C,G]=a.useState(!0),[q,b]=a.useState(null),[Y,x]=a.useState(null),[j,z]=a.useState({tenant:"",status:""}),[i,M]=a.useState({tenant:"",plan:"",status:""}),[H,V]=a.useState(null),[d,A]=a.useState({tenant:"",plan:"",billing_cycle:"ANNUAL"}),[W,J]=a.useState(!1),[Q,X]=a.useState(null),[R,Z]=a.useState("522522"),[ee,te]=a.useState(!1),[T,U]=a.useState(null),N=a.useCallback(async()=>{B(!0),S(null);try{const t=Se().replace(/\/$/,""),[s,n,P]=await Promise.allSettled([_e.get(`${t}/api/platform/plans/`),r.get("/platform/tenants/"),r.get("/platform/settings/")]);if(s.status==="fulfilled"){const oe=s.value.data,m=E(oe).items;console.info("[Billing] Plans loaded:",m.length,m),xe(m),m.length===0&&S("No active subscription plans found in the database.")}else console.error("[Billing] Plans error:",s.reason),S(u(s.reason,"Unable to load subscription plans."));if(n.status==="fulfilled"?me(E(n.value.data).items):console.error("[Billing] Tenants error:",n.reason),P.status==="fulfilled"){const m=E(P.value.data).items.find(ve=>ve.key==="MPESA_PAYBILL")??null;X(m),m?.value?.number&&Z(String(m.value.number))}else console.error("[Billing] Settings error:",P.reason)}finally{B(!1)}},[]),_=a.useCallback(async()=>{G(!0),b(null);const[t,s,n]=await Promise.allSettled([r.get("/platform/subscription-invoices/",{params:{tenant_id:j.tenant||void 0,status:j.status||void 0}}),r.get("/platform/subscriptions/",{params:{tenant_id:i.tenant||void 0,plan_id:i.plan||void 0,status:i.status||void 0}}),r.get("/platform/subscription-payments/")]);t.status==="fulfilled"&&pe(E(t.value.data).items),s.status==="fulfilled"&&ue(E(s.value.data).items),n.status==="fulfilled"&&ps(E(n.value.data).items);const o=[t,s,n].find(P=>P.status==="rejected");o&&b(u(o.reason,"Unable to load billing records.")),G(!1)},[j.tenant,j.status,i.tenant,i.plan,i.status]);a.useEffect(()=>{N()},[N]),a.useEffect(()=>{_()},[_]);const F=a.useMemo(()=>{let t=0,s=0;for(const n of v)t+=Number(n.total_amount||0),n.status==="PAID"&&(s+=1);return{total:t.toFixed(2),paidCount:s,count:v.length}},[v]),ptSummary=a.useMemo(()=>{let t=0,s=0,n=0,o=0;for(const m of pt)t+=Number(m.amount||0),m.status==="PAID"?s+=1:m.status==="FAILED"?o+=1:n+=1;return{total:t.toFixed(2),paidCount:s,pendingCount:n,failedCount:o,count:pt.length}},[pt]),he=async t=>{const s=window.prompt(`Record payment amount for ${t.invoice_number}`,t.total_amount);if(!s)return;const n=window.prompt(`Transaction code for ${t.invoice_number}`,t.invoice_number);if(!n)return;const o=(window.prompt(`Payment status for ${t.invoice_number} (PENDING or PAID)`,"PENDING")||"PENDING").toUpperCase(),m=(window.prompt(`Payment method for ${t.invoice_number}`,"M-Pesa")||"M-Pesa").trim(),p=Number(s);if(!Number.isFinite(p)||p<=0){b("Enter a valid payment amount.");return}V(t.id),x(null);try{await r.post("/platform/subscription-payments/",{invoice:t.id,amount:p,method:m||"M-Pesa",status:o==="PAID"?"PAID":"PENDING",transaction_id:n.trim(),external_reference:t.external_reference||"",metadata:{source:"invoice-management"}}),x(`Payment captured for invoice ${t.invoice_number}.`),_()}catch(q){b(u(q,"Unable to record tenant payment."))}finally{V(null)}}},ptApprove=async t=>{if(!window.confirm(`Approve payment ${t.invoice_number} and reactivate tenant access?`))return;pC(t.id),x(null);try{await r.post(`/platform/subscription-payments/${t.id}/approve/`,{}),x(`Payment approved for ${t.invoice_number}.`),_()}catch(n){b(u(n,"Unable to approve tenant payment."))}finally{pC(null)}}},ptReject=async t=>{const s=window.prompt(`Reject payment ${t.transaction_code||t.invoice_number} - reason:`,"");if(s===null)return;pC(t.id),x(null);try{await r.post(`/platform/subscription-payments/${t.id}/reject/`,{reason:s.trim()}),x(`Payment rejected for ${t.invoice_number}.`),_()}catch(n){b(u(n,"Unable to reject tenant payment."))}finally{pC(null)}}},ptRetry=async t=>{const s=window.prompt(`Retry verification for ${t.transaction_code||t.invoice_number} - reason:`,"");if(s===null)return;pC(t.id),x(null);try{await r.post(`/platform/subscription-payments/${t.id}/retry-verification/`,{reason:s.trim()}),x(`Verification retried for ${t.invoice_number}.`),_()}catch(n){b(u(n,"Unable to retry tenant verification."))}finally{pC(null)}}},be=async t=>{if(t.preventDefault(),!d.tenant||!d.plan){b("Please select both a tenant and a plan.");return}J(!0),b(null),x(null);try{await r.post("/platform/subscriptions/",{tenant:Number(d.tenant),plan:Number(d.plan),billing_cycle:d.billing_cycle}),x("Subscription created successfully."),A({tenant:"",plan:"",billing_cycle:"ANNUAL"}),_()}catch(s){b(u(s,"Unable to create subscription."))}finally{J(!1)}},[se,ae]=a.useState(!1),le={code:"",name:"",description:"",monthly_price:"",annual_price:"",max_students:"",max_storage_gb:"",is_active:!0},[y,I]=a.useState(null),[l,c]=a.useState(le),[ne,re]=a.useState(!1),[ie,L]=a.useState(null),[K,D]=a.useState(null),[de,ce]=a.useState(!1),ge=t=>{c({code:t.code,name:t.name,description:t.description??"",monthly_price:t.monthly_price,annual_price:t.annual_price,max_students:String(t.max_students),max_storage_gb:String(t.max_storage_gb),is_active:!0}),L(null),I({mode:"edit",id:t.id})},je=async t=>{t.preventDefault(),re(!0),L(null);const s={code:l.code.toUpperCase(),name:l.name,description:l.description,monthly_price:l.monthly_price,annual_price:l.annual_price,max_students:Number(l.max_students),max_storage_gb:Number(l.max_storage_gb),is_active:l.is_active};try{y?.mode==="edit"&&y.id?(await r.patch(`/platform/plans/${y.id}/`,s),x("Plan updated successfully.")):(await r.post("/platform/plans/",s),x("Plan created successfully.")),I(null),N()}catch(n){L(u(n,"Unable to save plan."))}finally{re(!1)}},Ne=async()=>{if(K){ce(!0);try{await r.delete(`/platform/plans/${K}/`),x("Plan deleted."),D(null),N()}catch(t){b(u(t,"Unable to delete plan.")),D(null)}finally{ce(!1)}}},ye=async()=>{ae(!0),S(null);try{for(const t of we)await r.post("/platform/plans/",{...t,is_active:!0});x("Default plans seeded successfully."),N()}catch(t){S(u(t,"Unable to seed default plans."))}finally{ae(!1)}},fe=async()=>{const t=R.trim();if(t){te(!0),U(null);try{if(Q?.id)await r.patch(`/platform/settings/${Q.id}/`,{value:{number:t}});else{const s=await r.post("/platform/settings/",{key:"MPESA_PAYBILL",value:{number:t},description:"M-Pesa Paybill number displayed on billing page and invoices."});X(s.data)}U(`Paybill number saved as ${t}.`)}catch(s){U(u(s,"Unable to save paybill number."))}finally{te(!1)}}},o=f.find(t=>String(t.id)===d.plan);return e.jsxs("div",{className:"grid grid-cols-12 gap-6",children:[e.jsx(Pe,{badge:"MODULE",badgeColor:"emerald",title:"Subscription & Billing",subtitle:"Plans, subscriptions, billing cycles, invoice tracking, and payment capture.",icon:"ðŸ“‹"}),Y?e.jsx("div",{className:"col-span-12 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-4 text-sm text-emerald-200",children:Y}):null,q?e.jsx("div",{className:"col-span-12 rounded-2xl border border-rose-500/40 bg-rose-500/10 p-4 text-sm text-rose-200",children:q}):null,e.jsxs("section",{className:"col-span-12 rounded-2xl p-5",style:g,children:[e.jsx("h2",{className:"text-sm font-semibold text-slate-300 uppercase tracking-wide mb-3",children:"Payment Settings"}),e.jsxs("div",{className:"flex flex-wrap items-end gap-3",children:[e.jsxs("div",{className:"flex flex-col gap-1",children:[e.jsx("label",{className:"text-xs text-slate-400",children:"M-Pesa Paybill Number"}),e.jsx("input",{className:h,value:R,onChange:t=>Z(t.target.value),placeholder:"e.g. 522522",maxLength:10})]}),e.jsx("button",{type:"button",className:"rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-900 disabled:opacity-70",onClick:()=>{fe()},disabled:ee,children:ee?"Saving...":"Save Paybill"}),T?e.jsx("span",{className:`text-xs ${T.startsWith("Unable")?"text-rose-300":"text-emerald-300"}`,children:T}):null]})]}),e.jsxs("section",{className:"col-span-12 rounded-2xl p-6",style:g,children:[e.jsxs("div",{className:"mb-4 flex items-center justify-between gap-3 flex-wrap",children:[e.jsxs("div",{children:[e.jsx("h2",{className:"text-lg font-semibold",children:"Subscription Plans"}),e.jsxs("p",{className:"text-xs text-slate-400 mt-0.5",children:["KES 300/student/year base pricing Â· M-Pesa Paybill"," ",e.jsx("span",{className:"font-mono text-emerald-300",children:R||"â€”"})]})]}),e.jsxs("div",{className:"flex items-center gap-2",children:[e.jsx("button",{type:"button",className:"rounded-lg border border-white/[0.09] px-3 py-1.5 text-xs text-slate-300",onClick:()=>{N()},disabled:w,children:w?"Loading...":"Reload"}),e.jsx("button",{type:"button",className:"rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-slate-900",onClick:()=>{c(le),L(null),I({mode:"create"})},children:"+ Add Plan"})]})]}),O?e.jsxs("div",{className:"mb-3 rounded-lg border border-rose-500/30 bg-rose-500/10 p-4 flex flex-wrap items-center gap-3 text-sm text-rose-300",children:[e.jsx("span",{className:"flex-1",children:O}),e.jsx("button",{type:"button",className:"rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-900 shrink-0 disabled:opacity-70",onClick:()=>{ye()},disabled:se,children:se?"Creating...":"Seed Default Plans"})]}):null,e.jsx("div",{className:"grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4",children:w?Array.from({length:4}).map((t,s)=>e.jsx("div",{className:"rounded-xl border border-white/[0.05] bg-slate-950/60 p-4 animate-pulse h-44"},s)):f.length===0?null:f.map(t=>{const s=Ce[t.code]??{rate:300,sms:100,color:"border-white/[0.07]"};return e.jsxs("article",{className:`rounded-xl border ${s.color} bg-slate-950/60 p-4 text-sm`,children:[e.jsxs("div",{className:"flex items-start justify-between gap-2 mb-2",children:[e.jsxs("div",{children:[e.jsx("p",{className:"text-[10px] uppercase tracking-widest text-slate-500",children:t.code}),e.jsx("p",{className:"font-bold text-white text-base",children:t.name})]}),e.jsx("span",{className:"rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-300",children:"ACTIVE"})]}),e.jsxs("p",{className:"text-2xl font-bold text-emerald-400",children:["KES ",Number(t.annual_price).toLocaleString(),e.jsx("span",{className:"text-sm font-normal text-slate-500",children:"/yr"})]}),e.jsxs("p",{className:"text-xs text-slate-400 mt-0.5",children:["KES ",Number(t.monthly_price).toLocaleString(),"/month"]}),e.jsxs("div",{className:"mt-3 space-y-1 text-xs text-slate-400 border-t border-white/[0.07] pt-3",children:[e.jsxs("div",{className:"flex justify-between",children:[e.jsx("span",{children:"Students"}),e.jsxs("span",{className:"text-white",children:["â‰¤ ",t.max_students>=9999?"500+":t.max_students]})]}),e.jsxs("div",{className:"flex justify-between",children:[e.jsx("span",{children:"Per-student rate"}),e.jsxs("span",{className:"text-white",children:["KES ",s.rate,"/yr"]})]}),e.jsxs("div",{className:"flex justify-between",children:[e.jsx("span",{children:"Free SMS credits"}),e.jsx("span",{className:"text-white",children:s.sms.toLocaleString()})]}),e.jsxs("div",{className:"flex justify-between",children:[e.jsx("span",{children:"Storage"}),e.jsxs("span",{className:"text-white",children:[t.max_storage_gb," GB"]})]})]}),e.jsxs("div",{className:"mt-3 pt-3 border-t border-white/[0.07] flex gap-2",children:[e.jsx("button",{type:"button",className:"flex-1 rounded-lg border border-white/[0.09] px-2 py-1 text-xs text-slate-300 hover:bg-white/[0.05]",onClick:()=>ge(t),children:"Edit"}),e.jsx("button",{type:"button",className:"rounded-lg border border-rose-500/30 px-2 py-1 text-xs text-rose-300 hover:bg-rose-500/10",onClick:()=>D(t.id),children:"Delete"})]})]},t.id)})}),e.jsxs("div",{className:"mt-6 rounded-xl border border-white/[0.07] bg-slate-950/40 p-4",children:[e.jsx("h3",{className:"text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3",children:"Pricing Reference Â· KES 300/student/year"}),e.jsx("div",{className:"overflow-x-auto",children:e.jsxs("table",{className:"w-full text-xs text-slate-300",children:[e.jsx("thead",{children:e.jsxs("tr",{className:"border-b border-white/[0.07] text-slate-500 uppercase",children:[e.jsx("th",{className:"pb-2 pr-4 text-left",children:"Plan"}),e.jsx("th",{className:"pb-2 pr-4 text-left",children:"Students"}),e.jsx("th",{className:"pb-2 pr-4 text-right",children:"Annual Fee"}),e.jsx("th",{className:"pb-2 pr-4 text-right",children:"Per-Student"}),e.jsx("th",{className:"pb-2 text-right",children:"Free SMS"})]})}),e.jsx("tbody",{className:"divide-y divide-white/[0.04]",children:[{p:"Starter",s:"1 â€“ 50",fee:"KES 15,000",rate:"KES 300",sms:"100"},{p:"Growth",s:"51 â€“ 200",fee:"KES 60,000",rate:"KES 280",sms:"500"},{p:"Pro",s:"201 â€“ 500",fee:"KES 150,000",rate:"KES 260",sms:"2,000"},{p:"Enterprise",s:"500+",fee:"Custom",rate:"KES 240",sms:"5,000+"}].map(t=>e.jsxs("tr",{className:"hover:bg-white/[0.02]",children:[e.jsx("td",{className:"py-2 pr-4 font-medium text-white",children:t.p}),e.jsx("td",{className:"py-2 pr-4 text-slate-400",children:t.s}),e.jsx("td",{className:"py-2 pr-4 text-right text-emerald-400",children:t.fee}),e.jsx("td",{className:"py-2 pr-4 text-right",children:t.rate}),e.jsx("td",{className:"py-2 text-right",children:t.sms})]},t.p))})]})})]})]}),e.jsxs("section",{className:"col-span-12 rounded-2xl p-6",style:g,children:[e.jsx("h2",{className:"text-lg font-semibold",children:"Assign / Create Subscription"}),e.jsx("p",{className:"mt-0.5 text-xs text-slate-400",children:"Select a tenant and a billing plan to activate or update their subscription."}),e.jsxs("form",{className:"mt-4 grid gap-3 md:grid-cols-4",onSubmit:t=>{be(t)},children:[e.jsxs("select",{className:p,value:d.tenant,onChange:t=>A(s=>({...s,tenant:t.target.value})),required:!0,children:[e.jsx("option",{value:"",children:"Select tenant"}),k.map(t=>e.jsx("option",{value:t.id,children:t.name},t.id))]}),e.jsxs("select",{className:p,value:d.plan,onChange:t=>A(s=>({...s,plan:t.target.value})),required:!0,children:[e.jsx("option",{value:"",children:"Select billing plan"}),f.map(t=>e.jsxs("option",{value:t.id,children:[t.name," â€” â‰¤",t.max_students>=9999?"500+":t.max_students," students Â· KES"," ",Number(t.annual_price).toLocaleString(),"/yr"]},t.id))]}),e.jsxs("select",{className:p,value:d.billing_cycle,onChange:t=>A(s=>({...s,billing_cycle:t.target.value})),children:[e.jsx("option",{value:"ANNUAL",children:"Annual (recommended)"}),e.jsx("option",{value:"MONTHLY",children:"Monthly"})]}),e.jsx("button",{type:"submit",className:"rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-900 disabled:opacity-70",disabled:W||w,children:W?"Creating...":"Create Subscription"})]}),o?e.jsxs("div",{className:"mt-3 flex flex-wrap items-start gap-4 rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-4 text-xs",children:[e.jsxs("div",{className:"flex-1 min-w-0",children:[e.jsxs("p",{className:"font-semibold text-emerald-300 text-sm",children:[o.name," Plan selected"]}),o.description?e.jsx("p",{className:"mt-0.5 text-slate-400",children:o.description}):null]}),e.jsx("div",{className:"flex flex-wrap gap-4 text-slate-300 shrink-0",children:[["Annual Fee",`KES ${Number(o.annual_price).toLocaleString()}`],["Monthly",`KES ${Number(o.monthly_price).toLocaleString()}`],["Max Students",o.max_students>=9999?"500+":String(o.max_students)],["Storage",`${o.max_storage_gb} GB`]].map(([t,s])=>e.jsxs("div",{className:"text-center",children:[e.jsx("p",{className:"text-slate-500 uppercase tracking-wide",style:{fontSize:"10px"},children:t}),e.jsx("p",{className:"font-bold text-white",children:s})]},t))})]}):null]}),e.jsxs("section",{className:"col-span-12 rounded-2xl p-6",style:g,children:[e.jsxs("div",{className:"flex flex-wrap items-center gap-2 mb-4",children:[e.jsx("h2",{className:"text-lg font-semibold mr-2",children:"Active Subscriptions"}),e.jsxs("select",{className:p,value:i.tenant,onChange:t=>M(s=>({...s,tenant:t.target.value})),children:[e.jsx("option",{value:"",children:"All tenants"}),k.map(t=>e.jsx("option",{value:t.id,children:t.name},t.id))]}),e.jsxs("select",{className:p,value:i.plan,onChange:t=>M(s=>({...s,plan:t.target.value})),children:[e.jsx("option",{value:"",children:"All plans"}),f.map(t=>e.jsx("option",{value:t.id,children:t.name},t.id))]}),e.jsxs("select",{className:p,value:i.status,onChange:t=>M(s=>({...s,status:t.target.value})),children:[e.jsx("option",{value:"",children:"All statuses"}),["TRIAL","ACTIVE","SUSPENDED","CANCELLED"].map(t=>e.jsx("option",{value:t,children:t},t))]})]}),e.jsx("div",{className:"overflow-x-auto rounded-xl border border-white/[0.07]",children:e.jsxs("table",{className:"min-w-[860px] w-full text-left text-sm",children:[e.jsx("thead",{className:"bg-white/[0.03] text-xs uppercase tracking-wide text-slate-400",children:e.jsxs("tr",{children:[e.jsx("th",{className:"px-3 py-2",children:"Tenant"}),e.jsx("th",{className:"px-3 py-2",children:"Plan"}),e.jsx("th",{className:"px-3 py-2",children:"Cycle"}),e.jsx("th",{className:"px-3 py-2",children:"Status"}),e.jsx("th",{className:"px-3 py-2",children:"Starts"}),e.jsx("th",{className:"px-3 py-2",children:"Ends"}),e.jsx("th",{className:"px-3 py-2",children:"Current"})]})}),e.jsxs("tbody",{className:"divide-y divide-slate-800",children:[C?e.jsx("tr",{children:e.jsx("td",{className:"px-3 py-3 text-slate-400",colSpan:7,children:"Loading subscriptions..."})}):null,$.map(t=>e.jsxs("tr",{className:"bg-slate-950/50",children:[e.jsx("td",{className:"px-3 py-2 font-medium text-white",children:t.tenant_name}),e.jsx("td",{className:"px-3 py-2",children:t.plan_detail?.name??t.plan}),e.jsx("td",{className:"px-3 py-2",children:t.billing_cycle}),e.jsx("td",{className:"px-3 py-2",children:e.jsx("span",{className:`rounded-full px-2 py-0.5 text-[10px] font-semibold ${Ee[t.status]??"bg-white/[0.06] text-slate-300"}`,children:t.status})}),e.jsx("td",{className:"px-3 py-2 text-slate-400",children:t.starts_on??"â€”"}),e.jsx("td",{className:"px-3 py-2 text-slate-400",children:t.ends_on??"â€”"}),e.jsx("td",{className:"px-3 py-2",children:t.is_current?e.jsx("span",{className:"text-emerald-400 text-xs",children:"âœ“ Current"}):e.jsx("span",{className:"text-slate-600 text-xs",children:"â€”"})})]},t.id)),!C&&$.length===0?e.jsx("tr",{children:e.jsx("td",{className:"px-3 py-4 text-slate-400",colSpan:7,children:"No subscriptions found."})}):null]})]})})]}),e.jsxs("section",{className:"col-span-12 rounded-2xl p-6",style:g,children:[e.jsxs("div",{className:"flex flex-wrap items-center gap-2",children:[e.jsx("h2",{className:"text-lg font-semibold mr-2",children:"Invoice Management"}),e.jsx("button",{type:"button",className:"rounded-lg border border-emerald-500/30 px-3 py-2 text-sm text-emerald-300",onClick:()=>{document.getElementById("tenant-payments")?.scrollIntoView({behavior:"smooth",block:"start"})},children:"View Payments"}),e.jsxs("select",{className:p,value:j.tenant,onChange:t=>z(s=>({...s,tenant:t.target.value})),children:[e.jsx("option",{value:"",children:"All tenants"}),k.map(t=>e.jsx("option",{value:t.id,children:t.name},t.id))]}),e.jsxs("select",{className:p,value:j.status,onChange:t=>z(s=>({...s,status:t.target.value})),children:[e.jsx("option",{value:"",children:"All statuses"}),["PENDING","PAID","OVERDUE","CANCELLED"].map(t=>e.jsx("option",{value:t,children:t},t))]}),e.jsx("button",{type:"button",className:"rounded-lg border border-white/[0.09] px-3 py-2 text-sm text-white",onClick:()=>{_()},children:"Refresh"}),e.jsxs("p",{className:"ml-auto text-xs text-slate-400",children:["Invoices: ",F.count," | Paid: ",F.paidCount," | Total: KES"," ",Number(F.total).toLocaleString()]})]}),e.jsx("div",{className:"mt-4 overflow-x-auto rounded-xl border border-white/[0.07]",children:e.jsxs("table",{className:"min-w-[980px] w-full text-left text-sm",children:[e.jsx("thead",{className:"bg-white/[0.03] text-xs uppercase tracking-wide text-slate-400",children:e.jsxs("tr",{children:[e.jsx("th",{className:"px-3 py-2",children:"Invoice"}),e.jsx("th",{className:"px-3 py-2",children:"Tenant"}),e.jsx("th",{className:"px-3 py-2",children:"Cycle"}),e.jsx("th",{className:"px-3 py-2",children:"Status"}),e.jsx("th",{className:"px-3 py-2",children:"Amount"}),e.jsx("th",{className:"px-3 py-2",children:"Due Date"}),e.jsx("th",{className:"px-3 py-2",children:"Actions"})]})}),e.jsxs("tbody",{className:"divide-y divide-slate-800",children:[C?e.jsx("tr",{children:e.jsx("td",{className:"px-3 py-3 text-slate-400",colSpan:7,children:"Loading billing records..."})}):null,v.map(t=>e.jsxs("tr",{className:"bg-slate-950/50",children:[e.jsx("td",{className:"px-3 py-2",children:t.invoice_number}),e.jsx("td",{className:"px-3 py-2",children:t.tenant_name}),e.jsx("td",{className:"px-3 py-2",children:t.billing_cycle}),e.jsx("td",{className:"px-3 py-2",children:t.status}),e.jsxs("td",{className:"px-3 py-2",children:["KES ",Number(t.total_amount).toLocaleString()]}),e.jsx("td",{className:"px-3 py-2",children:t.due_date}),e.jsx("td",{className:"px-3 py-2",children:e.jsx("button",{type:"button",className:"rounded border border-white/[0.09] px-2 py-1 text-xs disabled:opacity-60",disabled:t.status==="PAID"||H===t.id,onClick:()=>{he(t)},children:H===t.id?"Saving...":"Record Payment"})})]},t.id)),!C&&v.length===0?e.jsx("tr",{children:e.jsx("td",{className:"px-3 py-4 text-slate-400",colSpan:7,children:"No invoices found."})}):null]})]})})]}),e.jsxs("section",{id:"tenant-payments",className:"col-span-12 rounded-2xl p-6",style:g,children:[
-  e.jsxs("div",{className:"flex flex-wrap items-start gap-3 mb-4",children:[
-    e.jsxs("div",{className:"mr-auto",children:[
-      e.jsx("h2",{className:"text-lg font-semibold",children:"Tenant Payments"}),
-      e.jsx("p",{className:"mt-0.5 text-xs text-slate-400",children:"Review subscription payments, approve settlement, reject mismatches, or retry verification."})
-    ]}),
-    e.jsx("button",{type:"button",className:"rounded-lg border border-white/[0.09] px-3 py-2 text-sm text-white",onClick:()=>{_()},children:"Refresh"}),
-    e.jsxs("p",{className:"text-xs text-slate-400",children:["Payments: ",ptSummary.count," | Pending: ",ptSummary.pendingCount," | Paid: ",ptSummary.paidCount," | Failed: ",ptSummary.failedCount," | Total: KES ",Number(ptSummary.total).toLocaleString()]})
-  ]}),
-  e.jsx("div",{className:"overflow-x-auto rounded-xl border border-white/[0.07]",children:
-    e.jsxs("table",{className:"min-w-[1100px] w-full text-left text-sm",children:[
-      e.jsx("thead",{className:"bg-white/[0.03] text-xs uppercase tracking-wide text-slate-400",children:
-        e.jsxs("tr",{children:[
-          e.jsx("th",{className:"px-3 py-2",children:"Tenant"}),
-          e.jsx("th",{className:"px-3 py-2",children:"Invoice"}),
-          e.jsx("th",{className:"px-3 py-2",children:"Amount"}),
-          e.jsx("th",{className:"px-3 py-2",children:"Method"}),
-          e.jsx("th",{className:"px-3 py-2",children:"Transaction Code"}),
-          e.jsx("th",{className:"px-3 py-2",children:"Status"}),
-          e.jsx("th",{className:"px-3 py-2",children:"Date"}),
-          e.jsx("th",{className:"px-3 py-2",children:"Actions"})
-        ]})
+import { r as React, f as getApiBase, h as privateClient, j as jsxRuntime } from "./index-D7ltaYVC.js";
+import { p as publicClient } from "./publicClient-BdJTy9AM.js";
+import { n as normalizePaginated } from "./pagination-DjjjzeDo.js";
+import { e as getErrorMessage } from "./forms-ZJa1TpnO.js";
+import { P as PageHero } from "./PageHero-Ct90nOAG.js";
+
+const { jsx, jsxs, Fragment } = jsxRuntime;
+
+const panelStyle = {
+  background: "rgba(255,255,255,0.025)",
+  border: "1px solid rgba(255,255,255,0.07)",
+};
+
+const fieldClass =
+  "w-full rounded-xl border border-white/[0.09] bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400";
+
+const defaultPlans = [
+  {
+    code: "STARTER",
+    name: "Starter",
+    description: "For small schools with up to 50 students. KES 300/student/year. Includes 100 free SMS credits.",
+    monthly_price: "1250.00",
+    annual_price: "15000.00",
+    max_students: 50,
+    max_storage_gb: 5,
+    enabled_modules: ["CORE", "STUDENTS", "ACADEMICS", "FINANCE"],
+    is_active: true,
+  },
+  {
+    code: "GROWTH",
+    name: "Growth",
+    description: "For growing schools with 51-200 students. KES 280/student/year. Includes 500 free SMS credits.",
+    monthly_price: "5000.00",
+    annual_price: "60000.00",
+    max_students: 200,
+    max_storage_gb: 20,
+    enabled_modules: [],
+    is_active: true,
+  },
+  {
+    code: "PRO",
+    name: "Pro",
+    description: "For established schools with 201-500 students. KES 260/student/year. Includes 2,000 free SMS credits.",
+    monthly_price: "12500.00",
+    annual_price: "150000.00",
+    max_students: 500,
+    max_storage_gb: 50,
+    enabled_modules: [],
+    is_active: true,
+  },
+  {
+    code: "ENTERPRISE",
+    name: "Enterprise",
+    description: "For large schools with 500+ students. KES 240/student/year. Includes 5,000+ free SMS credits.",
+    monthly_price: "12500.00",
+    annual_price: "150000.00",
+    max_students: 9999,
+    max_storage_gb: 200,
+    enabled_modules: [],
+    is_active: true,
+  },
+  {
+    code: "UNLIMITED",
+    name: "Unlimited",
+    description: "Unlimited students with high storage and white-label options.",
+    monthly_price: "0.00",
+    annual_price: "0.00",
+    max_students: 999999,
+    max_storage_gb: 500,
+    enabled_modules: [],
+    is_active: true,
+  },
+];
+
+const pricingReference = {
+  STARTER: { rate: 300, sms: 100, accent: "border-slate-600/60 bg-slate-950/60" },
+  GROWTH: { rate: 280, sms: 500, accent: "border-sky-500/30 bg-sky-500/5" },
+  PRO: { rate: 260, sms: 2000, accent: "border-violet-500/30 bg-violet-500/5" },
+  PROFESSIONAL: { rate: 260, sms: 2000, accent: "border-violet-500/30 bg-violet-500/5" },
+  ENTERPRISE: { rate: 240, sms: 5000, accent: "border-amber-500/30 bg-amber-500/5" },
+  UNLIMITED: { rate: 220, sms: 10000, accent: "border-emerald-500/30 bg-emerald-500/5" },
+};
+
+const emptyPlanForm = {
+  code: "",
+  name: "",
+  description: "",
+  monthly_price: "",
+  annual_price: "",
+  max_students: "",
+  max_storage_gb: "",
+  is_active: true,
+};
+
+const emptySubscriptionForm = {
+  tenant: "",
+  plan: "",
+  billing_cycle: "ANNUAL",
+};
+
+const emptyRecordPaymentForm = {
+  amount: "",
+  transaction_id: "",
+  status: "PENDING",
+  method: "M-Pesa",
+  external_reference: "",
+};
+
+const emptyReviewForm = {
+  reason: "",
+};
+
+const formatMoney = (value) =>
+  `KES ${Number(value ?? 0).toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+const formatDate = (value) => {
+  if (!value) return "--";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? String(value) : parsed.toLocaleDateString();
+};
+
+const formatDateTime = (value) => {
+  if (!value) return "--";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? String(value) : parsed.toLocaleString();
+};
+
+const safeJson = (value) => {
+  if (value == null) return "No metadata captured.";
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch (error) {
+    return String(value);
+  }
+};
+
+const subscriptionTone = (status) =>
+  (
+    {
+      ACTIVE: "border-emerald-500/30 bg-emerald-500/10 text-emerald-200",
+      TRIAL: "border-sky-500/30 bg-sky-500/10 text-sky-200",
+      SUSPENDED: "border-amber-500/30 bg-amber-500/10 text-amber-200",
+      CANCELLED: "border-rose-500/30 bg-rose-500/10 text-rose-200",
+    }[String(status || "").toUpperCase()] ?? "border-slate-500/30 bg-slate-500/10 text-slate-300"
+  );
+
+const invoiceTone = (status) =>
+  (
+    {
+      PAID: "border-emerald-500/30 bg-emerald-500/10 text-emerald-200",
+      PENDING: "border-amber-500/30 bg-amber-500/10 text-amber-200",
+      OVERDUE: "border-rose-500/30 bg-rose-500/10 text-rose-200",
+      CANCELLED: "border-slate-500/30 bg-slate-500/10 text-slate-300",
+    }[String(status || "").toUpperCase()] ?? "border-slate-500/30 bg-slate-500/10 text-slate-300"
+  );
+
+const paymentTone = (status) =>
+  (
+    {
+      PAID: "border-emerald-500/30 bg-emerald-500/10 text-emerald-200",
+      PENDING: "border-amber-500/30 bg-amber-500/10 text-amber-200",
+      FAILED: "border-rose-500/30 bg-rose-500/10 text-rose-200",
+    }[String(status || "").toUpperCase()] ?? "border-slate-500/30 bg-slate-500/10 text-slate-300"
+  );
+
+const integrationTone = (status) =>
+  (
+    {
+      connected: "border-emerald-500/30 bg-emerald-500/10 text-emerald-200",
+      error: "border-rose-500/30 bg-rose-500/10 text-rose-200",
+      disconnected: "border-slate-500/30 bg-slate-500/10 text-slate-300",
+      pending: "border-amber-500/30 bg-amber-500/10 text-amber-200",
+    }[String(status || "").toLowerCase()] ?? "border-slate-500/30 bg-slate-500/10 text-slate-300"
+  );
+
+function Flash({ tone = "success", message }) {
+  if (!message) return null;
+  const classes =
+    tone === "error"
+      ? "border-rose-500/40 bg-rose-500/10 text-rose-200"
+      : "border-emerald-500/40 bg-emerald-500/10 text-emerald-200";
+  return jsx("div", {
+    className: `col-span-12 rounded-2xl border px-4 py-3 text-sm ${classes}`,
+    children: message,
+  });
+}
+
+function StatCard({ label, value, detail, tone = "text-white" }) {
+  return jsxs("div", {
+    className: "rounded-2xl p-4",
+    style: panelStyle,
+    children: [
+      jsx("p", { className: "text-[11px] uppercase tracking-wide text-slate-500", children: label }),
+      jsx("p", { className: `mt-2 text-2xl font-semibold ${tone}`, children: value }),
+      jsx("p", { className: "mt-1 text-xs text-slate-500", children: detail }),
+    ],
+  });
+}
+
+function OverlayCard({ title, subtitle, onClose, children }) {
+  return jsx("div", {
+    className: "fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4",
+    children: jsxs("div", {
+      className: "w-full max-w-2xl rounded-3xl p-6",
+      style: {
+        background: "#0f172a",
+        border: "1px solid rgba(148,163,184,0.22)",
+        boxShadow: "0 32px 80px rgba(15,23,42,0.55)",
+      },
+      children: [
+        jsxs("div", {
+          className: "flex items-start justify-between gap-4",
+          children: [
+            jsxs("div", {
+              children: [
+                jsx("h2", { className: "text-lg font-semibold text-white", children: title }),
+                subtitle ? jsx("p", { className: "mt-1 text-sm text-slate-400", children: subtitle }) : null,
+              ],
+            }),
+            jsx("button", {
+              type: "button",
+              onClick: onClose,
+              className: "rounded-xl border border-white/[0.09] px-3 py-1 text-sm text-slate-300 transition hover:bg-white/[0.04]",
+              children: "Close",
+            }),
+          ],
+        }),
+        jsx("div", { className: "mt-5", children }),
+      ],
+    }),
+  });
+}
+
+function PlatformBillingPage() {
+  const [plans, setPlans] = React.useState([]);
+  const [tenants, setTenants] = React.useState([]);
+  const [integrations, setIntegrations] = React.useState([]);
+  const [subscriptions, setSubscriptions] = React.useState([]);
+  const [invoices, setInvoices] = React.useState([]);
+  const [payments, setPayments] = React.useState([]);
+  const [paybillSetting, setPaybillSetting] = React.useState(null);
+  const [paybill, setPaybill] = React.useState("522522");
+  const [loadingCatalog, setLoadingCatalog] = React.useState(true);
+  const [loadingRecords, setLoadingRecords] = React.useState(true);
+  const [flash, setFlash] = React.useState(null);
+  const [error, setError] = React.useState(null);
+  const [invoiceFilters, setInvoiceFilters] = React.useState({ tenant: "", status: "" });
+  const [subscriptionFilters, setSubscriptionFilters] = React.useState({ tenant: "", plan: "", status: "" });
+  const [paymentFilters, setPaymentFilters] = React.useState({ tenant: "", status: "", method: "" });
+  const [subscriptionForm, setSubscriptionForm] = React.useState(emptySubscriptionForm);
+  const [planEditor, setPlanEditor] = React.useState(null);
+  const [planForm, setPlanForm] = React.useState(emptyPlanForm);
+  const [planFormError, setPlanFormError] = React.useState(null);
+  const [savingPlan, setSavingPlan] = React.useState(false);
+  const [deletingPlanId, setDeletingPlanId] = React.useState(null);
+  const [creatingSubscription, setCreatingSubscription] = React.useState(false);
+  const [savingPaybill, setSavingPaybill] = React.useState(false);
+  const [recordPaymentTarget, setRecordPaymentTarget] = React.useState(null);
+  const [recordPaymentForm, setRecordPaymentForm] = React.useState(emptyRecordPaymentForm);
+  const [recordPaymentError, setRecordPaymentError] = React.useState(null);
+  const [recordingPayment, setRecordingPayment] = React.useState(false);
+  const [reviewModal, setReviewModal] = React.useState(null);
+  const [reviewForm, setReviewForm] = React.useState(emptyReviewForm);
+  const [reviewError, setReviewError] = React.useState(null);
+  const [reviewingPayment, setReviewingPayment] = React.useState(false);
+  const [expandedPaymentId, setExpandedPaymentId] = React.useState(null);
+
+  const loadCatalog = React.useCallback(async () => {
+    setLoadingCatalog(true);
+    setError(null);
+    try {
+      const apiBase = getApiBase().replace(/\/$/, "");
+      const [planResult, tenantResult, settingsResult, integrationResult] = await Promise.allSettled([
+        privateClient.get(`${apiBase}/api/platform/plans/`),
+        publicClient.get("/platform/tenants/"),
+        publicClient.get("/platform/settings/"),
+        publicClient.get("/platform/integrations/"),
+      ]);
+
+      if (planResult.status === "fulfilled") {
+        const nextPlans = normalizePaginated(planResult.value.data).items;
+        setPlans(nextPlans);
+      } else {
+        setError(getErrorMessage(planResult.reason, "Unable to load platform subscription plans."));
+      }
+
+      if (tenantResult.status === "fulfilled") {
+        setTenants(normalizePaginated(tenantResult.value.data).items);
+      } else {
+        setError((current) => current ?? getErrorMessage(tenantResult.reason, "Unable to load platform tenants."));
+      }
+
+      if (settingsResult.status === "fulfilled") {
+        const nextSetting = normalizePaginated(settingsResult.value.data).items.find((item) => item.key === "MPESA_PAYBILL") ?? null;
+        setPaybillSetting(nextSetting);
+        if (nextSetting?.value?.number) {
+          setPaybill(String(nextSetting.value.number));
+        }
+      }
+
+      if (integrationResult.status === "fulfilled") {
+        setIntegrations(normalizePaginated(integrationResult.value.data).items);
+      } else {
+        setError((current) => current ?? getErrorMessage(integrationResult.reason, "Unable to load gateway readiness."));
+      }
+    } finally {
+      setLoadingCatalog(false);
+    }
+  }, []);
+
+  const loadRecords = React.useCallback(async () => {
+    setLoadingRecords(true);
+    setError(null);
+    try {
+      const [invoiceResult, subscriptionResult, paymentResult] = await Promise.allSettled([
+        publicClient.get("/platform/subscription-invoices/", {
+          params: {
+            tenant_id: invoiceFilters.tenant || undefined,
+            status: invoiceFilters.status || undefined,
+          },
+        }),
+        publicClient.get("/platform/subscriptions/", {
+          params: {
+            tenant_id: subscriptionFilters.tenant || undefined,
+            plan_id: subscriptionFilters.plan || undefined,
+            status: subscriptionFilters.status || undefined,
+          },
+        }),
+        publicClient.get("/platform/subscription-payments/", {
+          params: {
+            tenant_id: paymentFilters.tenant || undefined,
+            status: paymentFilters.status || undefined,
+            method: paymentFilters.method || undefined,
+          },
+        }),
+      ]);
+
+      if (invoiceResult.status === "fulfilled") {
+        setInvoices(normalizePaginated(invoiceResult.value.data).items);
+      } else {
+        setError(getErrorMessage(invoiceResult.reason, "Unable to load billing invoices."));
+      }
+
+      if (subscriptionResult.status === "fulfilled") {
+        setSubscriptions(normalizePaginated(subscriptionResult.value.data).items);
+      } else {
+        setError((current) => current ?? getErrorMessage(subscriptionResult.reason, "Unable to load subscriptions."));
+      }
+
+      if (paymentResult.status === "fulfilled") {
+        setPayments(normalizePaginated(paymentResult.value.data).items);
+      } else {
+        setError((current) => current ?? getErrorMessage(paymentResult.reason, "Unable to load tenant payments."));
+      }
+    } finally {
+      setLoadingRecords(false);
+    }
+  }, [invoiceFilters.tenant, invoiceFilters.status, paymentFilters.method, paymentFilters.status, paymentFilters.tenant, subscriptionFilters.plan, subscriptionFilters.status, subscriptionFilters.tenant]);
+
+  React.useEffect(() => {
+    loadCatalog();
+  }, [loadCatalog]);
+
+  React.useEffect(() => {
+    loadRecords();
+  }, [loadRecords]);
+
+  const activeCurrentSubscriptions = subscriptions.filter((row) => row.is_current);
+  const overdueInvoices = invoices.filter((row) => String(row.status || "").toUpperCase() === "OVERDUE");
+  const pendingPayments = payments.filter((row) => String(row.status || "").toUpperCase() === "PENDING");
+  const failedPayments = payments.filter((row) => String(row.status || "").toUpperCase() === "FAILED");
+  const paidPayments = payments.filter((row) => String(row.status || "").toUpperCase() === "PAID");
+  const invoiceTotals = invoices.reduce(
+    (accumulator, row) => {
+      accumulator.total += Number(row.total_amount || 0);
+      if (String(row.status || "").toUpperCase() === "PAID") {
+        accumulator.paidCount += 1;
+      }
+      return accumulator;
+    },
+    { total: 0, paidCount: 0 },
+  );
+  const paymentTotals = payments.reduce(
+    (accumulator, row) => {
+      const amount = Number(row.amount || 0);
+      const status = String(row.status || "").toUpperCase();
+      accumulator.total += amount;
+      if (status === "PAID") {
+        accumulator.settled += amount;
+      } else if (status === "PENDING") {
+        accumulator.pending += amount;
+      } else if (status === "FAILED") {
+        accumulator.failed += amount;
+      }
+      return accumulator;
+    },
+    { total: 0, settled: 0, pending: 0, failed: 0 },
+  );
+  const billingIntegrations = React.useMemo(
+    () =>
+      integrations
+        .filter((item) => ["mpesa", "stripe"].includes(String(item.code || "").toLowerCase()))
+        .sort((left, right) => String(left.name || "").localeCompare(String(right.name || ""))),
+    [integrations],
+  );
+  const tenantAlerts = React.useMemo(() => {
+    const paymentMap = new Map();
+    payments.forEach((row) => {
+      const items = paymentMap.get(row.tenant_name) ?? [];
+      items.push(row);
+      paymentMap.set(row.tenant_name, items);
+    });
+
+    return activeCurrentSubscriptions
+      .map((subscription) => {
+        const tenantName = subscription.tenant_name;
+        const tenantInvoices = invoices.filter((row) => row.tenant_name === tenantName);
+        const tenantPayments = paymentMap.get(tenantName) ?? [];
+        const tenantOverdueCount = tenantInvoices.filter((row) => String(row.status || "").toUpperCase() === "OVERDUE").length;
+        const tenantPendingPayments = tenantPayments.filter((row) => String(row.status || "").toUpperCase() === "PENDING").length;
+        const reasons = [];
+
+        if (tenantOverdueCount > 0) {
+          reasons.push(`${tenantOverdueCount} overdue invoice(s)`);
+        }
+        if (tenantPendingPayments > 0) {
+          reasons.push(`${tenantPendingPayments} payment(s) awaiting review`);
+        }
+        if (String(subscription.status || "").toUpperCase() === "SUSPENDED") {
+          reasons.push("subscription currently suspended");
+        }
+        if (reasons.length === 0 && subscription.next_billing_date) {
+          reasons.push(`next billing ${formatDate(subscription.next_billing_date)}`);
+        }
+
+        return {
+          id: subscription.id,
+          tenantName,
+          planName: subscription.plan_detail?.name ?? subscription.plan,
+          status: subscription.status,
+          reasons,
+        };
+      })
+      .filter((item) => item.reasons.length > 0)
+      .sort((left, right) => right.reasons.length - left.reasons.length)
+      .slice(0, 6);
+  }, [activeCurrentSubscriptions, invoices, payments]);
+
+  const selectedPlan = plans.find((row) => String(row.id) === String(subscriptionForm.plan)) ?? null;
+  const recordPaymentGuidance = React.useMemo(() => {
+    const method = String(recordPaymentForm.method || "").trim().toLowerCase();
+    if (method.includes("stripe")) {
+      return "Use Pending when the checkout proof is captured but Stripe settlement still needs webhook or operator confirmation. Use Paid only after the hosted payment is already settled.";
+    }
+    if (method.includes("bank")) {
+      return "Record the bank or deposit reference exactly as issued by the bank so operators can match tenant proof to the invoice without ambiguity.";
+    }
+    return "Use Pending when the tenant has submitted proof but the payment still needs platform approval. Use Paid only when settlement is already confirmed and access should reactivate immediately.";
+  }, [recordPaymentForm.method]);
+
+  const resetPlanEditor = () => {
+    setPlanEditor(null);
+    setPlanForm(emptyPlanForm);
+    setPlanFormError(null);
+  };
+
+  const openPlanEditor = (mode, plan) => {
+    if (mode === "edit" && plan) {
+      setPlanForm({
+        code: plan.code,
+        name: plan.name,
+        description: plan.description ?? "",
+        monthly_price: plan.monthly_price,
+        annual_price: plan.annual_price,
+        max_students: String(plan.max_students),
+        max_storage_gb: String(plan.max_storage_gb),
+        is_active: !!plan.is_active,
+      });
+      setPlanEditor({ mode, id: plan.id });
+      setPlanFormError(null);
+      return;
+    }
+
+    setPlanEditor({ mode: "create", id: null });
+    setPlanForm(emptyPlanForm);
+    setPlanFormError(null);
+  };
+
+  const savePlan = async (event) => {
+    event.preventDefault();
+    setSavingPlan(true);
+    setPlanFormError(null);
+
+    const payload = {
+      code: planForm.code.toUpperCase(),
+      name: planForm.name,
+      description: planForm.description,
+      monthly_price: planForm.monthly_price,
+      annual_price: planForm.annual_price,
+      max_students: Number(planForm.max_students),
+      max_storage_gb: Number(planForm.max_storage_gb),
+      is_active: planForm.is_active,
+    };
+
+    try {
+      if (planEditor?.mode === "edit" && planEditor.id) {
+        await publicClient.patch(`/platform/plans/${planEditor.id}/`, payload);
+        setFlash({ tone: "success", message: "Billing plan updated successfully." });
+      } else {
+        await publicClient.post("/platform/plans/", payload);
+        setFlash({ tone: "success", message: "Billing plan created successfully." });
+      }
+      resetPlanEditor();
+      await loadCatalog();
+    } catch (requestError) {
+      setPlanFormError(getErrorMessage(requestError, "Unable to save platform billing plan."));
+    } finally {
+      setSavingPlan(false);
+    }
+  };
+
+  const deletePlan = async (planId) => {
+    setDeletingPlanId(planId);
+    try {
+      await publicClient.delete(`/platform/plans/${planId}/`);
+      setFlash({ tone: "success", message: "Plan deleted." });
+      await loadCatalog();
+    } catch (requestError) {
+      setError(getErrorMessage(requestError, "Unable to delete platform plan."));
+    } finally {
+      setDeletingPlanId(null);
+    }
+  };
+
+  const seedPlans = async () => {
+    setLoadingCatalog(true);
+    setError(null);
+    try {
+      for (const plan of defaultPlans) {
+        await publicClient.post("/platform/plans/", { ...plan, is_active: true });
+      }
+      setFlash({ tone: "success", message: "Default billing plans seeded successfully." });
+      await loadCatalog();
+    } catch (requestError) {
+      setError(getErrorMessage(requestError, "Unable to seed default billing plans."));
+      setLoadingCatalog(false);
+    }
+  };
+
+  const savePaybill = async () => {
+    const nextPaybill = paybill.trim();
+    if (!nextPaybill) {
+      setError("Enter a valid M-Pesa paybill number.");
+      return;
+    }
+
+    setSavingPaybill(true);
+    setError(null);
+    try {
+      if (paybillSetting?.id) {
+        await publicClient.patch(`/platform/settings/${paybillSetting.id}/`, { value: { number: nextPaybill } });
+      } else {
+        const response = await publicClient.post("/platform/settings/", {
+          key: "MPESA_PAYBILL",
+          value: { number: nextPaybill },
+          description: "M-Pesa Paybill number displayed on billing page and invoices.",
+        });
+        setPaybillSetting(response.data);
+      }
+      setFlash({ tone: "success", message: `Paybill number saved as ${nextPaybill}.` });
+    } catch (requestError) {
+      setError(getErrorMessage(requestError, "Unable to save M-Pesa paybill."));
+    } finally {
+      setSavingPaybill(false);
+    }
+  };
+
+  const createSubscription = async (event) => {
+    event.preventDefault();
+    if (!subscriptionForm.tenant || !subscriptionForm.plan) {
+      setError("Select both a tenant and a billing plan.");
+      return;
+    }
+
+    setCreatingSubscription(true);
+    setError(null);
+    try {
+      await publicClient.post("/platform/subscriptions/", {
+        tenant: Number(subscriptionForm.tenant),
+        plan: Number(subscriptionForm.plan),
+        billing_cycle: subscriptionForm.billing_cycle,
+      });
+      setSubscriptionForm(emptySubscriptionForm);
+      setFlash({ tone: "success", message: "Subscription created successfully." });
+      await loadRecords();
+    } catch (requestError) {
+      setError(getErrorMessage(requestError, "Unable to create tenant subscription."));
+    } finally {
+      setCreatingSubscription(false);
+    }
+  };
+
+  const openRecordPayment = (invoice) => {
+    setRecordPaymentTarget(invoice);
+    setRecordPaymentForm({
+      amount: String(invoice.total_amount || ""),
+      transaction_id: invoice.invoice_number || "",
+      status: "PENDING",
+      method: "M-Pesa",
+      external_reference: invoice.external_reference || "",
+    });
+    setRecordPaymentError(null);
+  };
+
+  const closeRecordPayment = () => {
+    if (recordingPayment) return;
+    setRecordPaymentTarget(null);
+    setRecordPaymentForm(emptyRecordPaymentForm);
+    setRecordPaymentError(null);
+  };
+
+  const submitRecordPayment = async (event) => {
+    event.preventDefault();
+    if (!recordPaymentTarget) return;
+    const numericAmount = Number(recordPaymentForm.amount);
+    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+      setRecordPaymentError("Enter a valid payment amount.");
+      return;
+    }
+    if (!recordPaymentForm.transaction_id.trim()) {
+      setRecordPaymentError("Transaction code is required.");
+      return;
+    }
+
+    setRecordingPayment(true);
+    setRecordPaymentError(null);
+    try {
+      await publicClient.post("/platform/subscription-payments/", {
+        invoice: recordPaymentTarget.id,
+        amount: numericAmount,
+        method: recordPaymentForm.method.trim() || "M-Pesa",
+        status: recordPaymentForm.status === "PAID" ? "PAID" : "PENDING",
+        transaction_id: recordPaymentForm.transaction_id.trim(),
+        external_reference: recordPaymentForm.external_reference.trim(),
+        metadata: {
+          source: "platform_billing_workspace",
+          recorded_via: "platform_admin_ui",
+        },
+      });
+      setFlash({ tone: "success", message: `Payment captured for invoice ${recordPaymentTarget.invoice_number}.` });
+      closeRecordPayment();
+      await loadRecords();
+    } catch (requestError) {
+      setRecordPaymentError(getErrorMessage(requestError, "Unable to record tenant payment."));
+    } finally {
+      setRecordingPayment(false);
+    }
+  };
+
+  const openReviewModal = (mode, payment) => {
+    setReviewModal({ mode, payment });
+    setReviewForm(emptyReviewForm);
+    setReviewError(null);
+  };
+
+  const closeReviewModal = () => {
+    if (reviewingPayment) return;
+    setReviewModal(null);
+    setReviewForm(emptyReviewForm);
+    setReviewError(null);
+  };
+
+  const submitReview = async (event) => {
+    event.preventDefault();
+    if (!reviewModal?.payment) return;
+    const { mode, payment } = reviewModal;
+
+    setReviewingPayment(true);
+    setReviewError(null);
+    try {
+      if (mode === "approve") {
+        await publicClient.post(`/platform/subscription-payments/${payment.id}/approve/`, {});
+        setFlash({ tone: "success", message: `Payment approved for ${payment.invoice_number}.` });
+      } else if (mode === "reject") {
+        await publicClient.post(`/platform/subscription-payments/${payment.id}/reject/`, {
+          reason: reviewForm.reason.trim(),
+        });
+        setFlash({ tone: "success", message: `Payment rejected for ${payment.invoice_number}.` });
+      } else {
+        await publicClient.post(`/platform/subscription-payments/${payment.id}/retry-verification/`, {
+          reason: reviewForm.reason.trim(),
+        });
+        setFlash({ tone: "success", message: `Verification retried for ${payment.invoice_number}.` });
+      }
+      closeReviewModal();
+      await loadRecords();
+    } catch (requestError) {
+      setReviewError(getErrorMessage(requestError, `Unable to ${mode} tenant payment.`));
+    } finally {
+      setReviewingPayment(false);
+    }
+  };
+
+  return jsxs("div", {
+    className: "grid grid-cols-12 gap-6",
+    children: [
+      jsx(PageHero, {
+        badge: "PLATFORM",
+        badgeColor: "emerald",
+        title: "Subscription & Billing",
+        subtitle: "Operate plans, invoices, subscription access, and tenant-payment review from one platform workspace.",
+        icon: "KES",
       }),
-      e.jsxs("tbody",{className:"divide-y divide-slate-800",children:[
-        C?e.jsx("tr",{children:e.jsx("td",{className:"px-3 py-3 text-slate-400",colSpan:8,children:"Loading tenant payments..."})}):null,
-        pt.map(t=>e.jsxs("tr",{className:"bg-slate-950/50",children:[
-          e.jsx("td",{className:"px-3 py-2 font-medium text-white",children:t.tenant_name}),
-          e.jsx("td",{className:"px-3 py-2 text-slate-300",children:t.invoice_number}),
-          e.jsxs("td",{className:"px-3 py-2",children:["KES ",Number(t.amount||0).toLocaleString()]}),
-          e.jsx("td",{className:"px-3 py-2",children:t.method||"M-Pesa"}),
-          e.jsx("td",{className:"px-3 py-2 font-mono text-xs text-slate-300",children:t.transaction_code||"—"}),
-          e.jsx("td",{className:"px-3 py-2",children:e.jsx("span",{className:`rounded-full px-2 py-0.5 text-[10px] font-semibold ${t.status==="PAID"?"bg-emerald-500/20 text-emerald-300":t.status==="FAILED"?"bg-rose-500/20 text-rose-300":"bg-amber-500/20 text-amber-300"}`,children:t.status})}),
-          e.jsx("td",{className:"px-3 py-2 text-slate-400",children:t.paid_at||t.created_at||"—"}),
-          e.jsx("td",{className:"px-3 py-2",children:e.jsxs("div",{className:"flex flex-wrap gap-2",children:[
-            e.jsx("button",{type:"button",className:"rounded-lg border border-emerald-500/30 px-2 py-1 text-xs text-emerald-300 disabled:opacity-60",disabled:pc===t.id||t.status==="PAID",onClick:()=>{ptApprove(t)},children:pc===t.id?"Working...":"Approve"}),
-            e.jsx("button",{type:"button",className:"rounded-lg border border-rose-500/30 px-2 py-1 text-xs text-rose-300 disabled:opacity-60",disabled:pc===t.id||t.status==="PAID",onClick:()=>{ptReject(t)},children:"Reject"}),
-            e.jsx("button",{type:"button",className:"rounded-lg border border-amber-500/30 px-2 py-1 text-xs text-amber-300 disabled:opacity-60",disabled:pc===t.id||t.status==="PAID",onClick:()=>{ptRetry(t)},children:"Retry Verification"})
-          ]})})
-        ]},t.id)),
-        !C&&pt.length===0?e.jsx("tr",{children:e.jsx("td",{className:"px-3 py-4 text-slate-400",colSpan:8,children:"No tenant payments found."})}):null
-      ]})
-    ]})
-  })
-]}),
-y&&e.jsx(\,style:{background:"rgba(0,0,0,0.75)"},children:e.jsxs("div",{className:"w-full max-w-lg rounded-2xl p-6 text-white",style:g,children:[e.jsx("h2",{className:"text-lg font-semibold mb-4",children:y.mode==="create"?"Create New Plan":"Edit Plan"}),e.jsxs("form",{className:"space-y-3",onSubmit:t=>{je(t)},children:[e.jsxs("div",{className:"grid grid-cols-2 gap-3",children:[e.jsxs("div",{children:[e.jsx("label",{className:"text-xs text-slate-400 block mb-1",children:"Code"}),e.jsx("input",{className:h,value:l.code,onChange:t=>c(s=>({...s,code:t.target.value})),placeholder:"e.g. STARTER",required:!0})]}),e.jsxs("div",{children:[e.jsx("label",{className:"text-xs text-slate-400 block mb-1",children:"Name"}),e.jsx("input",{className:h,value:l.name,onChange:t=>c(s=>({...s,name:t.target.value})),placeholder:"e.g. Starter",required:!0})]})]}),e.jsxs("div",{children:[e.jsx("label",{className:"text-xs text-slate-400 block mb-1",children:"Description"}),e.jsx("textarea",{className:`${h} w-full`,rows:2,value:l.description,onChange:t=>c(s=>({...s,description:t.target.value})),placeholder:"Short description"})]}),e.jsxs("div",{className:"grid grid-cols-2 gap-3",children:[e.jsxs("div",{children:[e.jsx("label",{className:"text-xs text-slate-400 block mb-1",children:"Monthly Price (KES)"}),e.jsx("input",{className:h,type:"number",step:"0.01",value:l.monthly_price,onChange:t=>c(s=>({...s,monthly_price:t.target.value})),required:!0})]}),e.jsxs("div",{children:[e.jsx("label",{className:"text-xs text-slate-400 block mb-1",children:"Annual Price (KES)"}),e.jsx("input",{className:h,type:"number",step:"0.01",value:l.annual_price,onChange:t=>c(s=>({...s,annual_price:t.target.value})),required:!0})]})]}),e.jsxs("div",{className:"grid grid-cols-2 gap-3",children:[e.jsxs("div",{children:[e.jsx("label",{className:"text-xs text-slate-400 block mb-1",children:"Max Students"}),e.jsx("input",{className:h,type:"number",value:l.max_students,onChange:t=>c(s=>({...s,max_students:t.target.value})),required:!0})]}),e.jsxs("div",{children:[e.jsx("label",{className:"text-xs text-slate-400 block mb-1",children:"Storage (GB)"}),e.jsx("input",{className:h,type:"number",value:l.max_storage_gb,onChange:t=>c(s=>({...s,max_storage_gb:t.target.value})),required:!0})]})]}),ie&&e.jsx("p",{className:"text-xs text-rose-300",children:ie}),e.jsxs("div",{className:"flex gap-3 pt-2",children:[e.jsx("button",{type:"submit",className:"flex-1 rounded-lg bg-emerald-500 py-2 text-sm font-semibold text-slate-900 disabled:opacity-70",disabled:ne,children:ne?"Saving...":y.mode==="create"?"Create Plan":"Save Changes"}),e.jsx("button",{type:"button",className:"rounded-lg border border-white/[0.09] px-4 py-2 text-sm text-slate-300",onClick:()=>I(null),children:"Cancel"})]})]})]})}),K&&e.jsx("div",{className:"fixed inset-0 z-50 flex items-center justify-center p-4",style:{background:"rgba(0,0,0,0.75)"},children:e.jsxs("div",{className:"w-full max-w-sm rounded-2xl p-6 text-white",style:g,children:[e.jsx("h2",{className:"text-lg font-semibold",children:"Delete Plan?"}),e.jsx("p",{className:"mt-2 text-sm text-slate-400",children:"This will permanently remove the plan. Existing subscriptions won't be affected."}),e.jsxs("div",{className:"mt-4 flex gap-3",children:[e.jsx("button",{type:"button",className:"flex-1 rounded-lg bg-rose-500 py-2 text-sm font-semibold text-white disabled:opacity-70",disabled:de,onClick:()=>{Ne()},children:de?"Deleting...":"Yes, Delete"}),e.jsx("button",{type:"button",className:"rounded-lg border border-white/[0.09] px-4 py-2 text-sm text-slate-300",onClick:()=>D(null),children:"Cancel"})]})]})})]})}export{Me as default};
+      jsx(Flash, { tone: flash?.tone, message: flash?.message }),
+      jsx(Flash, { tone: "error", message: typeof error === "string" ? error : null }),
+      jsx("section", {
+        className: "col-span-12 grid gap-3 lg:grid-cols-5",
+        children: [
+          {
+            label: "Current subscriptions",
+            value: String(activeCurrentSubscriptions.length),
+            detail: "Tenant subscriptions currently in force",
+            tone: "text-emerald-200",
+          },
+          {
+            label: "Overdue invoices",
+            value: String(overdueInvoices.length),
+            detail: "Need collection or suspension follow-up",
+            tone: overdueInvoices.length > 0 ? "text-amber-200" : "text-emerald-200",
+          },
+          {
+            label: "Pending payments",
+            value: String(pendingPayments.length),
+            detail: "Awaiting platform review or callback confirmation",
+            tone: pendingPayments.length > 0 ? "text-amber-200" : "text-emerald-200",
+          },
+          {
+            label: "Settled payments",
+            value: String(paidPayments.length),
+            detail: `${formatMoney(paymentTotals.settled)} total settled`,
+            tone: "text-sky-200",
+          },
+          {
+            label: "Platform paybill",
+            value: paybill || "--",
+            detail: "Displayed on invoices and used for tenant collections",
+            tone: "text-white",
+          },
+        ].map((item) =>
+          jsx(
+            StatCard,
+            {
+              label: item.label,
+              value: item.value,
+              detail: item.detail,
+              tone: item.tone,
+            },
+            item.label,
+          ),
+        ),
+      }),
+      jsx("section", {
+        className: "col-span-12 grid gap-4 xl:grid-cols-[1.2fr,0.8fr]",
+        children: [
+          jsxs("div", {
+            className: "rounded-2xl p-5",
+            style: panelStyle,
+            children: [
+              jsx("p", {
+                className: "text-[11px] uppercase tracking-wide text-slate-500",
+                children: "Billing posture",
+              }),
+              jsx("h2", {
+                className: "mt-2 text-lg font-semibold text-white",
+                children: "Tenants needing billing attention",
+              }),
+              jsx("div", {
+                className: "mt-4 space-y-3",
+                children:
+                  tenantAlerts.length > 0
+                    ? tenantAlerts.map((item) =>
+                        jsxs(
+                          "div",
+                          {
+                            className: "rounded-2xl border border-white/[0.07] bg-slate-950/70 p-4",
+                            children: [
+                              jsxs("div", {
+                                className: "flex flex-wrap items-center justify-between gap-2",
+                                children: [
+                                  jsxs("div", {
+                                    children: [
+                                      jsx("p", { className: "text-sm font-semibold text-white", children: item.tenantName }),
+                                      jsx("p", { className: "text-xs text-slate-500", children: item.planName }),
+                                    ],
+                                  }),
+                                  jsx("span", {
+                                    className: `inline-flex rounded-full border px-2 py-0.5 text-[11px] ${subscriptionTone(item.status)}`,
+                                    children: item.status,
+                                  }),
+                                ],
+                              }),
+                              jsx("ul", {
+                                className: "mt-3 space-y-1 text-xs text-slate-300",
+                                children: item.reasons.map((reason) =>
+                                  jsx("li", { children: `- ${reason}` }, reason),
+                                ),
+                              }),
+                            ],
+                          },
+                          item.id,
+                        ),
+                      )
+                    : jsx("p", {
+                        className: "rounded-2xl border border-white/[0.07] bg-slate-950/70 p-4 text-sm text-slate-400",
+                        children: "No urgent tenant billing issues in the current subscription set.",
+                      }),
+              }),
+            ],
+          }),
+          jsxs("div", {
+            className: "rounded-2xl p-5",
+            style: panelStyle,
+            children: [
+              jsx("p", {
+                className: "text-[11px] uppercase tracking-wide text-slate-500",
+                children: "Collection settings",
+              }),
+              jsx("h2", {
+                className: "mt-2 text-lg font-semibold text-white",
+                children: "M-Pesa paybill and operator guidance",
+              }),
+              jsxs("div", {
+                className: "mt-4 space-y-3",
+                children: [
+                  jsxs("label", {
+                    className: "block text-sm",
+                    children: [
+                      jsx("span", { className: "mb-1 block text-xs text-slate-400", children: "Paybill number" }),
+                      jsx("input", {
+                        className: fieldClass,
+                        value: paybill,
+                        onChange: (event) => setPaybill(event.target.value),
+                        placeholder: "e.g. 522522",
+                        maxLength: 10,
+                      }),
+                    ],
+                  }),
+                  jsx("p", {
+                    className: "rounded-2xl border border-white/[0.07] bg-slate-950/70 px-4 py-3 text-xs text-slate-400",
+                    children:
+                      "Keep this aligned with the callback-ready paybill in production. Tenant invoices, payment instructions, and operator review all depend on this single platform setting.",
+                  }),
+                  jsx("button", {
+                    type: "button",
+                    onClick: savePaybill,
+                    disabled: savingPaybill,
+                    className:
+                      "rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-emerald-400 disabled:opacity-70",
+                    children: savingPaybill ? "Saving..." : "Save paybill",
+                  }),
+                  jsxs("div", {
+                    className: "rounded-2xl border border-white/[0.07] bg-slate-950/70 p-4",
+                    children: [
+                      jsx("p", {
+                        className: "text-[11px] uppercase tracking-wide text-slate-500",
+                        children: "Gateway readiness",
+                      }),
+                      jsx("div", {
+                        className: "mt-3 grid gap-3 sm:grid-cols-2",
+                        children:
+                          billingIntegrations.length > 0
+                            ? billingIntegrations.map((integration) =>
+                                jsxs(
+                                  "div",
+                                  {
+                                    className: "rounded-2xl border border-white/[0.07] bg-black/20 p-3",
+                                    children: [
+                                      jsxs("div", {
+                                        className: "flex items-center justify-between gap-2",
+                                        children: [
+                                          jsx("p", { className: "text-sm font-semibold text-white", children: integration.name }),
+                                          jsx("span", {
+                                            className: `inline-flex rounded-full border px-2 py-0.5 text-[11px] ${integrationTone(integration.status)}`,
+                                            children: String(integration.status || "unknown").toUpperCase(),
+                                          }),
+                                        ],
+                                      }),
+                                      jsx("p", {
+                                        className: "mt-2 text-xs text-slate-400",
+                                        children: integration.description || "No integration notes available.",
+                                      }),
+                                      jsx("p", {
+                                        className: "mt-2 text-[11px] text-slate-500",
+                                        children: integration.updated_at ? `Last updated ${formatDateTime(integration.updated_at)}` : "No platform setting recorded yet.",
+                                      }),
+                                    ],
+                                  },
+                                  integration.code,
+                                ),
+                              )
+                            : jsx("p", {
+                                className: "text-sm text-slate-400",
+                                children: "Gateway status will appear here after platform integrations are configured.",
+                              }),
+                      }),
+                    ],
+                  }),
+                ],
+              }),
+            ],
+          }),
+        ],
+      }),
+      jsxs("section", {
+        className: "col-span-12 rounded-2xl p-6",
+        style: panelStyle,
+        children: [
+          jsxs("div", {
+            className: "flex flex-wrap items-start justify-between gap-3",
+            children: [
+              jsxs("div", {
+                children: [
+                  jsx("h2", { className: "text-lg font-semibold text-white", children: "Subscription plans" }),
+                  jsx("p", {
+                    className: "mt-1 text-sm text-slate-400",
+                    children: "Edit commercial plans, student caps, storage limits, and operator-facing pricing reference.",
+                  }),
+                ],
+              }),
+              jsxs("div", {
+                className: "flex flex-wrap gap-2",
+                children: [
+                  jsx("button", {
+                    type: "button",
+                    onClick: loadCatalog,
+                    disabled: loadingCatalog,
+                    className: "rounded-xl border border-white/[0.09] px-4 py-2 text-sm text-slate-200 transition hover:bg-white/[0.04]",
+                    children: loadingCatalog ? "Loading..." : "Reload",
+                  }),
+                  jsx("button", {
+                    type: "button",
+                    onClick: seedPlans,
+                    className: "rounded-xl border border-white/[0.09] px-4 py-2 text-sm text-slate-200 transition hover:bg-white/[0.04]",
+                    children: "Seed defaults",
+                  }),
+                  jsx("button", {
+                    type: "button",
+                    onClick: () => openPlanEditor("create"),
+                    className: "rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-emerald-400",
+                    children: "Add plan",
+                  }),
+                ],
+              }),
+            ],
+          }),
+          jsx("div", {
+            className: "mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4",
+            children:
+              loadingCatalog
+                ? Array.from({ length: 4 }).map((_, index) =>
+                    jsx("div", {
+                      className: "h-48 animate-pulse rounded-2xl border border-white/[0.05] bg-slate-950/60",
+                    }, index),
+                  )
+                : plans.map((plan) => {
+                    const reference = pricingReference[plan.code] ?? { rate: 300, sms: 100, accent: "border-white/[0.07] bg-slate-950/60" };
+                    return jsxs(
+                      "article",
+                      {
+                        className: `rounded-2xl border p-4 ${reference.accent}`,
+                        children: [
+                          jsxs("div", {
+                            className: "flex items-start justify-between gap-3",
+                            children: [
+                              jsxs("div", {
+                                children: [
+                                  jsx("p", { className: "text-[10px] uppercase tracking-[0.28em] text-slate-500", children: plan.code }),
+                                  jsx("h3", { className: "mt-2 text-lg font-semibold text-white", children: plan.name }),
+                                ],
+                              }),
+                              jsx("span", {
+                                className: "rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-200",
+                                children: plan.is_active ? "ACTIVE" : "INACTIVE",
+                              }),
+                            ],
+                          }),
+                          jsx("p", {
+                            className: "mt-3 text-sm text-slate-400",
+                            children: plan.description || "No description provided.",
+                          }),
+                          jsxs("div", {
+                            className: "mt-4 grid gap-2 text-xs text-slate-300",
+                            children: [
+                              jsxs("div", { className: "flex justify-between", children: [jsx("span", { children: "Annual" }), jsx("span", { className: "text-emerald-300", children: formatMoney(plan.annual_price) })] }),
+                              jsxs("div", { className: "flex justify-between", children: [jsx("span", { children: "Monthly" }), jsx("span", { children: formatMoney(plan.monthly_price) })] }),
+                              jsxs("div", { className: "flex justify-between", children: [jsx("span", { children: "Students" }), jsx("span", { children: plan.max_students >= 9999 ? "500+" : plan.max_students })] }),
+                              jsxs("div", { className: "flex justify-between", children: [jsx("span", { children: "Storage" }), jsx("span", { children: `${plan.max_storage_gb} GB` })] }),
+                              jsxs("div", { className: "flex justify-between", children: [jsx("span", { children: "Rate" }), jsx("span", { children: `KES ${reference.rate}/student/yr` })] }),
+                              jsxs("div", { className: "flex justify-between", children: [jsx("span", { children: "Free SMS" }), jsx("span", { children: reference.sms.toLocaleString() })] }),
+                            ],
+                          }),
+                          jsxs("div", {
+                            className: "mt-4 flex gap-2",
+                            children: [
+                              jsx("button", {
+                                type: "button",
+                                onClick: () => openPlanEditor("edit", plan),
+                                className: "flex-1 rounded-xl border border-white/[0.09] px-3 py-2 text-xs text-slate-200 transition hover:bg-white/[0.04]",
+                                children: "Edit",
+                              }),
+                              jsx("button", {
+                                type: "button",
+                                onClick: () => deletePlan(plan.id),
+                                disabled: deletingPlanId === plan.id,
+                                className: "rounded-xl border border-rose-500/30 px-3 py-2 text-xs text-rose-300 transition hover:bg-rose-500/10 disabled:opacity-60",
+                                children: deletingPlanId === plan.id ? "Deleting..." : "Delete",
+                              }),
+                            ],
+                          }),
+                        ],
+                      },
+                      plan.id,
+                    );
+                  }),
+          }),
+        ],
+      }),
+      jsxs("section", {
+        className: "col-span-12 grid gap-4 xl:grid-cols-[0.95fr,1.05fr]",
+        children: [
+          jsxs("div", {
+            className: "rounded-2xl p-6",
+            style: panelStyle,
+            children: [
+              jsx("h2", { className: "text-lg font-semibold text-white", children: "Assign subscription" }),
+              jsx("p", {
+                className: "mt-1 text-sm text-slate-400",
+                children: "Activate or change a tenant plan without leaving the billing workspace.",
+              }),
+              jsxs("form", {
+                className: "mt-4 grid gap-3",
+                onSubmit: createSubscription,
+                children: [
+                  jsxs("label", {
+                    className: "block text-sm",
+                    children: [
+                      jsx("span", { className: "mb-1 block text-xs text-slate-400", children: "Tenant" }),
+                      jsxs("select", {
+                        className: fieldClass,
+                        value: subscriptionForm.tenant,
+                        onChange: (event) => setSubscriptionForm((current) => ({ ...current, tenant: event.target.value })),
+                        required: true,
+                        children: [
+                          jsx("option", { value: "", children: "Select tenant" }),
+                          tenants.map((tenant) =>
+                            jsx("option", { value: tenant.id, children: tenant.name }, tenant.id),
+                          ),
+                        ],
+                      }),
+                    ],
+                  }),
+                  jsxs("label", {
+                    className: "block text-sm",
+                    children: [
+                      jsx("span", { className: "mb-1 block text-xs text-slate-400", children: "Plan" }),
+                      jsxs("select", {
+                        className: fieldClass,
+                        value: subscriptionForm.plan,
+                        onChange: (event) => setSubscriptionForm((current) => ({ ...current, plan: event.target.value })),
+                        required: true,
+                        children: [
+                          jsx("option", { value: "", children: "Select plan" }),
+                          plans.map((plan) =>
+                            jsx(
+                              "option",
+                              {
+                                value: plan.id,
+                                children: `${plan.name} - ${formatMoney(plan.annual_price)}/yr`,
+                              },
+                              plan.id,
+                            ),
+                          ),
+                        ],
+                      }),
+                    ],
+                  }),
+                  jsxs("label", {
+                    className: "block text-sm",
+                    children: [
+                      jsx("span", { className: "mb-1 block text-xs text-slate-400", children: "Billing cycle" }),
+                      jsxs("select", {
+                        className: fieldClass,
+                        value: subscriptionForm.billing_cycle,
+                        onChange: (event) => setSubscriptionForm((current) => ({ ...current, billing_cycle: event.target.value })),
+                        children: [
+                          jsx("option", { value: "ANNUAL", children: "Annual (recommended)" }),
+                          jsx("option", { value: "MONTHLY", children: "Monthly" }),
+                        ],
+                      }),
+                    ],
+                  }),
+                  selectedPlan
+                    ? jsx("div", {
+                        className: "rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4 text-xs text-slate-300",
+                        children: jsxs("div", {
+                          className: "grid gap-2 sm:grid-cols-2",
+                          children: [
+                            jsxs("div", { children: [jsx("p", { className: "text-slate-500", children: "Annual fee" }), jsx("p", { className: "mt-1 font-semibold text-emerald-300", children: formatMoney(selectedPlan.annual_price) })] }),
+                            jsxs("div", { children: [jsx("p", { className: "text-slate-500", children: "Monthly fee" }), jsx("p", { className: "mt-1 font-semibold text-white", children: formatMoney(selectedPlan.monthly_price) })] }),
+                            jsxs("div", { children: [jsx("p", { className: "text-slate-500", children: "Student cap" }), jsx("p", { className: "mt-1 font-semibold text-white", children: selectedPlan.max_students >= 9999 ? "500+" : selectedPlan.max_students })] }),
+                            jsxs("div", { children: [jsx("p", { className: "text-slate-500", children: "Storage" }), jsx("p", { className: "mt-1 font-semibold text-white", children: `${selectedPlan.max_storage_gb} GB` })] }),
+                          ],
+                        }),
+                      })
+                    : null,
+                  jsx("button", {
+                    type: "submit",
+                    disabled: creatingSubscription,
+                    className:
+                      "rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-emerald-400 disabled:opacity-70",
+                    children: creatingSubscription ? "Creating..." : "Create subscription",
+                  }),
+                ],
+              }),
+            ],
+          }),
+          jsxs("div", {
+            className: "rounded-2xl p-6",
+            style: panelStyle,
+            children: [
+              jsxs("div", {
+                className: "flex flex-wrap items-center gap-2",
+                children: [
+                  jsx("h2", { className: "text-lg font-semibold text-white", children: "Active subscriptions" }),
+                  jsx("span", { className: "rounded-full border border-white/[0.08] px-2 py-0.5 text-[11px] text-slate-400", children: `${subscriptions.length} rows` }),
+                ],
+              }),
+              jsx("div", {
+                className: "mt-4 grid gap-2 sm:grid-cols-3",
+                children: [
+                  {
+                    value: subscriptionFilters.tenant,
+                    onChange: (event) => setSubscriptionFilters((current) => ({ ...current, tenant: event.target.value })),
+                    options: [jsx("option", { value: "", children: "All tenants" }, "all"), ...tenants.map((tenant) => jsx("option", { value: tenant.id, children: tenant.name }, tenant.id))],
+                  },
+                  {
+                    value: subscriptionFilters.plan,
+                    onChange: (event) => setSubscriptionFilters((current) => ({ ...current, plan: event.target.value })),
+                    options: [jsx("option", { value: "", children: "All plans" }, "all"), ...plans.map((plan) => jsx("option", { value: plan.id, children: plan.name }, plan.id))],
+                  },
+                  {
+                    value: subscriptionFilters.status,
+                    onChange: (event) => setSubscriptionFilters((current) => ({ ...current, status: event.target.value })),
+                    options: [
+                      jsx("option", { value: "", children: "All statuses" }, "all"),
+                      ...["TRIAL", "ACTIVE", "SUSPENDED", "CANCELLED"].map((status) =>
+                        jsx("option", { value: status, children: status }, status),
+                      ),
+                    ],
+                  },
+                ].map((config, index) =>
+                  jsx(
+                    "select",
+                    {
+                      className: fieldClass,
+                      value: config.value,
+                      onChange: config.onChange,
+                      children: config.options,
+                    },
+                    index,
+                  ),
+                ),
+              }),
+              jsx("div", {
+                className: "mt-4 overflow-x-auto rounded-2xl border border-white/[0.07]",
+                children: jsxs("table", {
+                  className: "min-w-[920px] w-full text-left text-sm",
+                  children: [
+                    jsx("thead", {
+                      className: "bg-white/[0.03] text-xs uppercase tracking-wide text-slate-400",
+                      children: jsxs("tr", {
+                        children: [
+                          jsx("th", { className: "px-3 py-2", children: "Tenant" }),
+                          jsx("th", { className: "px-3 py-2", children: "Plan" }),
+                          jsx("th", { className: "px-3 py-2", children: "Cycle" }),
+                          jsx("th", { className: "px-3 py-2", children: "Status" }),
+                          jsx("th", { className: "px-3 py-2", children: "Starts" }),
+                          jsx("th", { className: "px-3 py-2", children: "Next Billing" }),
+                          jsx("th", { className: "px-3 py-2", children: "Ends" }),
+                        ],
+                      }),
+                    }),
+                    jsx("tbody", {
+                      className: "divide-y divide-slate-800",
+                      children:
+                        loadingRecords
+                          ? jsx("tr", {
+                              children: jsx("td", {
+                                className: "px-3 py-4 text-slate-400",
+                                colSpan: 7,
+                                children: "Loading subscriptions...",
+                              }),
+                            })
+                          : subscriptions.length > 0
+                            ? subscriptions.map((row) =>
+                                jsxs(
+                                  "tr",
+                                  {
+                                    className: "bg-slate-950/50",
+                                    children: [
+                                      jsx("td", { className: "px-3 py-2 font-medium text-white", children: row.tenant_name }),
+                                      jsx("td", { className: "px-3 py-2", children: row.plan_detail?.name ?? row.plan }),
+                                      jsx("td", { className: "px-3 py-2", children: row.billing_cycle }),
+                                      jsx("td", {
+                                        className: "px-3 py-2",
+                                        children: jsx("span", {
+                                          className: `inline-flex rounded-full border px-2 py-0.5 text-[11px] ${subscriptionTone(row.status)}`,
+                                          children: row.status,
+                                        }),
+                                      }),
+                                      jsx("td", { className: "px-3 py-2 text-slate-400", children: formatDate(row.starts_on) }),
+                                      jsx("td", { className: "px-3 py-2 text-slate-400", children: formatDate(row.next_billing_date) }),
+                                      jsx("td", { className: "px-3 py-2 text-slate-400", children: formatDate(row.ends_on) }),
+                                    ],
+                                  },
+                                  row.id,
+                                ),
+                              )
+                            : jsx("tr", {
+                                children: jsx("td", {
+                                  className: "px-3 py-4 text-slate-400",
+                                  colSpan: 7,
+                                  children: "No subscriptions match the current filters.",
+                                }),
+                              }),
+                    }),
+                  ],
+                }),
+              }),
+            ],
+          }),
+        ],
+      }),
+      jsxs("section", {
+        className: "col-span-12 rounded-2xl p-6",
+        style: panelStyle,
+        children: [
+          jsxs("div", {
+            className: "flex flex-wrap items-start justify-between gap-3",
+            children: [
+              jsxs("div", {
+                children: [
+                  jsx("h2", { className: "text-lg font-semibold text-white", children: "Invoice management" }),
+                  jsx("p", {
+                    className: "mt-1 text-sm text-slate-400",
+                    children: `Invoices: ${invoices.length} | Paid: ${invoiceTotals.paidCount} | Total billed: ${formatMoney(invoiceTotals.total)}`,
+                  }),
+                ],
+              }),
+              jsx("button", {
+                type: "button",
+                onClick: loadRecords,
+                className: "rounded-xl border border-white/[0.09] px-4 py-2 text-sm text-slate-200 transition hover:bg-white/[0.04]",
+                children: "Refresh",
+              }),
+            ],
+          }),
+          jsx("div", {
+            className: "mt-4 grid gap-2 sm:grid-cols-2",
+            children: [
+              {
+                value: invoiceFilters.tenant,
+                onChange: (event) => setInvoiceFilters((current) => ({ ...current, tenant: event.target.value })),
+                options: [jsx("option", { value: "", children: "All tenants" }, "all"), ...tenants.map((tenant) => jsx("option", { value: tenant.id, children: tenant.name }, tenant.id))],
+              },
+              {
+                value: invoiceFilters.status,
+                onChange: (event) => setInvoiceFilters((current) => ({ ...current, status: event.target.value })),
+                options: [
+                  jsx("option", { value: "", children: "All invoice statuses" }, "all"),
+                  ...["PENDING", "PAID", "OVERDUE", "CANCELLED"].map((status) =>
+                    jsx("option", { value: status, children: status }, status),
+                  ),
+                ],
+              },
+            ].map((config, index) =>
+              jsx(
+                "select",
+                {
+                  className: fieldClass,
+                  value: config.value,
+                  onChange: config.onChange,
+                  children: config.options,
+                },
+                index,
+              ),
+            ),
+          }),
+          jsx("div", {
+            className: "mt-4 overflow-x-auto rounded-2xl border border-white/[0.07]",
+            children: jsxs("table", {
+              className: "min-w-[1080px] w-full text-left text-sm",
+              children: [
+                jsx("thead", {
+                  className: "bg-white/[0.03] text-xs uppercase tracking-wide text-slate-400",
+                  children: jsxs("tr", {
+                    children: [
+                      jsx("th", { className: "px-3 py-2", children: "Invoice" }),
+                      jsx("th", { className: "px-3 py-2", children: "Tenant" }),
+                      jsx("th", { className: "px-3 py-2", children: "Cycle" }),
+                      jsx("th", { className: "px-3 py-2", children: "Status" }),
+                      jsx("th", { className: "px-3 py-2", children: "Period" }),
+                      jsx("th", { className: "px-3 py-2", children: "Amount" }),
+                      jsx("th", { className: "px-3 py-2", children: "Due Date" }),
+                      jsx("th", { className: "px-3 py-2", children: "Actions" }),
+                    ],
+                  }),
+                }),
+                jsx("tbody", {
+                  className: "divide-y divide-slate-800",
+                  children:
+                    loadingRecords
+                      ? jsx("tr", {
+                          children: jsx("td", {
+                            className: "px-3 py-4 text-slate-400",
+                            colSpan: 8,
+                            children: "Loading invoices...",
+                          }),
+                        })
+                      : invoices.length > 0
+                        ? invoices.map((row) =>
+                            jsxs(
+                              "tr",
+                              {
+                                className: "bg-slate-950/50",
+                                children: [
+                                  jsx("td", { className: "px-3 py-2 font-medium text-white", children: row.invoice_number }),
+                                  jsx("td", { className: "px-3 py-2", children: row.tenant_name }),
+                                  jsx("td", { className: "px-3 py-2", children: row.billing_cycle }),
+                                  jsx("td", {
+                                    className: "px-3 py-2",
+                                    children: jsx("span", {
+                                      className: `inline-flex rounded-full border px-2 py-0.5 text-[11px] ${invoiceTone(row.status)}`,
+                                      children: row.status,
+                                    }),
+                                  }),
+                                  jsx("td", {
+                                    className: "px-3 py-2 text-xs text-slate-400",
+                                    children: `${formatDate(row.period_start)} - ${formatDate(row.period_end)}`,
+                                  }),
+                                  jsx("td", { className: "px-3 py-2", children: formatMoney(row.total_amount) }),
+                                  jsx("td", { className: "px-3 py-2 text-slate-400", children: formatDate(row.due_date) }),
+                                  jsx("td", {
+                                    className: "px-3 py-2",
+                                    children: jsx("button", {
+                                      type: "button",
+                                      onClick: () => openRecordPayment(row),
+                                      disabled: String(row.status || "").toUpperCase() === "PAID",
+                                      className:
+                                        "rounded-xl border border-white/[0.09] px-3 py-1 text-xs text-slate-200 transition hover:bg-white/[0.04] disabled:opacity-50",
+                                      children: "Record payment",
+                                    }),
+                                  }),
+                                ],
+                              },
+                              row.id,
+                            ),
+                          )
+                        : jsx("tr", {
+                            children: jsx("td", {
+                              className: "px-3 py-4 text-slate-400",
+                              colSpan: 8,
+                              children: "No invoices match the current filters.",
+                            }),
+                          }),
+                }),
+              ],
+            }),
+          }),
+        ],
+      }),
+      jsxs("section", {
+        className: "col-span-12 rounded-2xl p-6",
+        style: panelStyle,
+        children: [
+          jsxs("div", {
+            className: "flex flex-wrap items-start justify-between gap-3",
+            children: [
+              jsxs("div", {
+                children: [
+                  jsx("h2", { className: "text-lg font-semibold text-white", children: "Tenant payments" }),
+                  jsx("p", {
+                    className: "mt-1 text-sm text-slate-400",
+                    children: `Payments: ${payments.length} | Pending: ${pendingPayments.length} | Failed: ${failedPayments.length} | Settled: ${formatMoney(paymentTotals.settled)}`,
+                  }),
+                ],
+              }),
+              jsx("button", {
+                type: "button",
+                onClick: loadRecords,
+                className: "rounded-xl border border-white/[0.09] px-4 py-2 text-sm text-slate-200 transition hover:bg-white/[0.04]",
+                children: "Refresh",
+              }),
+            ],
+          }),
+          jsx("div", {
+            className: "mt-4 grid gap-2 md:grid-cols-3",
+            children: [
+              {
+                value: paymentFilters.tenant,
+                onChange: (event) => setPaymentFilters((current) => ({ ...current, tenant: event.target.value })),
+                options: [jsx("option", { value: "", children: "All tenants" }, "all"), ...tenants.map((tenant) => jsx("option", { value: tenant.id, children: tenant.name }, tenant.id))],
+              },
+              {
+                value: paymentFilters.status,
+                onChange: (event) => setPaymentFilters((current) => ({ ...current, status: event.target.value })),
+                options: [
+                  jsx("option", { value: "", children: "All payment statuses" }, "all"),
+                  ...["PENDING", "PAID", "FAILED"].map((status) => jsx("option", { value: status, children: status }, status)),
+                ],
+              },
+              {
+                value: paymentFilters.method,
+                onChange: (event) => setPaymentFilters((current) => ({ ...current, method: event.target.value })),
+                options: [
+                  jsx("option", { value: "", children: "All methods" }, "all"),
+                  ...["M-Pesa", "Bank Transfer", "Stripe Checkout", "Card", "Manual"].map((method) => jsx("option", { value: method, children: method }, method)),
+                ],
+              },
+            ].map((config, index) =>
+              jsx(
+                "select",
+                {
+                  className: fieldClass,
+                  value: config.value,
+                  onChange: config.onChange,
+                  children: config.options,
+                },
+                index,
+              ),
+            ),
+          }),
+          jsx("div", {
+            className: "mt-4 overflow-x-auto rounded-2xl border border-white/[0.07]",
+            children: jsxs("table", {
+              className: "min-w-[1240px] w-full text-left text-sm",
+              children: [
+                jsx("thead", {
+                  className: "bg-white/[0.03] text-xs uppercase tracking-wide text-slate-400",
+                  children: jsxs("tr", {
+                    children: [
+                      jsx("th", { className: "px-3 py-2", children: "Tenant" }),
+                      jsx("th", { className: "px-3 py-2", children: "Invoice" }),
+                      jsx("th", { className: "px-3 py-2", children: "Amount" }),
+                      jsx("th", { className: "px-3 py-2", children: "Method" }),
+                      jsx("th", { className: "px-3 py-2", children: "Transaction" }),
+                      jsx("th", { className: "px-3 py-2", children: "Payment" }),
+                      jsx("th", { className: "px-3 py-2", children: "Invoice State" }),
+                      jsx("th", { className: "px-3 py-2", children: "Recorded" }),
+                      jsx("th", { className: "px-3 py-2", children: "Actions" }),
+                    ],
+                  }),
+                }),
+                jsx("tbody", {
+                  className: "divide-y divide-slate-800",
+                  children:
+                    loadingRecords
+                      ? jsx("tr", {
+                          children: jsx("td", {
+                            className: "px-3 py-4 text-slate-400",
+                            colSpan: 9,
+                            children: "Loading tenant payments...",
+                          }),
+                        })
+                      : payments.length > 0
+                        ? payments.map((row) =>
+                            jsxs(
+                              Fragment,
+                              {
+                                children: [
+                                  jsxs("tr", {
+                                    className: "bg-slate-950/50",
+                                    children: [
+                                      jsx("td", { className: "px-3 py-2 font-medium text-white", children: row.tenant_name }),
+                                      jsx("td", { className: "px-3 py-2 text-slate-300", children: row.invoice_number }),
+                                      jsx("td", { className: "px-3 py-2", children: formatMoney(row.amount) }),
+                                      jsx("td", { className: "px-3 py-2", children: row.method || "M-Pesa" }),
+                                      jsx("td", { className: "px-3 py-2 font-mono text-xs text-slate-300", children: row.transaction_code || "--" }),
+                                      jsx("td", {
+                                        className: "px-3 py-2",
+                                        children: jsx("span", {
+                                          className: `inline-flex rounded-full border px-2 py-0.5 text-[11px] ${paymentTone(row.status)}`,
+                                          children: row.status,
+                                        }),
+                                      }),
+                                      jsx("td", {
+                                        className: "px-3 py-2",
+                                        children: jsx("span", {
+                                          className: `inline-flex rounded-full border px-2 py-0.5 text-[11px] ${invoiceTone(row.invoice_status)}`,
+                                          children: row.invoice_status || "--",
+                                        }),
+                                      }),
+                                      jsx("td", { className: "px-3 py-2 text-slate-400", children: formatDateTime(row.paid_at || row.created_at) }),
+                                      jsx("td", {
+                                        className: "px-3 py-2",
+                                        children: jsxs("div", {
+                                          className: "flex flex-wrap gap-2",
+                                          children: [
+                                            jsx("button", {
+                                              type: "button",
+                                              onClick: () => setExpandedPaymentId(expandedPaymentId === row.id ? null : row.id),
+                                              className: "rounded-xl border border-white/[0.09] px-2 py-1 text-xs text-slate-200 transition hover:bg-white/[0.04]",
+                                              children: expandedPaymentId === row.id ? "Hide detail" : "Detail",
+                                            }),
+                                            jsx("button", {
+                                              type: "button",
+                                              onClick: () => openReviewModal("approve", row),
+                                              disabled: String(row.status || "").toUpperCase() === "PAID",
+                                              className: "rounded-xl border border-emerald-500/30 px-2 py-1 text-xs text-emerald-300 transition hover:bg-emerald-500/10 disabled:opacity-50",
+                                              children: "Approve",
+                                            }),
+                                            jsx("button", {
+                                              type: "button",
+                                              onClick: () => openReviewModal("reject", row),
+                                              disabled: String(row.status || "").toUpperCase() === "PAID",
+                                              className: "rounded-xl border border-rose-500/30 px-2 py-1 text-xs text-rose-300 transition hover:bg-rose-500/10 disabled:opacity-50",
+                                              children: "Reject",
+                                            }),
+                                            jsx("button", {
+                                              type: "button",
+                                              onClick: () => openReviewModal("retry", row),
+                                              disabled: String(row.status || "").toUpperCase() === "PAID",
+                                              className: "rounded-xl border border-amber-500/30 px-2 py-1 text-xs text-amber-300 transition hover:bg-amber-500/10 disabled:opacity-50",
+                                              children: "Retry verification",
+                                            }),
+                                          ],
+                                        }),
+                                      }),
+                                    ],
+                                  }),
+                                  expandedPaymentId === row.id
+                                    ? jsx("tr", {
+                                        className: "bg-slate-950/30",
+                                        children: jsx("td", {
+                                          className: "px-3 py-4",
+                                          colSpan: 9,
+                                          children: jsxs("div", {
+                                            className: "space-y-3 rounded-2xl border border-white/[0.07] bg-slate-950/70 p-4",
+                                            children: [
+                                              jsx("div", {
+                                                className: "grid gap-3 text-xs text-slate-300 md:grid-cols-4",
+                                                children: [
+                                                  { label: "Invoice", value: row.invoice_number },
+                                                  { label: "Tenant", value: row.tenant_name },
+                                                  { label: "Transaction", value: row.transaction_code || "--" },
+                                                  { label: "Recorded", value: formatDateTime(row.created_at) },
+                                                ].map((item) =>
+                                                  jsxs(
+                                                    "div",
+                                                    {
+                                                      children: [
+                                                        jsx("p", { className: "uppercase text-slate-500", children: item.label }),
+                                                        jsx("p", { className: "mt-1 break-all text-slate-200", children: item.value }),
+                                                      ],
+                                                    },
+                                                    item.label,
+                                                  ),
+                                                ),
+                                              }),
+                                              jsx("pre", {
+                                                className: "overflow-x-auto rounded-xl border border-white/[0.07] bg-black/20 p-3 text-[11px] text-slate-300",
+                                                children: safeJson(row.metadata),
+                                              }),
+                                            ],
+                                          }),
+                                        }),
+                                      })
+                                    : null,
+                                ],
+                              },
+                              row.id,
+                            ),
+                          )
+                        : jsx("tr", {
+                            children: jsx("td", {
+                              className: "px-3 py-4 text-slate-400",
+                              colSpan: 9,
+                              children: "No tenant payments match the current filters.",
+                            }),
+                          }),
+                }),
+              ],
+            }),
+          }),
+        ],
+      }),
+      planEditor
+        ? jsx(OverlayCard, {
+            title: planEditor.mode === "create" ? "Create platform plan" : "Edit platform plan",
+            subtitle: "Keep pricing, storage, and student caps aligned with the billing contract.",
+            onClose: resetPlanEditor,
+            children: jsxs("form", {
+              className: "space-y-3",
+              onSubmit: savePlan,
+              children: [
+                jsxs("div", {
+                  className: "grid gap-3 md:grid-cols-2",
+                  children: [
+                    jsx("input", {
+                      className: fieldClass,
+                      value: planForm.code,
+                      onChange: (event) => setPlanForm((current) => ({ ...current, code: event.target.value })),
+                      placeholder: "Plan code",
+                      required: true,
+                    }),
+                    jsx("input", {
+                      className: fieldClass,
+                      value: planForm.name,
+                      onChange: (event) => setPlanForm((current) => ({ ...current, name: event.target.value })),
+                      placeholder: "Plan name",
+                      required: true,
+                    }),
+                  ],
+                }),
+                jsx("textarea", {
+                  className: `${fieldClass} min-h-[96px]`,
+                  value: planForm.description,
+                  onChange: (event) => setPlanForm((current) => ({ ...current, description: event.target.value })),
+                  placeholder: "Short commercial description",
+                }),
+                jsxs("div", {
+                  className: "grid gap-3 md:grid-cols-2",
+                  children: [
+                    jsx("input", {
+                      className: fieldClass,
+                      type: "number",
+                      step: "0.01",
+                      value: planForm.monthly_price,
+                      onChange: (event) => setPlanForm((current) => ({ ...current, monthly_price: event.target.value })),
+                      placeholder: "Monthly price",
+                      required: true,
+                    }),
+                    jsx("input", {
+                      className: fieldClass,
+                      type: "number",
+                      step: "0.01",
+                      value: planForm.annual_price,
+                      onChange: (event) => setPlanForm((current) => ({ ...current, annual_price: event.target.value })),
+                      placeholder: "Annual price",
+                      required: true,
+                    }),
+                  ],
+                }),
+                jsxs("div", {
+                  className: "grid gap-3 md:grid-cols-2",
+                  children: [
+                    jsx("input", {
+                      className: fieldClass,
+                      type: "number",
+                      value: planForm.max_students,
+                      onChange: (event) => setPlanForm((current) => ({ ...current, max_students: event.target.value })),
+                      placeholder: "Max students",
+                      required: true,
+                    }),
+                    jsx("input", {
+                      className: fieldClass,
+                      type: "number",
+                      value: planForm.max_storage_gb,
+                      onChange: (event) => setPlanForm((current) => ({ ...current, max_storage_gb: event.target.value })),
+                      placeholder: "Storage in GB",
+                      required: true,
+                    }),
+                  ],
+                }),
+                planFormError ? jsx("p", { className: "text-sm text-rose-300", children: planFormError }) : null,
+                jsx("button", {
+                  type: "submit",
+                  disabled: savingPlan,
+                  className:
+                    "rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-emerald-400 disabled:opacity-70",
+                  children: savingPlan ? "Saving..." : planEditor.mode === "create" ? "Create plan" : "Save changes",
+                }),
+              ],
+            }),
+          })
+        : null,
+      recordPaymentTarget
+        ? jsx(OverlayCard, {
+            title: "Record tenant payment",
+            subtitle: `${recordPaymentTarget.invoice_number} for ${recordPaymentTarget.tenant_name}`,
+            onClose: closeRecordPayment,
+            children: jsxs("form", {
+              className: "space-y-3",
+              onSubmit: submitRecordPayment,
+              children: [
+                jsxs("div", {
+                  className: "grid gap-3 md:grid-cols-2",
+                  children: [
+                    jsx("input", {
+                      className: fieldClass,
+                      type: "number",
+                      step: "0.01",
+                      value: recordPaymentForm.amount,
+                      onChange: (event) => setRecordPaymentForm((current) => ({ ...current, amount: event.target.value })),
+                      placeholder: "Amount",
+                      required: true,
+                    }),
+                    jsx("input", {
+                      className: fieldClass,
+                      value: recordPaymentForm.transaction_id,
+                      onChange: (event) => setRecordPaymentForm((current) => ({ ...current, transaction_id: event.target.value })),
+                      placeholder: "Transaction code",
+                      required: true,
+                    }),
+                  ],
+                }),
+                jsxs("div", {
+                  className: "grid gap-3 md:grid-cols-2",
+                  children: [
+                    jsxs("select", {
+                      className: fieldClass,
+                      value: recordPaymentForm.status,
+                      onChange: (event) => setRecordPaymentForm((current) => ({ ...current, status: event.target.value })),
+                      children: [
+                        jsx("option", { value: "PENDING", children: "Pending review" }),
+                        jsx("option", { value: "PAID", children: "Paid immediately" }),
+                      ],
+                    }),
+                    jsxs("select", {
+                      className: fieldClass,
+                      value: recordPaymentForm.method,
+                      onChange: (event) => setRecordPaymentForm((current) => ({ ...current, method: event.target.value })),
+                      children: [
+                        jsx("option", { value: "M-Pesa", children: "M-Pesa" }),
+                        jsx("option", { value: "Bank Transfer", children: "Bank Transfer" }),
+                        jsx("option", { value: "Stripe Checkout", children: "Stripe Checkout" }),
+                        jsx("option", { value: "Card", children: "Card" }),
+                        jsx("option", { value: "Manual", children: "Manual" }),
+                      ],
+                    }),
+                  ],
+                }),
+                jsx("input", {
+                  className: fieldClass,
+                  value: recordPaymentForm.external_reference,
+                  onChange: (event) => setRecordPaymentForm((current) => ({ ...current, external_reference: event.target.value })),
+                  placeholder: "External reference (optional)",
+                }),
+                recordPaymentError ? jsx("p", { className: "text-sm text-rose-300", children: recordPaymentError }) : null,
+                jsx("div", {
+                  className: "rounded-2xl border border-white/[0.07] bg-slate-950/70 px-4 py-3 text-xs text-slate-400",
+                  children: recordPaymentGuidance,
+                }),
+                jsx("button", {
+                  type: "submit",
+                  disabled: recordingPayment,
+                  className:
+                    "rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-emerald-400 disabled:opacity-70",
+                  children: recordingPayment ? "Saving..." : "Save payment",
+                }),
+              ],
+            }),
+          })
+        : null,
+      reviewModal
+        ? jsx(OverlayCard, {
+            title:
+              reviewModal.mode === "approve"
+                ? "Approve tenant payment"
+                : reviewModal.mode === "reject"
+                  ? "Reject tenant payment"
+                  : "Retry tenant verification",
+            subtitle: `${reviewModal.payment.invoice_number} for ${reviewModal.payment.tenant_name}`,
+            onClose: closeReviewModal,
+            children: jsxs("form", {
+              className: "space-y-3",
+              onSubmit: submitReview,
+              children: [
+                jsx("div", {
+                  className: "rounded-2xl border border-white/[0.07] bg-slate-950/70 px-4 py-3 text-sm text-slate-300",
+                  children:
+                    reviewModal.mode === "approve"
+                      ? "Approving will settle the payment, mark the invoice paid, and reactivate tenant access when applicable."
+                      : reviewModal.mode === "reject"
+                        ? "Rejecting marks this payment as failed and returns the invoice to pending or overdue state."
+                        : "Retry verification keeps the payment in a pending state and records another operator verification attempt.",
+                }),
+                reviewModal.mode !== "approve"
+                  ? jsx("textarea", {
+                      className: `${fieldClass} min-h-[96px]`,
+                      value: reviewForm.reason,
+                      onChange: (event) => setReviewForm({ reason: event.target.value }),
+                      placeholder: reviewModal.mode === "reject" ? "Reason for rejection" : "Reason for retrying verification",
+                    })
+                  : jsx("textarea", {
+                      className: `${fieldClass} min-h-[96px]`,
+                      value: reviewForm.reason,
+                      onChange: (event) => setReviewForm({ reason: event.target.value }),
+                      placeholder: "Optional approval note",
+                    }),
+                reviewError ? jsx("p", { className: "text-sm text-rose-300", children: reviewError }) : null,
+                jsx("button", {
+                  type: "submit",
+                  disabled: reviewingPayment,
+                  className:
+                    reviewModal.mode === "approve"
+                      ? "rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-emerald-400 disabled:opacity-70"
+                      : reviewModal.mode === "reject"
+                        ? "rounded-xl bg-rose-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-400 disabled:opacity-70"
+                        : "rounded-xl bg-amber-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-amber-400 disabled:opacity-70",
+                  children:
+                    reviewingPayment
+                      ? "Working..."
+                      : reviewModal.mode === "approve"
+                        ? "Approve payment"
+                        : reviewModal.mode === "reject"
+                          ? "Reject payment"
+                          : "Retry verification",
+                }),
+              ],
+            }),
+          })
+        : null,
+    ],
+  });
+}
+
+export { PlatformBillingPage as default };

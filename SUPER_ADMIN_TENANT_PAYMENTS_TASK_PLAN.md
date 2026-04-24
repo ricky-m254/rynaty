@@ -40,12 +40,12 @@ without rebuilding the UI shell that already works.
 | Area | Status | Notes |
 |------|--------|-------|
 | Super admin shell | Complete | Existing compiled pages already cover tenants, billing, revenue analytics, and impersonation |
-| Tenant payment operations | Pending | No dedicated payments queue with approve/reject/retry actions |
-| Subscription lifecycle automation | Pending | Expiry/reactivation needs one explicit platform-owned flow |
-| Platform M-Pesa paybill intake | Partial | Paybill settings and payment capture exist, but tenant-level billing workflow still needs a hardened path |
-| Revenue analytics | Partial | MRR/ARR/churn/LTV exist, but projections and payment-ops context need expansion |
-| Audit and support visibility | Partial | Impersonation exists, but payment actions need a clearer operator audit trail |
-| Regression coverage | Pending | New tenant-payment and expiry tests still need to be added |
+| Tenant payment operations | Complete | Compiled `PlatformBillingPage` now includes the tenant-payments queue with approve, reject, and retry-verification actions |
+| Subscription lifecycle automation | Complete | Tenant expiry and payment reactivation now run through one platform-owned lifecycle |
+| Platform M-Pesa paybill intake | Complete | Paybill settings, invoice capture, tenant-payment review, and callback settlement paths are live |
+| Revenue analytics | Complete | MRR, ARR, churn, projections, and tenant-risk visibility are present in the compiled platform analytics flow |
+| Audit and support visibility | Complete | Operator actions, payment review, and supporting platform flows are now exposed in the current build |
+| Regression coverage | Complete | `PlatformTenantBillingLifecycleTests` plus portal smoke and finance phase-4 suites passed in a 39-test DB-backed rerun on April 23, 2026, and the compiled bundle syntax checks still back the current rollout state |
 
 ---
 

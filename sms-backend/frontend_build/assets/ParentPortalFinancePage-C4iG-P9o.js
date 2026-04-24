@@ -106,6 +106,9 @@ function ParentPortalFinancePage() {
   const [paymentResult, setPaymentResult] = React.useState(null);
   const [submitting, setSubmitting] = React.useState(false);
   const [polling, setPolling] = React.useState(false);
+  const [statement, setStatement] = React.useState(null);
+  const [statementError, setStatementError] = React.useState(null);
+  const [statementLoading, setStatementLoading] = React.useState(false);
   const pollRef = React.useRef(null);
 
   const refreshFinance = async () => {
@@ -118,6 +121,16 @@ function ParentPortalFinancePage() {
       setSummary(summaryResponse.data ?? {});
       setInvoices(Array.isArray(invoiceResponse.data) ? invoiceResponse.data : []);
       setPayments(Array.isArray(paymentResponse.data) ? paymentResponse.data : []);
+      setStatementLoading(true);
+      try {
+        const statementResponse = await api.get("/parent-portal/finance/statement/");
+        setStatement(statementResponse.data ?? null);
+        setStatementError(null);
+      } catch (statementLoadError) {
+        setStatementError("Fee statement summary is unavailable right now.");
+      } finally {
+        setStatementLoading(false);
+      }
     } catch (error) {
       setFlash((current) => current ?? { tone: "error", message: "Unable to load finance records right now." });
     } finally {
@@ -180,6 +193,19 @@ function ParentPortalFinancePage() {
   const outstandingInvoices = invoices.filter((invoice) => Number(invoice.balance_due ?? 0) > 0);
   const selectedInvoice =
     outstandingInvoices.find((invoice) => String(invoice.id) === String(selectedInvoiceId)) ?? null;
+  const overdueInvoices = outstandingInvoices.filter((invoice) => normalizeStatus(invoice.status) === "OVERDUE");
+  const sortedOutstandingInvoices = [...outstandingInvoices].sort((left, right) => {
+    const leftDate = left?.due_date ? new Date(left.due_date).getTime() : Number.POSITIVE_INFINITY;
+    const rightDate = right?.due_date ? new Date(right.due_date).getTime() : Number.POSITIVE_INFINITY;
+    return leftDate - rightDate;
+  });
+  const nextDueInvoice = sortedOutstandingInvoices.find((invoice) => !!invoice.due_date) ?? sortedOutstandingInvoices[0] ?? null;
+  const statementSummary = statement?.summary ?? {};
+  const latestPayment = payments[0] ?? null;
+  const openPortalDocument = (path) => {
+    if (typeof window === "undefined") return;
+    window.open(path, "_blank", "noopener,noreferrer");
+  };
 
   const openPaymentModal = (invoice = null, preferredMethod = "mpesa") => {
     clearPolling();
@@ -390,6 +416,184 @@ function ParentPortalFinancePage() {
             card.label,
           ),
         ),
+      }),
+      jsx("div", {
+        className: "grid grid-cols-1 gap-4 xl:grid-cols-[1.35fr,1fr]",
+        children: [
+          jsxs("section", {
+            className: "rounded-2xl p-5",
+            style: panelStyle,
+            children: [
+              jsxs("div", {
+                className: "flex flex-wrap items-start justify-between gap-3",
+                children: [
+                  jsxs("div", {
+                    children: [
+                      jsx("p", {
+                        className: "text-[10px] font-bold uppercase tracking-[0.28em] text-sky-300",
+                        children: "Fee statement",
+                      }),
+                      jsx("h2", {
+                        className: "mt-2 text-lg font-semibold text-white",
+                        children: "Printable statement and summary",
+                      }),
+                      jsx("p", {
+                        className: "mt-1 text-sm text-slate-400",
+                        children: "Use the live statement summary to verify billed, paid, and balance before you pay.",
+                      }),
+                    ],
+                  }),
+                  jsx("button", {
+                    type: "button",
+                    onClick: refreshFinance,
+                    className:
+                      "rounded-xl border border-white/[0.09] px-4 py-2 text-xs font-semibold text-slate-200 transition hover:bg-white/[0.04]",
+                    children: statementLoading ? "Refreshing..." : "Refresh summary",
+                  }),
+                ],
+              }),
+              jsx("div", {
+                className: "mt-4 grid gap-3 sm:grid-cols-3",
+                children: [
+                  {
+                    label: "Billed",
+                    value: formatCurrency(statementSummary.billed ?? summary.total_billed),
+                    tone: "text-sky-300",
+                  },
+                  {
+                    label: "Paid",
+                    value: formatCurrency(statementSummary.paid ?? summary.total_paid),
+                    tone: "text-emerald-300",
+                  },
+                  {
+                    label: "Balance",
+                    value: formatCurrency(statementSummary.balance ?? outstandingBalance),
+                    tone: Number(statementSummary.balance ?? outstandingBalance) > 0 ? "text-amber-300" : "text-emerald-300",
+                  },
+                ].map((item) =>
+                  jsxs(
+                    "div",
+                    {
+                      className: "rounded-2xl border border-white/[0.07] bg-slate-950/70 p-4",
+                      children: [
+                        jsx("p", { className: "text-[11px] uppercase tracking-wide text-slate-500", children: item.label }),
+                        jsx("p", { className: `mt-2 text-lg font-semibold ${item.tone}`, children: item.value }),
+                      ],
+                    },
+                    item.label,
+                  ),
+                ),
+              }),
+              statementError
+                ? jsx("p", { className: "mt-3 text-xs text-amber-200", children: statementError })
+                : jsx("p", {
+                    className: "mt-3 text-xs text-slate-500",
+                    children: "Open the printable statement to review invoice and payment detail or save it as PDF for records.",
+                  }),
+              jsxs("div", {
+                className: "mt-4 flex flex-wrap gap-2",
+                children: [
+                  jsx("button", {
+                    type: "button",
+                    onClick: () => openPortalDocument("/api/parent-portal/finance/statement/download/"),
+                    className:
+                      "rounded-xl bg-sky-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-sky-300",
+                    children: "Printable statement",
+                  }),
+                  jsx("button", {
+                    type: "button",
+                    onClick: () => openPaymentModal(nextDueInvoice, "stripe"),
+                    disabled: !outstandingBalance,
+                    className:
+                      "rounded-xl border border-white/[0.1] px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-50",
+                    children: "Pay from statement",
+                  }),
+                ],
+              }),
+            ],
+          }),
+          jsxs("section", {
+            className: "rounded-2xl p-5",
+            style: panelStyle,
+            children: [
+              jsx("p", {
+                className: "text-[10px] font-bold uppercase tracking-[0.28em] text-amber-300",
+                children: "Payment planning",
+              }),
+              jsx("h2", {
+                className: "mt-2 text-lg font-semibold text-white",
+                children: "What needs attention next",
+              }),
+              jsx("div", {
+                className: "mt-4 space-y-3",
+                children: [
+                  {
+                    label: "Outstanding invoices",
+                    value: String(outstandingInvoices.length),
+                    detail: outstandingInvoices.length > 0 ? "Ready for M-Pesa, bank transfer, or Stripe" : "All caught up",
+                  },
+                  {
+                    label: "Overdue invoices",
+                    value: String(overdueInvoices.length),
+                    detail: overdueInvoices.length > 0 ? "Settle these first to clear arrears" : "No overdue items right now",
+                  },
+                  {
+                    label: "Next due",
+                    value: nextDueInvoice?.due_date ? formatDate(nextDueInvoice.due_date) : "--",
+                    detail: nextDueInvoice
+                      ? `${nextDueInvoice.invoice_number || `Invoice #${nextDueInvoice.id}`} • ${formatCurrency(nextDueInvoice.balance_due)}`
+                      : "No upcoming due invoice",
+                  },
+                  {
+                    label: "Latest payment",
+                    value: latestPayment?.payment_date ? formatDate(latestPayment.payment_date) : "--",
+                    detail: latestPayment
+                      ? `${formatCurrency(latestPayment.amount)} via ${latestPayment.payment_method || "payment"}`
+                      : "No payment recorded yet",
+                  },
+                ].map((item) =>
+                  jsxs(
+                    "div",
+                    {
+                      className: "rounded-2xl border border-white/[0.07] bg-slate-950/70 p-4",
+                      children: [
+                        jsx("p", { className: "text-[11px] uppercase tracking-wide text-slate-500", children: item.label }),
+                        jsx("p", { className: "mt-2 text-lg font-semibold text-white", children: item.value }),
+                        jsx("p", { className: "mt-1 text-xs text-slate-500", children: item.detail }),
+                      ],
+                    },
+                    item.label,
+                  ),
+                ),
+              }),
+              jsx("p", {
+                className: "mt-4 text-xs text-slate-500",
+                children: "If you need extra time, the printable statement gives the bursar the exact invoice trail to discuss a school-managed installment plan.",
+              }),
+              jsxs("div", {
+                className: "mt-4 flex flex-wrap gap-2",
+                children: [
+                  jsx("button", {
+                    type: "button",
+                    onClick: () => openPaymentModal(nextDueInvoice, "mpesa"),
+                    disabled: !nextDueInvoice,
+                    className:
+                      "rounded-xl border border-emerald-400/40 bg-emerald-400/12 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-400/18 disabled:cursor-not-allowed disabled:opacity-50",
+                    children: "Pay next invoice",
+                  }),
+                  jsx("button", {
+                    type: "button",
+                    onClick: () => openPaymentModal(nextDueInvoice, "bank"),
+                    disabled: !nextDueInvoice,
+                    className:
+                      "rounded-xl border border-white/[0.1] px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-50",
+                    children: "Create bank reference",
+                  }),
+                ],
+              }),
+            ],
+          }),
+        ],
       }),
       outstandingBalance > 0 &&
         jsxs("div", {
@@ -691,6 +895,15 @@ function ParentPortalFinancePage() {
                       method.id,
                     ),
                   ),
+                }),
+                jsx("div", {
+                  className: `rounded-2xl border px-4 py-3 text-xs ${flashClass(paymentMethod === "bank" ? "info" : paymentMethod === "stripe" ? "success" : "warning")}`,
+                  children:
+                    paymentMethod === "mpesa"
+                      ? "We will send an STK push to the Safaricom number you enter. Keep this screen open while the portal checks for confirmation."
+                      : paymentMethod === "stripe"
+                        ? "Stripe opens a secure hosted card checkout. After payment, you will return here and the balance refreshes after webhook confirmation."
+                        : "Bank transfer creates a narration reference for your slip or transfer note. The balance only updates after finance reconciles the bank line.",
                 }),
                 outstandingInvoices.length > 0 &&
                   jsxs("label", {

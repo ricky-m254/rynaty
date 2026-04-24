@@ -112,6 +112,23 @@ class PlatformStep4HardeningTests(TestCase):
         self.assertEqual(payload["redirect_to"], "/platform")
         self.assertEqual(payload["tenant_id"], "public")
 
+    def test_platform_login_accepts_exact_riqs_username(self):
+        riqs_user = User.objects.create_user(username="Riqs#", password="Ointment.54.#")
+        GlobalSuperAdmin.objects.create(user=riqs_user, role=GlobalSuperAdmin.ROLE_OWNER, is_active=True)
+
+        request = self.factory.post(
+            "/api/platform/auth/login/",
+            {"username": "Riqs#", "password": "Ointment.54.#"},
+            format="json",
+        )
+        response = platform_login_view(request)
+
+        self.assertEqual(response.status_code, 200)
+        payload = json.loads(response.content.decode("utf-8"))
+        self.assertEqual(payload["role"], GlobalSuperAdmin.ROLE_OWNER)
+        self.assertEqual(payload["redirect_to"], "/platform")
+        self.assertEqual(payload["tenant_id"], "public")
+
     def test_support_ticket_forbids_closing_before_resolve(self):
         create_request = self.factory.post(
             "/api/platform/support-tickets/",

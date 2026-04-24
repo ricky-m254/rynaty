@@ -1,1456 +1,1225 @@
-# Payment Systems API Endpoint Reference Guide
+# Banking Payments Experience Guide
 
-**Version:** 1.0  
-**Date:** April 17, 2026  
-**Document Type:** API Reference for Development & Integration  
-
----
-
-## TABLE OF CONTENTS
-
-1. [Authentication & Headers](#authentication--headers)
-2. [Student Payment Endpoints](#student-payment-endpoints)
-3. [Parent Payment Endpoints](#parent-payment-endpoints)
-4. [Bursar & Finance Endpoints](#bursar--finance-endpoints)
-5. [Platform Admin Endpoints](#platform-admin-endpoints)
-6. [Webhook Endpoints](#webhook-endpoints)
-7. [Error Response Codes](#error-response-codes)
-8. [Integration Examples](#integration-examples)
+**Version:** 2.0  
+**Date:** April 23, 2026  
+**Document Type:** Product, UX, and API guide for banking payments  
+**Primary Audience:** Figma designer, frontend engineer, backend engineer, QA  
 
 ---
 
-## Authentication & Headers
+## Purpose
 
-### JWT Token Requirements
-```
-Authorization: Bearer <jwt_token>
-Content-Type: application/json
-X-School-ID: <tenant_uuid> (if multi-tenant)
-X-Idempotency-Key: <uuid> (for payment endpoints)
-```
+This document explains how the current school payment system works across:
 
-### Token Scopes Required
-```
-student:finance.read          - View own payments/invoices
-student:finance.write         - Initiate payments
-parent:finance.read           - View child's finances
-parent:finance.write          - Make payments for child
-bursar:finance.read           - View all payments
-bursar:finance.write          - Create/reverse payments
-bursar:finance.admin          - Full finance access
-platform:admin:finance        - Multi-tenant management
-```
+- manual payment capture by finance staff
+- bank-transfer initiation from parent and student portals
+- online payment sync through M-Pesa and Stripe
+- reconciliation of bank statements and webhook/callback events
+- payment receipts, reversals, auditability, and operator recovery
+
+Use this as the source guide for designing finance/payment screens in Figma.
+
+This guide is intentionally broader than a pure API list. It explains:
+
+- what each user is trying to do
+- which screens and components are required
+- which states the UI must represent
+- which backend entities and endpoints support each flow
 
 ---
 
-## Student Payment Endpoints
+## Design Goal
 
-### 1. List Student Invoices
+The payment experience is not one screen. It is a connected system with four distinct jobs:
 
-**Endpoint:** `GET /api/student-portal/finance/invoices/`
+1. `Collect` money or start a payment request.
+2. `Confirm` whether the money actually arrived.
+3. `Reconcile` the money against invoices, receipts, and statements.
+4. `Recover` safely when a callback, webhook, or bank match fails.
 
-**Authentication:** Required (student user)
+For design purposes, think of the system as four surfaces:
 
-**Query Parameters:**
-```
-status=UNPAID|PAID|PARTIAL_PAID|CANCELLED    (optional)
-academic_year=2025-2026                       (optional)
-term=Term1|Term2|Term3                        (optional)
-page=1                                        (pagination)
-page_size=20
-```
-
-**Response (200 OK):**
-```json
-{
-  "count": 5,
-  "next": "http://api.example.com/api/student-portal/finance/invoices/?page=2",
-  "previous": null,
-  "results": [
-    {
-      "id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
-      "invoice_number": "INV-2026-001",
-      "student": {
-        "id": "student-uuid",
-        "full_name": "John Doe",
-        "admission_number": "ADM-2024-001"
-      },
-      "academic_year": "2025-2026",
-      "term": "Term 1",
-      "academic_class": "Form 4A",
-      "issued_date": "2026-01-15T10:30:00Z",
-      "due_date": "2026-02-28T23:59:59Z",
-      "total_amount": 50000.00,
-      "paid_amount": 30000.00,
-      "balance": 20000.00,
-      "status": "PARTIAL_PAID",
-      "is_overdue": true,
-      "days_overdue": 48,
-      "late_fee_accumulated": 500.00,
-      "breakdown": [
-        {
-          "item": "Tuition",
-          "amount": 40000.00
-        },
-        {
-          "item": "Exam Fee",
-          "amount": 5000.00
-        },
-        {
-          "item": "Activity",
-          "amount": 5000.00
-        }
-      ]
-    }
-  ]
-}
-```
-
-**Error Responses:**
-- `401 Unauthorized` - Invalid/expired token
-- `403 Forbidden` - User not student or accessing other student's data
+- `Finance Admin Workspace`
+- `Parent Portal`
+- `Student Portal`
+- `Ops / Reconciliation / Support Layer`
 
 ---
 
-### 2. Get Invoice Detail
+## Main User Types
 
-**Endpoint:** `GET /api/student-portal/finance/invoices/{invoice_id}/`
+### 1. Finance Admin / Bursar
 
-**Authentication:** Required
+Owns:
 
-**Path Parameters:**
-```
-invoice_id=f47ac10b-58cc-4372-a567-0e02b2c3d479
-```
+- recording manual payments
+- launching Stripe checkout for in-person or assisted flows
+- reviewing payment history
+- downloading receipts
+- requesting reversals
+- reviewing imported bank lines
+- matching and clearing reconciliation items
+- reviewing failed gateway events and reprocessing them
 
-**Response (200 OK):** Same as above, single object (not wrapped in results)
+### 2. Parent User
 
----
+Owns:
 
-### 3. List Payment History
+- viewing a child's invoices and balances
+- paying by M-Pesa
+- generating a bank-transfer reference
+- launching Stripe checkout
+- viewing payment history
+- opening receipts
+- downloading fee statements
 
-**Endpoint:** `GET /api/student-portal/finance/payments/`
+### 3. Student User
 
-**Authentication:** Required
+Owns:
 
-**Query Parameters:**
-```
-payment_method=MPesa|Cash|Bank|Stripe    (optional)
-status=PENDING|COMPLETED|FAILED|REVERSED (optional)
-date_from=2026-01-01                     (optional)
-date_to=2026-04-17                       (optional)
-page=1
-page_size=20
-```
+- viewing own invoices and balance
+- paying by M-Pesa
+- generating a bank-transfer reference
+- launching Stripe checkout
+- viewing payment history
+- opening receipts
 
-**Response (200 OK):**
-```json
-{
-  "count": 10,
-  "results": [
-    {
-      "id": "pay-uuid-1",
-      "reference_number": "PAY-001",
-      "receipt_number": "RCT-000001",
-      "amount": 30000.00,
-      "payment_method": "MPesa",
-      "payment_date": "2026-01-20T14:30:00Z",
-      "status": "COMPLETED",
-      "gateway_reference": "LHR519D60OP",
-      "gateway_name": "mpesa",
-      "notes": "Payment via student portal",
-      "allocations": [
-        {
-          "invoice_id": "inv-uuid",
-          "invoice_number": "INV-2026-001",
-          "amount_allocated": 30000.00
-        }
-      ]
-    },
-    {
-      "id": "pay-uuid-2",
-      "reference_number": "PAY-002",
-      "receipt_number": "RCT-000002",
-      "amount": 20000.00,
-      "payment_method": "Cash",
-      "payment_date": "2026-02-10T09:00:00Z",
-      "status": "COMPLETED",
-      "gateway_reference": null,
-      "gateway_name": "cash",
-      "notes": "Deposited at bursar office",
-      "allocations": [
-        {
-          "invoice_id": "inv-uuid",
-          "invoice_number": "INV-2026-001",
-          "amount_allocated": 20000.00
-        }
-      ]
-    }
-  ]
-}
-```
+### 4. Platform / Operations User
+
+Owns:
+
+- tenant-level payment readiness
+- tenant billing and revenue analytics
+- gateway callback readiness
+- support visibility for failed payment events
+
+This role matters for admin operations, but the day-to-day school banking/payment design is centered on Finance Admin, Parent, and Student.
 
 ---
 
-### 4. Get Payment Receipt (MISSING - TODO)
+## Scope Of Payment Modes
 
-**Endpoint:** `GET /api/student-portal/finance/payments/{payment_id}/receipt/`
+The system currently supports these payment modes in the experience:
 
-**Authentication:** Required
+### A. Manual capture inside the finance office
 
-**Query Parameters:**
-```
-format=pdf|json    (default: pdf)
-```
+Captured by finance staff from the finance payment form:
 
-**Expected Response (200 OK):**
-```
-Content-Type: application/pdf
-[Binary PDF data]
-```
+- `Cash`
+- `Bank Transfer`
+- `Card`
+- `Mobile Money`
+- `Cheque`
+- `Other`
 
-**OR JSON Response:**
-```json
-{
-  "receipt_number": "RCT-000001",
-  "payment_id": "pay-uuid",
-  "student_name": "John Doe",
-  "amount": 30000.00,
-  "payment_method": "MPesa",
-  "payment_date": "2026-01-20T14:30:00Z",
-  "mpesa_reference": "LHR519D60OP",
-  "invoice_numbers": ["INV-2026-001"],
-  "qr_code": "https://...",
-  "school_name": "Saint Mary's School",
-  "school_logo": "https://...",
-  "verification_url": "https://school.app/verify/receipt/RCT-000001"
-}
-```
+These create real `Payment` records and generate receipts immediately.
 
----
+### B. Online or async-verified payment flows
 
-### 5. Initiate M-Pesa STK Push Payment
+- `M-Pesa STK Push`
+- `Stripe Checkout`
 
-**Endpoint:** `POST /api/finance/mpesa/push/`
+These start as `PaymentGatewayTransaction` records, then settle later through:
 
-**Authentication:** Required (student user)
+- M-Pesa callback processing
+- Stripe webhook processing
+- optional operator recovery / reprocess actions
 
-**Request Body:**
-```json
-{
-  "student_id": "student-uuid",
-  "phone_number": "+254712345678",
-  "amount": 20000.00,
-  "invoice_id": "inv-uuid",
-  "description": "Fee payment for Term 1 2026"
-}
-```
+### C. Manual-but-online-assisted bank transfer
 
-**Response (201 Created):**
-```json
-{
-  "transaction_id": "txn-uuid",
-  "CheckoutRequestID": "ws_CO_120320231107115",
-  "MerchantRequestID": "123456789",
-  "CustomerMessage": "Enter your M-Pesa PIN",
-  "ResponseCode": "0",
-  "ResponseDescription": "Success. Request accepted for processing",
-  "status": "PENDING",
-  "created_at": "2026-04-17T14:30:00Z",
-  "polling_url": "/api/finance/mpesa/status/?checkout_request_id=ws_CO_120320231107115"
-}
-```
+Parent or student users can create a transfer reference online, but settlement is not immediate.
 
-**Error Responses:**
-- `400 Bad Request` - Invalid phone number format
-- `402 Payment Required` - Insufficient funds on M-Pesa account (returned by Safaricom)
-- `409 Conflict` - Duplicate payment for same invoice
-- `413 Payload Too Large` - Amount exceeds limit
+The user gets a generated reference and instructions like:
+
+- use the reference in bank narration
+- the balance updates after reconciliation
+
+This means the design must show:
+
+- a successful initiation state
+- a pending / awaiting reconciliation state
+- a later "reflected in balance" state
 
 ---
 
-### 6. Check M-Pesa Payment Status
+## Core Domain Objects
 
-**Endpoint:** `GET /api/finance/mpesa/status/`
+These are the key backend records your Figma flows need to account for.
 
-**Authentication:** Required
+### 1. `Invoice`
 
-**Query Parameters:**
-```
-checkout_request_id=ws_CO_120320231107115
-transaction_id=txn-uuid
-```
+Represents what the student owes.
 
-**Response (200 OK):**
-```json
-{
-  "transaction_id": "txn-uuid",
-  "CheckoutRequestID": "ws_CO_120320231107115",
-  "status": "COMPLETED",
-  "ResultCode": 0,
-  "ResultDescription": "The service request has been processed successfully",
-  "MpesaReceiptNumber": "LHR519D60OP",
-  "Amount": 20000.00,
-  "TransactionDate": "20260120143000",
-  "phone_number": "254712345678",
-  "payment_created": true,
-  "payment_id": "pay-uuid",
-  "invoice_updated": true
-}
-```
+Important fields:
 
----
+- `invoice_number`
+- `student`
+- `term`
+- `invoice_date`
+- `due_date`
+- `total_amount`
+- `status`
+- `balance_due`
 
-### 7. Stripe Payment Checkout (MISSING - TODO)
+Statuses:
 
-**Endpoint:** `POST /api/finance/stripe/checkout/`
+- `DRAFT`
+- `ISSUED`
+- `PARTIALLY_PAID`
+- `PAID`
+- `OVERDUE`
+- `VOID`
+- `CONFIRMED`
 
-**Authentication:** Required
+### 2. `Payment`
 
-**Request Body:**
-```json
-{
-  "student_id": "student-uuid",
-  "amount": 20000.00,
-  "invoice_id": "inv-uuid",
-  "success_url": "https://portal.school.app/payment/success",
-  "cancel_url": "https://portal.school.app/payment/cancel"
-}
-```
+Represents a real recorded payment.
 
-**Expected Response (201 Created):**
-```json
-{
-  "session_id": "cs_test_xxxxx",
-  "checkout_url": "https://checkout.stripe.com/pay/cs_test_xxxxx",
-  "expires_at": "2026-04-17T15:30:00Z",
-  "client_secret": "pi_xxxxx_secret_xxxxx"
-}
-```
+Important fields:
 
----
+- `student`
+- `payment_date`
+- `amount`
+- `payment_method`
+- `reference_number`
+- `receipt_number`
+- `notes`
+- `is_active`
+- `reversed_at`
+- `reversal_reason`
 
-### 8. Get Available Payment Plans (MISSING - TODO)
+Derived display fields used in UI:
 
-**Endpoint:** `GET /api/student-portal/finance/payment-plans/`
+- `receipt_no`
+- `transaction_code`
+- `vote_head_summary`
+- `status`
+- `receipt_json_url`
+- `receipt_pdf_url`
+- `allocated_amount`
+- `unallocated_amount`
 
-**Authentication:** Required
+### 3. `PaymentGatewayTransaction`
 
-**Query Parameters:**
-```
-invoice_id=inv-uuid
-```
+Represents a payment attempt or initiated external payment before full settlement.
 
-**Expected Response (200 OK):**
-```json
-{
-  "results": [
-    {
-      "id": "plan-uuid-1",
-      "name": "3-Month Plan",
-      "duration_months": 3,
-      "monthly_amount": 6666.67,
-      "total_amount": 20000.00,
-      "down_payment_percent": 0,
-      "interest_rate": 0.0,
-      "is_available": true,
-      "available_until": "2026-04-30"
-    },
-    {
-      "id": "plan-uuid-2",
-      "name": "6-Month Plan",
-      "duration_months": 6,
-      "monthly_amount": 3333.33,
-      "total_amount": 20000.00,
-      "down_payment_percent": 0,
-      "interest_rate": 0.0,
-      "is_available": true,
-      "available_until": "2026-05-31"
-    }
-  ]
-}
-```
+Important fields:
 
----
+- `provider`
+- `external_id`
+- `student`
+- `invoice`
+- `amount`
+- `currency`
+- `status`
+- `payload`
+- `is_reconciled`
 
-### 9. Request Payment Plan (MISSING - TODO)
+Statuses:
 
-**Endpoint:** `POST /api/student-portal/finance/payment-plans/`
+- `INITIATED`
+- `PENDING`
+- `SUCCEEDED`
+- `FAILED`
+- `REFUNDED`
 
-**Authentication:** Required
+Typical providers:
 
-**Request Body:**
-```json
-{
-  "plan_id": "plan-uuid-1",
-  "invoice_id": "inv-uuid",
-  "first_payment_date": "2026-04-30",
-  "notes": "Hardship - awaiting scholarship"
-}
-```
+- `mpesa`
+- `parent_portal`
+- `student_portal`
+- Stripe-related finance/portal transactions
 
-**Expected Response (201 Created):**
-```json
-{
-  "id": "installment-uuid",
-  "plan_id": "plan-uuid-1",
-  "invoice_id": "inv-uuid",
-  "status": "PENDING_APPROVAL",
-  "monthly_amount": 6666.67,
-  "schedule": [
-    {
-      "installment_number": 1,
-      "due_date": "2026-04-30",
-      "amount": 6666.67,
-      "status": "PENDING"
-    },
-    {
-      "installment_number": 2,
-      "due_date": "2026-05-30",
-      "amount": 6666.67,
-      "status": "PENDING"
-    }
-  ],
-  "requested_at": "2026-04-17T14:30:00Z",
-  "approval_status": "PENDING_APPROVAL",
-  "approval_deadline": "2026-04-19"
-}
-```
+### 4. `PaymentGatewayWebhookEvent`
 
----
+Stores raw incoming gateway events for traceability and recovery.
 
-### 10. Get Balance Summary (PARTIAL - EXISTS BUT LIMITED)
+Important fields:
 
-**Endpoint:** `GET /api/student-portal/finance/balance/`
+- `event_id`
+- `provider`
+- `event_type`
+- `signature`
+- `payload`
+- `processed`
+- `processed_at`
+- `error`
+- `received_at`
 
-**Authentication:** Required
+This powers the support/recovery UI.
 
-**Response (200 OK):**
-```json
-{
-  "student_id": "student-uuid",
-  "total_invoiced": 100000.00,
-  "total_paid": 70000.00,
-  "total_balance": 30000.00,
-  "total_overdue": 20000.00,
-  "late_fees_accumulated": 1500.00,
-  "has_active_payment_plan": false,
-  "next_due_date": "2026-05-31",
-  "payment_plan_active_installments": 0,
-  "last_payment_date": "2026-02-10T09:00:00Z",
-  "currency": "KES"
-}
-```
+### 5. `BankStatementLine`
+
+Represents a bank line imported or created for reconciliation.
+
+Important fields:
+
+- `statement_date`
+- `value_date`
+- `amount`
+- `reference`
+- `narration`
+- `source`
+- `status`
+- `matched_payment`
+- `matched_gateway_transaction`
+
+Statuses:
+
+- `UNMATCHED`
+- `MATCHED`
+- `CLEARED`
+- `IGNORED`
+
+### 6. `PaymentReversalRequest`
+
+Represents a maker/checker reversal workflow.
+
+Important fields:
+
+- `payment`
+- `reason`
+- `requested_by`
+- `requested_at`
+- `status`
+- `reviewed_by`
+- `reviewed_at`
+- `review_notes`
+
+Statuses:
+
+- `PENDING`
+- `APPROVED`
+- `REJECTED`
 
 ---
 
-## Parent Payment Endpoints
+## High-Level Experience Map
 
-### 1. List Children
+### Flow 1. Finance office records a manual payment
 
-**Endpoint:** `GET /api/parent-portal/children/`
+1. Finance staff opens `Record Payment`.
+2. Searches or selects a student.
+3. Chooses a manual payment method.
+4. Enters amount, reference number, date, notes.
+5. Submits the payment.
+6. System creates a `Payment`.
+7. Receipt becomes immediately available.
+8. Payment appears in payment list and student ledger.
 
-**Authentication:** Required (parent user)
+### Flow 2. Parent or student initiates bank transfer
 
-**Response (200 OK):**
-```json
-{
-  "count": 3,
-  "results": [
-    {
-      "id": "student-uuid-1",
-      "full_name": "John Doe",
-      "admission_number": "ADM-2024-001",
-      "current_class": "Form 4A",
-      "total_balance": 20000.00,
-      "is_active": true
-    },
-    {
-      "id": "student-uuid-2",
-      "full_name": "Jane Doe",
-      "admission_number": "ADM-2024-002",
-      "current_class": "Form 2B",
-      "total_balance": 15000.00,
-      "is_active": true
-    }
-  ]
-}
-```
+1. User opens outstanding invoice.
+2. Chooses `Bank Transfer`.
+3. Enters amount.
+4. System creates a `PaymentGatewayTransaction` with a generated reference.
+5. User sees transfer instructions and reference.
+6. Actual balance update happens later after reconciliation.
 
----
+### Flow 3. Parent or student pays by M-Pesa
 
-### 2. Get Child's Invoices
+1. User chooses `M-Pesa`.
+2. Enters phone number.
+3. System initiates STK push and creates `PaymentGatewayTransaction` in `PENDING`.
+4. User sees "check phone / enter PIN".
+5. Portal polls payment status.
+6. M-Pesa callback settles transaction.
+7. If successful, real `Payment` is created and invoice balance updates.
+8. Receipt becomes available in payment history.
 
-**Endpoint:** `GET /api/parent-portal/children/{child_id}/invoices/`
+### Flow 4. Parent or student pays by Stripe
 
-**Authentication:** Required
+1. User chooses `Stripe Checkout`.
+2. System creates hosted checkout session and pending gateway transaction.
+3. User is redirected to Stripe.
+4. Stripe webhook confirms payment.
+5. System settles the transaction into a real `Payment`.
+6. Balance and payment history update.
 
-**Response:** Same structure as student invoices endpoint
+### Flow 5. Finance team reconciles bank activity
 
----
+1. Finance imports CSV bank statement lines.
+2. System stores `BankStatementLine` records as `UNMATCHED`.
+3. Finance runs `auto-match` or manual matching.
+4. Once a line is confirmed, it can be `CLEARED`.
+5. If wrongly matched, finance can `unmatch`.
+6. Non-relevant entries can be `IGNORED`.
 
-### 3. Get Child's Payments
+### Flow 6. Support or finance recovers failed sync events
 
-**Endpoint:** `GET /api/parent-portal/children/{child_id}/payments/`
-
-**Authentication:** Required
-
-**Response:** Same structure as student payments endpoint
-
----
-
-### 4. Get Child's Balance
-
-**Endpoint:** `GET /api/parent-portal/children/{child_id}/balance/`
-
-**Authentication:** Required
-
-**Response:** Same structure as student balance endpoint
+1. Failed or unprocessed webhook/callback event appears in gateway event list.
+2. User filters by provider and processed status.
+3. User inspects payload and error.
+4. User clicks `Reprocess`.
+5. System retries settlement logic.
+6. If successful, payment is created and event is cleared.
 
 ---
 
-### 5. Pay Child's Fees via M-Pesa
+## Frontend Surface Inventory
 
-**Endpoint:** `POST /api/parent-portal/children/{child_id}/pay-mpesa/`
+## 1. Finance Admin Payment List
 
-**Authentication:** Required (parent user)
+Compiled page:
 
-**Request Body:**
-```json
-{
-  "phone_number": "+254712345678",
-  "amount": 20000.00,
-  "invoice_id": "inv-uuid",
-  "description": "Parent payment for John Doe"
-}
-```
+- `sms-backend/frontend_build/assets/FinancePaymentsPage-Dwws6qtb.js`
 
-**Response:** Same structure as student M-Pesa endpoint
+Purpose:
 
----
+- central workspace for reviewing all school payments
+- downloading receipts
+- seeing allocation state
+- accessing student context
+- starting deletion or reversal request actions
+- opening reversal request queue
 
-### 6. Get Overdue Fees (MISSING - TODO)
+### Required layout blocks
 
-**Endpoint:** `GET /api/parent-portal/children/{child_id}/arrears/`
+#### A. Header
 
-**Authentication:** Required
+- page title: `Payments`
+- helper copy: `Track collections and payment history`
+- button: `Record payment`
+- optional print/export utilities
 
-**Expected Response (200 OK):**
-```json
-{
-  "child_id": "student-uuid",
-  "total_arrears": 20000.00,
-  "details": [
-    {
-      "invoice_id": "inv-uuid",
-      "invoice_number": "INV-2026-001",
-      "term": "Term 1",
-      "original_amount": 50000.00,
-      "paid_amount": 30000.00,
-      "balance": 20000.00,
-      "due_date": "2026-02-28",
-      "days_overdue": 48,
-      "late_fees": 500.00
-    }
-  ]
-}
-```
+#### B. Filters row
 
----
+The existing UI already supports:
 
-### 7. Setup Recurring Payment (MISSING - TODO)
+- search by admission number
+- receipt number
+- transaction code
+- vote head summary
+- student filter
+- payment method filter
+- allocation status filter
+- date from
+- date to
 
-**Endpoint:** `POST /api/parent-portal/recurring-payments/`
+#### C. Payment table
 
-**Authentication:** Required
+Current columns:
 
-**Request Body:**
-```json
-{
-  "child_id": "student-uuid",
-  "payment_method": "mpesa|stripe",
-  "amount": 10000.00,
-  "frequency": "monthly|weekly",
-  "start_date": "2026-04-30",
-  "end_date": "2026-12-31",
-  "auto_allocate": true
-}
-```
+- `Receipt`
+- `Transaction`
+- `Student`
+- `Vote Head`
+- `Method`
+- `Amount`
+- `Status`
+- `Created`
+- `Action`
 
-**Expected Response (201 Created):**
-```json
-{
-  "id": "recurring-uuid",
-  "child_id": "student-uuid",
-  "status": "ACTIVE",
-  "next_charge_date": "2026-04-30",
-  "created_at": "2026-04-17T14:30:00Z"
-}
-```
+#### D. Row actions
 
----
+Current actions:
 
-## Bursar & Finance Endpoints
+- `Context`
+- `Receipt PDF`
+- `Delete`
+- `Request reversal`
 
-### 1. List All Payments
+#### E. Expandable context panel
 
-**Endpoint:** `GET /api/finance/payments/`
+When opened, the system shows:
 
-**Authentication:** Required (bursar/accountant)
+- class / term
+- parents / guardians
+- contact details when available
 
-**Query Parameters:**
-```
-status=PENDING|COMPLETED|FAILED|REVERSED       (optional)
-payment_method=MPesa|Cash|Bank|Stripe         (optional)
-student_id=uuid                                (optional)
-date_from=2026-01-01                          (optional)
-date_to=2026-04-17                            (optional)
-gateway=mpesa|stripe|bank|cash                (optional)
-page=1
-page_size=50
-```
+#### F. Reversal request queue
 
-**Response (200 OK):**
-```json
-{
-  "count": 250,
-  "results": [
-    {
-      "id": "pay-uuid",
-      "reference_number": "PAY-001",
-      "receipt_number": "RCT-000001",
-      "student": {
-        "id": "student-uuid",
-        "full_name": "John Doe",
-        "admission_number": "ADM-2024-001"
-      },
-      "amount": 30000.00,
-      "payment_method": "MPesa",
-      "payment_date": "2026-01-20T14:30:00Z",
-      "status": "COMPLETED",
-      "gateway_name": "mpesa",
-      "gateway_reference": "LHR519D60OP",
-      "webhook_event_id": "wh-uuid",
-      "reconciliation_status": "MATCHED",
-      "allocations": [
-        {
-          "invoice_id": "inv-uuid",
-          "amount": 30000.00
-        }
-      ],
-      "created_at": "2026-01-20T14:30:00Z",
-      "created_by": "staff-uuid"
-    }
-  ]
-}
-```
+Separate section on same page:
+
+- search
+- status filter
+- table of reversal requests
+- `Approve` / `Reject` actions for privileged users
+
+### Important payment row states
+
+The UI currently expresses:
+
+- `Active / Allocated`
+- `Active / Partial`
+- `Active / Unallocated`
+- `Reversed`
+
+This allocation state is essential for design. It tells finance staff whether money is still waiting to be distributed across invoices or vote heads.
+
+### Designer notes
+
+- prioritize scannability over decorative density
+- make receipt / transaction / amount visually stronger than secondary metadata
+- reversal actions should feel guarded and irreversible
+- allocation state should be glanceable with colored chips
+- expanded student context should not dominate the table by default
 
 ---
 
-### 2. Create Manual Payment (Cash Receipt)
+## 2. Finance Admin Record Payment Form
 
-**Endpoint:** `POST /api/finance/payments/`
+Compiled page:
 
-**Authentication:** Required (bursar)
+- `sms-backend/frontend_build/assets/FinancePaymentFormPage-Dh2R-Fpu.js`
 
-**Request Body:**
-```json
-{
-  "student_id": "student-uuid",
-  "amount": 30000.00,
-  "payment_method": "Cash",
-  "reference_number": "MANUAL-CASH-2026-001",
-  "receipt_number": "RCT-000001",
-  "payment_date": "2026-04-17T10:00:00Z",
-  "notes": "Payment received at bursar office, deposited in bank",
-  "allocate_to_invoices": [
-    {
-      "invoice_id": "inv-uuid",
-      "amount": 30000.00
-    }
-  ]
-}
-```
+Purpose:
 
-**Response (201 Created):**
-```json
-{
-  "id": "pay-uuid",
-  "reference_number": "MANUAL-CASH-2026-001",
-  "receipt_number": "RCT-000001",
-  "student_id": "student-uuid",
-  "amount": 30000.00,
-  "payment_method": "Cash",
-  "status": "COMPLETED",
-  "allocations": [
-    {
-      "invoice_id": "inv-uuid",
-      "amount_allocated": 30000.00,
-      "invoice_status": "PAID"
-    }
-  ],
-  "created_at": "2026-04-17T10:00:00Z",
-  "created_by": "staff-uuid"
-}
-```
+- record manual payments
+- launch Stripe checkout from admin workspace
+- return immediate receipt and SMS-ready confirmation text
 
----
+### Supported payment methods in UI
 
-### 3. Get Payment Detail
+Manual methods:
 
-**Endpoint:** `GET /api/finance/payments/{payment_id}/`
+- `Cash`
+- `Bank Transfer`
+- `Card`
+- `Mobile Money`
+- `Cheque`
+- `Other`
 
-**Authentication:** Required
+Online method:
 
-**Response (200 OK):** Single payment object (same structure as list)
+- `Stripe Checkout`
 
----
+### Required layout blocks
 
-### 4. Reverse Payment (Refund)
+#### A. Student selection
 
-**Endpoint:** `POST /api/finance/payments/{payment_id}/reverse/`
+The current form supports:
 
-**Authentication:** Required (bursar only)
+- admission-number search
+- name search
+- dropdown fallback
+- selected student summary
 
-**Request Body:**
-```json
-{
-  "reversal_reason": "Duplicate payment detected - student paid twice",
-  "refund_method": "original_payment|mpesa|bank|cash",
-  "refund_notes": "Refunding to student M-Pesa"
-}
-```
+This is not a generic dropdown. It is a search-first student picker.
 
-**Response (200 OK):**
-```json
-{
-  "id": "pay-uuid",
-  "status": "REVERSED",
-  "reversed_at": "2026-04-17T14:30:00Z",
-  "reversed_by": "bursar-uuid",
-  "reversal_reason": "Duplicate payment detected - student paid twice",
-  "refund_method": "mpesa",
-  "refund_status": "PROCESSING",
-  "refund_reference": "REF-001",
-  "allocations_affected": 1,
-  "invoice_status_after_reversal": "PARTIAL_PAID"
-}
-```
+#### B. Student context card
 
----
+Expected fields:
 
-### 5. Manually Reconcile Payment (MISSING - TODO)
+- student name
+- admission number
+- active enrollment/class
+- SMS target / guardian phone when available
 
-**Endpoint:** `POST /api/finance/payments/{payment_id}/reconcile/`
+#### C. Payment form
 
-**Authentication:** Required (bursar)
+Required fields and logic:
 
-**Request Body:**
-```json
-{
-  "gateway_reference": "LHR519D60OP",
-  "bank_reference": "CHQ-001",
-  "bank_statement_line_id": "bsl-uuid",
-  "reconciliation_notes": "Matched M-Pesa callback to payment record",
-  "reconciliation_date": "2026-04-17"
-}
-```
+- student
+- amount
+- payment date
+- payment method
+- reference number
+- notes
 
-**Expected Response (200 OK):**
-```json
-{
-  "id": "pay-uuid",
-  "reconciliation_status": "MATCHED",
-  "reconciled_at": "2026-04-17T14:30:00Z",
-  "reconciled_by": "bursar-uuid",
-  "gateway_reference": "LHR519D60OP",
-  "bank_reference": "CHQ-001"
-}
-```
+Behavior:
+
+- for manual methods, submit records a payment immediately
+- for Stripe Checkout, submit creates hosted checkout instead of immediate payment record
+
+#### D. Stripe summary state
+
+When Stripe session is created:
+
+- show success state
+- show `Open checkout`
+- show `Reset` or re-create option
+
+#### E. Receipt success panel
+
+After manual save:
+
+- show success flash
+- show `Receipt`
+- show `Receipt JSON`
+- show aligned SMS text
+- show ability to copy SMS confirmation content
+
+### Designer notes
+
+- manual and Stripe modes should feel related, but not identical
+- switch the form clearly between `record now` and `launch hosted payment`
+- success state should keep the next actions visible: receipt, JSON, SMS
+- reference-number field should adapt its helper text by method
 
 ---
 
-### 6. List Invoices
+## 3. Parent Portal Finance Screen
 
-**Endpoint:** `GET /api/finance/invoices/`
+Compiled page:
 
-**Authentication:** Required
+- `sms-backend/frontend_build/assets/ParentPortalFinancePage-C4iG-P9o.js`
 
-**Query Parameters:**
-```
-status=UNPAID|PAID|PARTIAL_PAID|CANCELLED    (optional)
-academic_year=2025-2026                       (optional)
-term=Term1|Term2|Term3                        (optional)
-class_id=uuid                                 (optional)
-student_id=uuid                               (optional)
-page=1
-page_size=50
-```
+Purpose:
 
-**Response (200 OK):** Similar structure to student endpoint but with all students
+- let parent view child finances and pay from portal
 
----
+### Main content blocks
 
-### 7. Create Invoice
+- finance summary
+- invoice list
+- payment history
+- payment action panel
+- receipt links
+- fee statement access
 
-**Endpoint:** `POST /api/finance/invoices/`
+### Supported payment actions
 
-**Authentication:** Required (bursar)
+- `M-Pesa`
+- `Bank Transfer`
+- `Stripe Checkout`
 
-**Request Body:**
-```json
-{
-  "academic_year_id": "ay-uuid",
-  "term_id": "term-uuid",
-  "class_id": "class-uuid",
-  "students": [
-    {
-      "student_id": "student-uuid-1",
-      "amount": 50000.00,
-      "fee_structure_id": "fs-uuid"
-    },
-    {
-      "student_id": "student-uuid-2",
-      "amount": 50000.00,
-      "fee_structure_id": "fs-uuid"
-    }
-  ],
-  "due_date": "2026-02-28",
-  "description": "Term 1 2026 fees"
-}
-```
+### Important experience behaviors
 
-**Response (201 Created):** Array of created invoices
+#### M-Pesa
 
----
+- user enters phone number
+- sees pending confirmation text
+- screen can poll for status
+- timeout message is supported
 
-### 8. Generate Arrears Report
+#### Bank transfer
 
-**Endpoint:** `GET /api/finance/reports/arrears/`
+- system creates a unique transfer reference
+- copy explicitly tells user to include the reference in transfer narration or deposit slip
+- balance updates only after reconciliation
 
-**Authentication:** Required
+#### Stripe
 
-**Query Parameters:**
-```
-as_of_date=2026-04-17                    (optional, defaults to today)
-academic_year=2025-2026                  (optional)
-term=Term1|Term2|Term3                   (optional)
-class_id=uuid                            (optional)
-min_balance=1000                         (optional)
-page=1
-page_size=100
-```
+- creates hosted checkout link
+- supports success/cancel return messages
 
-**Response (200 OK):**
-```json
-{
-  "count": 45,
-  "total_arrears": 1250000.00,
-  "results": [
-    {
-      "student_id": "student-uuid",
-      "full_name": "John Doe",
-      "admission_number": "ADM-2024-001",
-      "current_class": "Form 4A",
-      "total_arrears": 20000.00,
-      "days_overdue": 48,
-      "late_fees": 500.00,
-      "invoices": [
-        {
-          "invoice_id": "inv-uuid",
-          "invoice_number": "INV-2026-001",
-          "term": "Term 1",
-          "balance": 20000.00,
-          "due_date": "2026-02-28"
-        }
-      ]
-    }
-  ]
-}
-```
+### Payment history block
+
+Should show:
+
+- payment date
+- amount
+- method
+- reference
+- receipt link
+
+### Designer notes
+
+- the parent needs confidence, not accounting complexity
+- keep the child context visible
+- emphasize outstanding balance and invoice-to-payment relationship
+- for bank transfer, instructions are part of the product, not just a backend detail
 
 ---
 
-### 9. Finance Dashboard (PARTIAL - TODO)
+## 4. Student Portal Fees Screen
 
-**Endpoint:** `GET /api/finance/reports/dashboard/`
+Compiled page:
 
-**Authentication:** Required
+- `sms-backend/frontend_build/assets/StudentPortalFeesPage-LL9vjGLP.js`
 
-**Response (200 OK):**
-```json
-{
-  "period": {
-    "from": "2026-04-01",
-    "to": "2026-04-17"
-  },
-  "summary": {
-    "total_collected": 500000.00,
-    "total_invoiced": 1000000.00,
-    "total_outstanding": 500000.00,
-    "total_overdue": 300000.00,
-    "collection_rate": 50.0
-  },
-  "by_method": {
-    "mpesa": {
-      "count": 45,
-      "amount": 350000.00,
-      "percentage": 70.0
-    },
-    "cash": {
-      "count": 15,
-      "amount": 100000.00,
-      "percentage": 20.0
-    },
-    "bank": {
-      "count": 5,
-      "amount": 50000.00,
-      "percentage": 10.0
-    },
-    "stripe": {
-      "count": 0,
-      "amount": 0.00,
-      "percentage": 0.0
-    }
-  },
-  "by_gateway": {
-    "mpesa": {
-      "total": 350000.00,
-      "success_rate": 98.5,
-      "failed_count": 1
-    },
-    "stripe": {
-      "total": 0.00,
-      "status": "NOT_CONFIGURED"
-    },
-    "bank": {
-      "total": 50000.00,
-      "reconciled": 45000.00,
-      "pending_reconciliation": 5000.00
-    }
-  },
-  "top_collectors": [
-    {
-      "class": "Form 4A",
-      "collected": 150000.00,
-      "target": 200000.00,
-      "percentage": 75.0
-    }
-  ],
-  "pending_reconciliation": {
-    "count": 5,
-    "amount": 75000.00,
-    "oldest_date": "2026-04-10"
-  }
-}
-```
+Purpose:
+
+- self-service fees page for the student
+
+### Similarities to parent portal
+
+- invoice list
+- payment history
+- M-Pesa flow
+- bank-transfer initiation
+- Stripe Checkout
+- receipt links
+
+### Important copy already implied in current build
+
+- overdue invoices can still be settled here
+- payment methods include M-Pesa, bank transfer, and Stripe Checkout
+- M-Pesa requires phone number
+- bank transfer gives a reference and waits for reconciliation
+
+### Designer notes
+
+- this screen should feel simpler than the parent version
+- remove guardian/child complexity
+- keep status messaging short and direct
+- payment progress and history should be easy to understand on mobile
 
 ---
 
-### 10. Import Bank Statement (MISSING - TODO)
+## 5. Receipt Experiences
 
-**Endpoint:** `POST /api/finance/bank/import-statement/`
+Receipt entry points exist in:
 
-**Authentication:** Required (bursar)
+- finance admin workspace
+- parent portal
+- student portal
 
-**Request Body (multipart/form-data):**
-```
-file: <CSV file>
-bank_id: "bank-uuid"
-statement_date: "2026-04-17"
-account_number: "1234567890"
-opening_balance: 500000.00
-closing_balance: 750000.00
-```
+### Receipt content model
 
-**Expected Response (201 Created):**
-```json
-{
-  "import_id": "import-uuid",
-  "status": "PROCESSING",
-  "bank_id": "bank-uuid",
-  "statement_date": "2026-04-17",
-  "rows_parsed": 45,
-  "rows_imported": 45,
-  "rows_duplicate": 0,
-  "rows_error": 0,
-  "errors": [],
-  "import_started_at": "2026-04-17T14:30:00Z"
-}
-```
+The receipt payload includes:
 
----
+- `receipt_no`
+- `transaction_code`
+- `reference_number`
+- `student`
+- `admission_number`
+- `amount`
+- `method`
+- `date`
+- `status`
+- `notes`
+- `allocations`
+- `vote_head_allocations`
+- `vote_head_summary`
+- `receipt_json_url`
+- `receipt_pdf_url`
 
-### 11. Auto-Reconcile Bank Transactions (MISSING - TODO)
+### Receipt output types
 
-**Endpoint:** `POST /api/finance/bank/match-transactions/`
+- finance JSON/plain receipt payload
+- finance PDF receipt
+- parent HTML printable receipt
+- student HTML printable receipt
 
-**Authentication:** Required (bursar)
+### Designer notes
 
-**Request Body:**
-```json
-{
-  "statement_id": "stmt-uuid",
-  "match_algorithm": "fuzzy|exact",
-  "fuzzy_tolerance_percent": 5,
-  "fuzzy_tolerance_days": 3
-}
-```
-
-**Expected Response (200 OK):**
-```json
-{
-  "statement_id": "stmt-uuid",
-  "total_lines": 45,
-  "matched": 40,
-  "unmatched": 5,
-  "matches": [
-    {
-      "bank_line_id": "bsl-uuid",
-      "payment_id": "pay-uuid",
-      "confidence": 0.95,
-      "match_reason": "Amount and reference match"
-    }
-  ],
-  "unmatched_lines": [
-    {
-      "bank_line_id": "bsl-uuid",
-      "amount": 75000.00,
-      "reference": "INVOICE-789",
-      "suggestions": [
-        {
-          "payment_id": "pay-uuid",
-          "amount": 75000.00,
-          "confidence": 0.85
-        }
-      ]
-    }
-  ]
-}
-```
+- the receipt is both a customer artifact and an audit artifact
+- design for print clarity first, branding second
+- always show:
+  - school identity
+  - student identity
+  - receipt number
+  - date
+  - method
+  - total paid
+  - allocations or invoice references
 
 ---
 
-### 12. View Webhook Events (MISSING - TODO)
+## 6. Reconciliation Workspace
 
-**Endpoint:** `GET /api/finance/webhook-events/`
+Backend routes exist for:
 
-**Authentication:** Required (bursar)
+- bank statement import
+- bank line listing
+- auto-match
+- clear
+- ignore
+- unmatch
 
-**Query Parameters:**
-```
-status=unprocessed|processed|failed      (optional)
-gateway=mpesa|stripe|bank               (optional)
-event_type=charge.succeeded             (optional)
-date_from=2026-04-01                    (optional)
-date_to=2026-04-17                      (optional)
-page=1
-page_size=50
-```
+Primary endpoint group:
 
-**Expected Response (200 OK):**
-```json
-{
-  "count": 250,
-  "results": [
-    {
-      "id": "wh-uuid",
-      "event_id": "evt_xxxxx",
-      "gateway": "mpesa",
-      "event_type": "mpesa_stk_callback",
-      "status": "unprocessed",
-      "raw_payload": { ... },
-      "processed": false,
-      "processing_attempts": 0,
-      "error_message": null,
-      "created_at": "2026-04-17T14:30:00Z"
-    }
-  ]
-}
-```
+- `/api/finance/reconciliation/bank-lines/`
 
----
+### What the reconciliation UI must support
 
-## Platform Admin Endpoints
+#### A. Bank line list
 
-### 1. Get School Subscription Status
+Columns should include:
 
-**Endpoint:** `GET /api/platform/subscriptions/{tenant_id}/`
+- statement date
+- value date
+- amount
+- reference
+- narration
+- source
+- status
+- matched payment reference
+- matched gateway external ID
 
-**Authentication:** Required (platform admin)
+#### B. Reconciliation actions
 
-**Response (200 OK):**
-```json
-{
-  "id": "sub-uuid",
-  "tenant_id": "school-uuid",
-  "school_name": "Saint Mary's School",
-  "plan": "Professional",
-  "status": "ACTIVE",
-  "billing_cycle": "MONTHLY",
-  "amount": 5000.00,
-  "currency": "KES",
-  "current_period_start": "2026-04-01",
-  "current_period_end": "2026-04-30",
-  "next_billing_date": "2026-05-01",
-  "payment_status": "PAID",
-  "auto_renew": true,
-  "features": [
-    "student_portal",
-    "parent_portal",
-    "finance_module",
-    "mpesa_integration",
-    "analytics"
-  ]
-}
-```
+- `Import CSV`
+- `Auto-match`
+- `Clear`
+- `Ignore`
+- `Unmatch`
+
+#### C. CSV import behavior
+
+Required columns:
+
+- `statement_date`
+- `amount`
+
+Optional columns:
+
+- `value_date`
+- `reference`
+- `narration`
+- `source`
+
+### Reconciliation states
+
+- `UNMATCHED`
+- `MATCHED`
+- `CLEARED`
+- `IGNORED`
+
+### Designer notes
+
+- bank reconciliation is a review tool, not a payment form
+- the primary visual hierarchy should be: amount, reference, status, match target
+- `CLEAR` should feel like a final confirmation step
+- `IGNORE` and `UNMATCH` should be clearly differentiated
 
 ---
 
-### 2. Get Integration Status (MISSING - TODO)
+## 7. Gateway Events / Recovery Workspace
 
-**Endpoint:** `GET /api/platform/integrations/{tenant_id}/`
+Primary endpoint group:
 
-**Authentication:** Required (platform admin)
+- `/api/finance/gateway/events/`
 
-**Expected Response (200 OK):**
-```json
-{
-  "tenant_id": "school-uuid",
-  "integrations": {
-    "mpesa": {
-      "enabled": true,
-      "status": "ACTIVE",
-      "last_transaction": "2026-04-17T14:30:00Z",
-      "success_rate": 98.5,
-      "test_mode": false,
-      "configured_at": "2026-01-15",
-      "next_credential_rotation": "2026-07-15"
-    },
-    "stripe": {
-      "enabled": false,
-      "status": "NOT_CONFIGURED",
-      "test_mode": false,
-      "configured_at": null
-    },
-    "bank": {
-      "enabled": false,
-      "status": "NOT_CONFIGURED",
-      "configured_at": null
-    }
-  }
-}
-```
+Purpose:
 
----
+- show raw incoming webhook/callback events
+- reveal whether they were processed
+- show errors
+- let operators manually reprocess supported failures
 
-### 3. Setup Stripe Connect (MISSING - TODO)
+### Current backend support
 
-**Endpoint:** `POST /api/platform/integrations/{tenant_id}/stripe/connect/`
+Filtering:
 
-**Authentication:** Required (platform admin)
+- `provider`
+- `processed`
 
-**Request Body:**
-```json
-{
-  "stripe_account_id": "acct_xxxxx",
-  "stripe_api_key": "sk_live_xxxxx",
-  "webhook_secret": "whsec_xxxxx",
-  "test_mode": false
-}
-```
+Manual recovery:
 
-**Expected Response (201 Created):**
-```json
-{
-  "integration_id": "int-uuid",
-  "gateway": "stripe",
-  "status": "PENDING_VERIFICATION",
-  "test_result": "PENDING",
-  "verified_at": null,
-  "created_at": "2026-04-17T14:30:00Z"
-}
-```
+- `POST /api/finance/gateway/events/{id}/reprocess/`
+
+Supported reprocess types:
+
+- M-Pesa STK callback events
+- Stripe checkout session events
+
+### Data fields the UI should expose
+
+- event id
+- provider
+- event type
+- received at
+- processed true/false
+- processed at
+- error
+- raw payload viewer
+
+### Designer notes
+
+- this is an operations table, not a customer-facing timeline
+- default row view should stay compact
+- raw payload should live in a drawer, side panel, or expandable JSON inspector
+- failed rows must be visually obvious
 
 ---
 
-## Webhook Endpoints
+## Backend Capabilities By Area
 
-### M-Pesa STK Push Callback
+## A. Finance Admin / Bursar APIs
 
-**Endpoint:** `POST /api/mpesa/stk-callback/`
+Base group:
 
-**Authentication:** None (Safaricom validates with shared secret)
+- `/api/finance/`
 
-**Headers Expected:**
-```
-Content-Type: application/json
-```
+Key routes:
 
-**Payload (from Safaricom):**
-```json
-{
-  "Body": {
-    "stkCallback": {
-      "MerchantRequestID": "123456789",
-      "CheckoutRequestID": "ws_CO_120320231107115",
-      "ResultCode": 0,
-      "ResultDesc": "The service request has been processed successfully",
-      "CallbackMetadata": {
-        "Item": [
-          { "Name": "Amount", "Value": 50000 },
-          { "Name": "MpesaReceiptNumber", "Value": "LHR519D60OP" },
-          { "Name": "PhoneNumber", "Value": "254712345678" },
-          { "Name": "TransactionDate", "Value": "20260120143000" }
-        ]
-      }
-    }
-  }
-}
-```
+- `GET/POST /api/finance/payments/`
+- `GET /api/finance/payments/{id}/receipt/?format=json`
+- `GET /api/finance/payments/{id}/receipt/pdf/`
+- `POST /api/finance/payments/{id}/allocate/`
+- `POST /api/finance/payments/{id}/auto-allocate/`
+- `POST /api/finance/payments/{id}/reversal-request/`
+- `GET/POST /api/finance/payment-reversals/`
+- `POST /api/finance/payment-reversals/{id}/approve/`
+- `POST /api/finance/payment-reversals/{id}/reject/`
+- `GET/POST/PATCH /api/finance/reconciliation/bank-lines/`
+- `POST /api/finance/reconciliation/bank-lines/import-csv/`
+- `POST /api/finance/reconciliation/bank-lines/{id}/auto-match/`
+- `POST /api/finance/reconciliation/bank-lines/{id}/clear/`
+- `POST /api/finance/reconciliation/bank-lines/{id}/ignore/`
+- `POST /api/finance/reconciliation/bank-lines/{id}/unmatch/`
+- `GET /api/finance/gateway/events/`
+- `POST /api/finance/gateway/events/{id}/reprocess/`
+- `POST /api/finance/stripe/checkout-session/`
+- `POST /api/finance/mpesa/push/`
+- `GET /api/finance/mpesa/status/`
+- `POST /api/finance/mpesa/test-connection/`
+- `GET/PUT /api/finance/mpesa/callback-url/`
+- `GET /api/finance/launch-readiness/`
 
-**Expected Response (200 OK):**
-```json
-{
-  "processed": true,
-  "message": "Webhook processed successfully"
-}
-```
+## B. Parent Portal APIs
 
-**What SHOULD Happen (Currently Logged But Not Processed):**
-1. Payload verified with Safaricom shared secret
-2. PaymentGatewayTransaction located by CheckoutRequestID
-3. Payment record created
-4. Invoice updated
-5. JournalEntry posted
-6. Receipt generated
-7. Notification sent
+- `GET /api/parent-portal/finance/summary/`
+- `GET /api/parent-portal/finance/invoices/`
+- `GET /api/parent-portal/finance/payments/`
+- `GET /api/parent-portal/finance/payments/{payment_id}/receipt/`
+- `POST /api/parent-portal/finance/pay/`
+- `GET /api/parent-portal/finance/mpesa-status/`
+- `GET /api/parent-portal/finance/statement/`
+- `GET /api/parent-portal/finance/statement/download/`
 
----
+## C. Student Portal APIs
 
-### Stripe Webhook (MISSING - TODO)
+- `GET /api/student-portal/my-invoices/`
+- `GET /api/student-portal/my-payments/`
+- `GET /api/student-portal/finance/payments/{payment_id}/receipt/`
+- `POST /api/student-portal/finance/pay/`
+- `GET /api/student-portal/finance/mpesa-status/`
 
-**Endpoint:** `POST /api/stripe/webhook/`
+## D. Incoming callback / webhook APIs
 
-**Authentication:** None (Stripe validates with webhook signature)
-
-**Headers Expected:**
-```
-Stripe-Signature: t=<timestamp>,v1=<signature>
-```
-
-**Expected Event Types:**
-- `payment_intent.succeeded` → Create Payment record
-- `payment_intent.payment_failed` → Mark as failed
-- `charge.refunded` → Process refund
+- `POST /api/finance/mpesa/callback/`
+- `POST /api/finance/gateway/webhooks/{provider}/`
 
 ---
 
-## Error Response Codes
+## Feature Matrix
 
-### Standard HTTP Errors
-
-| Code | Meaning | Example |
-|------|---------|---------|
-| `400` | Bad Request | Invalid JSON, missing required fields |
-| `401` | Unauthorized | Missing/invalid JWT token |
-| `403` | Forbidden | User role lacks permission |
-| `404` | Not Found | Invoice/payment ID doesn't exist |
-| `409` | Conflict | Duplicate payment, student not found |
-| `413` | Payload Too Large | Amount exceeds limit |
-| `429` | Too Many Requests | Rate limit exceeded |
-| `500` | Server Error | Database error, external API failure |
-
-### Payment-Specific Error Responses
-
-**Failed M-Pesa STK Push (400):**
-```json
-{
-  "error_code": "MPESA_INVALID_PHONE",
-  "error_message": "Invalid M-Pesa phone number format",
-  "details": {
-    "phone_number": "+254712345678",
-    "validation_rules": "Must start with +254 and be 13 digits"
-  }
-}
-```
-
-**Duplicate Payment (409):**
-```json
-{
-  "error_code": "DUPLICATE_PAYMENT",
-  "error_message": "Payment already exists for this invoice",
-  "details": {
-    "invoice_id": "inv-uuid",
-    "existing_payment_id": "pay-uuid",
-    "amount": 30000.00,
-    "status": "PENDING"
-  }
-}
-```
-
-**Insufficient Balance (402):**
-```json
-{
-  "error_code": "INSUFFICIENT_FUNDS",
-  "error_message": "Student account has insufficient balance for this payment",
-  "details": {
-    "requested_amount": 50000.00,
-    "available_balance": 30000.00,
-    "shortfall": 20000.00
-  }
-}
-```
-
-**Access Denied (403):**
-```json
-{
-  "error_code": "PERMISSION_DENIED",
-  "error_message": "User does not have permission to access this resource",
-  "details": {
-    "required_role": "bursar",
-    "user_role": "parent"
-  }
-}
-```
+| Feature | Finance Admin | Parent | Student | Backend Support |
+|------|------|------|------|------|
+| Record manual payment | Yes | No | No | `PaymentViewSet.create` |
+| Generate receipt immediately | Yes | Indirect | Indirect | Receipt payload + PDF/HTML endpoints |
+| Launch Stripe checkout | Yes | Yes | Yes | Stripe checkout session + webhook settlement |
+| Start M-Pesa payment | Assisted/admin flow available | Yes | Yes | STK push + callback + status polling |
+| Start bank transfer with reference | Admin can manually record or reconcile | Yes | Yes | `PaymentGatewayTransaction` with reference |
+| View payment history | Yes | Yes | Yes | payment list endpoints |
+| View fee statement | Finance via reports/ledger | Yes | not primary in current portal | statement endpoints |
+| Request reversal | Yes | No | No | reversal request workflow |
+| Approve/reject reversal | Authorized finance/admin | No | No | maker/checker approval endpoints |
+| Import bank statement lines | Yes | No | No | CSV import endpoint |
+| Match/clear bank lines | Yes | No | No | reconciliation endpoints |
+| Inspect failed events | Yes | No | No | gateway event list |
+| Reprocess failed sync event | Yes | No | No | event reprocess endpoint |
 
 ---
 
-## Integration Examples
+## Important UX Rules
 
-### Example 1: Student Paying via M-Pesa
+### 1. Don't show every payment as "complete"
 
-**Step 1: Get invoices**
-```bash
-curl -X GET "https://api.school.app/api/student-portal/finance/invoices/" \
-  -H "Authorization: Bearer <jwt_token>"
-```
+The system distinguishes:
 
-**Step 2: Initiate STK Push**
-```bash
-curl -X POST "https://api.school.app/api/finance/mpesa/push/" \
-  -H "Authorization: Bearer <jwt_token>" \
-  -H "Content-Type: application/json" \
-  -H "X-Idempotency-Key: a1b2c3d4-e5f6-g7h8-i9j0-k1l2m3n4o5p6" \
-  -d '{
-    "student_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
-    "phone_number": "+254712345678",
-    "amount": 20000.00,
-    "invoice_id": "inv-uuid"
-  }'
-```
+- initiated
+- pending
+- succeeded
+- failed
+- reconciled
+- reversed
 
-**Response:**
-```json
-{
-  "transaction_id": "txn-uuid",
-  "CheckoutRequestID": "ws_CO_120320231107115",
-  "CustomerMessage": "Enter your M-Pesa PIN",
-  "ResponseCode": "0"
-}
-```
+Each state needs its own visual treatment.
 
-**Step 3: Poll for status** (every 5 seconds)
-```bash
-curl -X GET "https://api.school.app/api/finance/mpesa/status/?checkout_request_id=ws_CO_120320231107115" \
-  -H "Authorization: Bearer <jwt_token>"
-```
+### 2. "Bank transfer initiated" is not the same as "school received money"
 
----
+For portal bank transfer:
 
-### Example 2: Parent Making Payment for Child
+- user action creates a transfer reference
+- system still waits for reconciliation
+- balance should not imply instant settlement
 
-```bash
-# Get children
-curl -X GET "https://api.school.app/api/parent-portal/children/" \
-  -H "Authorization: Bearer <jwt_token>"
+### 3. Receipts are only meaningful after real payment creation
 
-# Get child's balance
-curl -X GET "https://api.school.app/api/parent-portal/children/child-uuid/balance/" \
-  -H "Authorization: Bearer <jwt_token>"
+Portal-initiated bank transfer references are not the same thing as a finalized receipt.
 
-# Pay for child
-curl -X POST "https://api.school.app/api/parent-portal/children/child-uuid/pay-mpesa/" \
-  -H "Authorization: Bearer <jwt_token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "phone_number": "+254712345678",
-    "amount": 20000.00,
-    "invoice_id": "inv-uuid"
-  }'
-```
+### 4. Reconciliation must preserve human control
+
+Auto-match helps, but finance users still need:
+
+- reviewable matches
+- clear/unmatch controls
+- visible references and narration
+
+### 5. Support tools need payload visibility
+
+A pretty status chip is not enough for ops. Event screens need:
+
+- timestamps
+- provider
+- raw error
+- reprocess button
+- raw payload access
 
 ---
 
-### Example 3: Bursar Registering Cash Payment
+## Recommended Figma Screen Set
 
-```bash
-curl -X POST "https://api.school.app/api/finance/payments/" \
-  -H "Authorization: Bearer <bursar_jwt>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "student_id": "student-uuid",
-    "amount": 50000.00,
-    "payment_method": "Cash",
-    "reference_number": "CASH-RECEIPT-001",
-    "payment_date": "2026-04-17T10:00:00Z",
-    "notes": "Cash received from parent",
-    "allocate_to_invoices": [
-      {
-        "invoice_id": "inv-uuid",
-        "amount": 50000.00
-      }
-    ]
-  }'
-```
+If the design team is starting from scratch, these are the minimum screens to design.
 
----
+### Finance Admin
 
-### Example 4: Bursar Reversing Duplicate Payment
+1. `Payments List`
+2. `Record Manual Payment`
+3. `Stripe Checkout Launch State`
+4. `Receipt Preview / Download State`
+5. `Payment Reversal Request Modal`
+6. `Reversal Approval Queue`
+7. `Bank Reconciliation List`
+8. `Import Statement Modal`
+9. `Gateway Event Monitor`
+10. `Gateway Event Detail Drawer`
 
-```bash
-curl -X POST "https://api.school.app/api/finance/payments/pay-uuid/reverse/" \
-  -H "Authorization: Bearer <bursar_jwt>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "reversal_reason": "Duplicate payment - student paid twice",
-    "refund_method": "mpesa",
-    "refund_notes": "Refunding to student M-Pesa account"
-  }'
-```
+### Parent Portal
 
----
+1. `Finance Dashboard`
+2. `Invoice Details / Outstanding Balance`
+3. `Pay Invoice Modal or Panel`
+4. `M-Pesa Pending State`
+5. `Bank Transfer Instruction State`
+6. `Stripe Redirect State`
+7. `Payment History`
+8. `Receipt View`
+9. `Fee Statement View`
 
-## Additional Notes
+### Student Portal
 
-### Rate Limiting
-- 60 requests per minute per authenticated user
-- 10 payment initiation requests per minute per user (anti-spam)
-- Stripe webhook: Unlimited (signature verified)
-
-### Idempotency
-- All POST payment endpoints should include `X-Idempotency-Key` header
-- Prevents duplicate payments if request is retried
-- Idempotency key valid for 24 hours
-
-### Pagination
-- Default page size: 20
-- Max page size: 100
-- Use `next` URL from response for pagination
-
-### Sorting
-- Add `?ordering=-created_at` to sort by creation date (newest first)
-- Add `?ordering=student__full_name` to sort by student name
-
-### Filtering
-All query parameters are optional and can be combined:
-```
-/api/finance/payments/?status=COMPLETED&payment_method=MPesa&date_from=2026-01-01
-```
+1. `Fees Dashboard`
+2. `Invoice List`
+3. `Pay Invoice Modal or Panel`
+4. `M-Pesa Pending State`
+5. `Bank Transfer Reference State`
+6. `Stripe Redirect State`
+7. `Payment History`
+8. `Receipt View`
 
 ---
 
-**Document Version:** 1.0  
-**Last Updated:** April 17, 2026  
-**Next Review:** May 17, 2026
+## Field-Level Guidance For Figma
 
+These fields are not optional in the UX because the backend already uses them.
+
+### Manual payment card / table row
+
+- student name
+- admission number
+- receipt number
+- transaction/reference number
+- payment method
+- amount
+- payment date
+- allocation status
+- active/reversed state
+
+### Gateway transaction card / row
+
+- provider
+- external ID / checkout request ID / checkout session ID
+- invoice reference
+- amount
+- status
+- initiated at
+- reconciled true/false
+
+### Bank statement line row
+
+- statement date
+- value date
+- amount
+- bank reference
+- narration
+- source
+- status
+- matched payment
+- matched gateway transaction
+
+### Receipt view
+
+- school brand
+- receipt number
+- student
+- admission number
+- amount
+- method
+- date
+- reference
+- status
+- allocation breakdown
+
+---
+
+## Suggested State Chips
+
+### Payment state chips
+
+- `Active`
+- `Reversed`
+- `Allocated`
+- `Partial`
+- `Unallocated`
+
+### Gateway state chips
+
+- `Initiated`
+- `Pending`
+- `Succeeded`
+- `Failed`
+- `Refunded`
+
+### Reconciliation state chips
+
+- `Unmatched`
+- `Matched`
+- `Cleared`
+- `Ignored`
+
+### Approval state chips
+
+- `Pending`
+- `Approved`
+- `Rejected`
+
+Use distinct semantics:
+
+- green for completed/safe
+- amber for pending/needs review
+- red for failed/reversed/rejected
+- neutral/slate for inactive or informational
+
+---
+
+## Error And Empty States To Design
+
+### Errors
+
+- invalid amount
+- phone required for M-Pesa
+- invoice not found
+- invoice already paid
+- amount exceeds outstanding balance
+- callback/webhook verification failed
+- CSV file missing
+- CSV header missing
+- unsupported reprocess event
+
+### Empty states
+
+- no invoices
+- no payments
+- no bank statement lines
+- no failed gateway events
+- no reversal requests
+
+### Long-running states
+
+- waiting for M-Pesa confirmation
+- Stripe checkout launched but not yet settled
+- bank transfer awaiting reconciliation
+- event reprocess in progress
+
+---
+
+## Key Backend Notes For Engineers Working With The Designer
+
+### Manual payment recording
+
+Implemented through:
+
+- `PaymentViewSet.create`
+- `FinanceService.record_payment`
+
+### Portal bank-transfer initiation
+
+Creates:
+
+- `PaymentGatewayTransaction`
+
+Does not immediately create:
+
+- `Payment`
+
+### M-Pesa settlement
+
+Initiation:
+
+- `MpesaStkPushView`
+- `ParentFinancePayView`
+- `StudentFinancePayView`
+
+Settlement:
+
+- `MpesaStkCallbackView`
+- `FinanceService.process_mpesa_callback_event`
+
+### Stripe settlement
+
+Initiation:
+
+- finance admin checkout session
+- parent portal pay view
+- student portal pay view
+
+Settlement:
+
+- `FinanceGatewayWebhookView`
+- `FinanceService.process_stripe_webhook_event`
+
+### Bank reconciliation
+
+Primary logic:
+
+- `BankStatementLineViewSet`
+- `FinanceService.reconcile_bank_line`
+
+### Ops recovery
+
+Primary logic:
+
+- `PaymentGatewayWebhookEventViewSet.reprocess`
+
+---
+
+## What The Designer Should Prioritize
+
+If time is limited, prioritize the following screens first:
+
+1. `Finance Admin Payments List`
+2. `Finance Admin Record Payment Form`
+3. `Parent Portal Payment Flow`
+4. `Student Portal Payment Flow`
+5. `Reconciliation List`
+6. `Gateway Event Recovery Table`
+7. `Receipt Template`
+
+These seven cover the highest-visibility parts of both manual and synced payment operations.
+
+---
+
+## Appendix: Source Files Behind The Current Experience
+
+### Frontend bundles verified in current build
+
+- `sms-backend/frontend_build/assets/FinancePaymentsPage-Dwws6qtb.js`
+- `sms-backend/frontend_build/assets/FinancePaymentFormPage-Dh2R-Fpu.js`
+- `sms-backend/frontend_build/assets/ParentPortalFinancePage-C4iG-P9o.js`
+- `sms-backend/frontend_build/assets/StudentPortalFeesPage-LL9vjGLP.js`
+
+### Primary backend route files
+
+- `sms-backend/finance/urls.py`
+- `sms-backend/parent_portal/urls.py`
+- `sms-backend/parent_portal/student_portal_urls.py`
+- `sms-backend/school/urls.py`
+
+### Primary backend implementation files
+
+- `sms-backend/finance/presentation/viewsets.py`
+- `sms-backend/finance/presentation/collection_ops_viewsets.py`
+- `sms-backend/parent_portal/views.py`
+- `sms-backend/parent_portal/student_portal_views.py`
+- `sms-backend/school/views.py`
+- `sms-backend/school/models.py`
+- `sms-backend/school/payment_receipts.py`
+
+---
+
+## Final Design Summary
+
+For Figma, think of this payment system as:
+
+- a `collection UI`
+- a `verification UI`
+- a `reconciliation UI`
+- a `recovery UI`
+
+The strongest designs for this system will make those four jobs visually distinct while still feeling like one coherent finance product.

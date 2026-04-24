@@ -166,6 +166,14 @@ function FeesPage() {
   const balanceDue = invoices.reduce((sum, invoice) => sum + Number(invoice.balance ?? 0), 0);
   const hasOverdue = invoices.some((invoice) => normalizeStatus(invoice.status) === "overdue");
   const outstandingInvoices = invoices.filter((invoice) => Number(invoice.balance ?? 0) > 0);
+  const overdueInvoices = outstandingInvoices.filter((invoice) => normalizeStatus(invoice.status) === "overdue");
+  const sortedOutstandingInvoices = [...outstandingInvoices].sort((left, right) => {
+    const leftDate = left?.due_date ? new Date(left.due_date).getTime() : Number.POSITIVE_INFINITY;
+    const rightDate = right?.due_date ? new Date(right.due_date).getTime() : Number.POSITIVE_INFINITY;
+    return leftDate - rightDate;
+  });
+  const nextDueInvoice = sortedOutstandingInvoices.find((invoice) => !!invoice.due_date) ?? sortedOutstandingInvoices[0] ?? null;
+  const latestPayment = payments[0] ?? null;
 
   const openPaymentModal = (invoice, preferredMethod = "mpesa") => {
     clearPolling();
@@ -419,6 +427,132 @@ function FeesPage() {
           ),
         ),
       }),
+      jsx("div", {
+        className: "grid gap-4 lg:grid-cols-[1.2fr,0.9fr]",
+        children: [
+          jsxs("section", {
+            className: "rounded-2xl p-5",
+            style: panelStyle,
+            children: [
+              jsx("p", {
+                className: "text-[10px] font-bold uppercase tracking-[0.28em] text-emerald-300",
+                children: "Quick pay",
+              }),
+              jsx("h2", {
+                className: "mt-2 text-lg font-semibold text-white",
+                children: "Settle the next fee item fast",
+              }),
+              jsx("p", {
+                className: "mt-1 text-sm text-slate-400",
+                children: nextDueInvoice
+                  ? `${nextDueInvoice.invoice_number || `Invoice #${nextDueInvoice.id}`} is the next best payment target.`
+                  : "There is no outstanding invoice requiring action right now.",
+              }),
+              jsx("div", {
+                className: "mt-4 grid gap-3 sm:grid-cols-3",
+                children: [
+                  {
+                    label: "Pay by M-Pesa",
+                    note: "Send an STK push to your phone and stay on this screen while we confirm it.",
+                    action: () => openPaymentModal(nextDueInvoice, "mpesa"),
+                    disabled: !nextDueInvoice,
+                    tone: "border-emerald-400/30 bg-emerald-400/10 text-emerald-100",
+                  },
+                  {
+                    label: "Use Stripe",
+                    note: "Open secure hosted card checkout and return here after confirmation.",
+                    action: () => openPaymentModal(nextDueInvoice, "stripe"),
+                    disabled: !nextDueInvoice,
+                    tone: "border-sky-400/30 bg-sky-400/10 text-sky-100",
+                  },
+                  {
+                    label: "Create bank reference",
+                    note: "Use the portal reference in your transfer narration while finance reconciles it.",
+                    action: () => openPaymentModal(nextDueInvoice, "bank"),
+                    disabled: !nextDueInvoice,
+                    tone: "border-amber-400/30 bg-amber-400/10 text-amber-100",
+                  },
+                ].map((item) =>
+                  jsxs(
+                    "button",
+                    {
+                      type: "button",
+                      onClick: item.action,
+                      disabled: item.disabled,
+                      className: `rounded-2xl border p-4 text-left transition hover:translate-y-[-1px] disabled:cursor-not-allowed disabled:opacity-50 ${item.tone}`,
+                      children: [
+                        jsx("p", { className: "text-sm font-semibold", children: item.label }),
+                        jsx("p", { className: "mt-2 text-xs opacity-85", children: item.note }),
+                      ],
+                    },
+                    item.label,
+                  ),
+                ),
+              }),
+            ],
+          }),
+          jsxs("section", {
+            className: "rounded-2xl p-5",
+            style: panelStyle,
+            children: [
+              jsx("p", {
+                className: "text-[10px] font-bold uppercase tracking-[0.28em] text-amber-300",
+                children: "Planning snapshot",
+              }),
+              jsx("h2", {
+                className: "mt-2 text-lg font-semibold text-white",
+                children: "Know what to tackle next",
+              }),
+              jsx("div", {
+                className: "mt-4 space-y-3",
+                children: [
+                  {
+                    label: "Outstanding invoices",
+                    value: String(outstandingInvoices.length),
+                    detail: outstandingInvoices.length ? "Still open for payment in this portal" : "Nothing outstanding",
+                  },
+                  {
+                    label: "Overdue invoices",
+                    value: String(overdueInvoices.length),
+                    detail: overdueInvoices.length ? "Clear overdue items first when possible" : "No overdue invoices",
+                  },
+                  {
+                    label: "Next due date",
+                    value: nextDueInvoice?.due_date ? formatDate(nextDueInvoice.due_date) : "--",
+                    detail: nextDueInvoice
+                      ? `${nextDueInvoice.invoice_number || `Invoice #${nextDueInvoice.id}`} • ${formatCurrency(nextDueInvoice.balance)}`
+                      : "No next due invoice",
+                  },
+                  {
+                    label: "Latest payment",
+                    value: latestPayment?.payment_date ? formatDate(latestPayment.payment_date) : "--",
+                    detail: latestPayment
+                      ? `${formatCurrency(latestPayment.amount_paid)} via ${latestPayment.payment_method || "payment"}`
+                      : "No payment recorded yet",
+                  },
+                ].map((item) =>
+                  jsxs(
+                    "div",
+                    {
+                      className: "rounded-2xl border border-white/[0.07] bg-slate-950/70 p-4",
+                      children: [
+                        jsx("p", { className: "text-[11px] uppercase tracking-wide text-slate-500", children: item.label }),
+                        jsx("p", { className: "mt-2 text-lg font-semibold text-white", children: item.value }),
+                        jsx("p", { className: "mt-1 text-xs text-slate-500", children: item.detail }),
+                      ],
+                    },
+                    item.label,
+                  ),
+                ),
+              }),
+              jsx("p", {
+                className: "mt-4 text-xs text-slate-500",
+                children: "Recurring card charges are not enabled in the student portal, so each payment is confirmed explicitly by you.",
+              }),
+            ],
+          }),
+        ],
+      }),
       invoices.length === 0
         ? jsxs("div", {
             className: "rounded-2xl p-8 text-center",
@@ -651,6 +785,15 @@ function FeesPage() {
                       method.id,
                     ),
                   ),
+                }),
+                jsx("div", {
+                  className: `rounded-2xl border px-4 py-3 text-xs ${flashClass(paymentMethod === "bank" ? "info" : paymentMethod === "stripe" ? "success" : "warning")}`,
+                  children:
+                    paymentMethod === "mpesa"
+                      ? "Enter the Safaricom number that should receive the prompt. We keep checking the status until the transaction settles or times out."
+                      : paymentMethod === "stripe"
+                        ? "Stripe redirects you to a secure hosted checkout. After card payment succeeds, you return here and the balance refreshes."
+                        : "Bank transfer gives you a unique reference to include in your narration or deposit slip. The invoice clears after reconciliation, not instantly.",
                 }),
                 jsxs("div", {
                   className: "space-y-3",
