@@ -7,19 +7,21 @@ import "./createLucideIcon-BLtbVmUp.js";
 
 const { jsx, jsxs } = jsxRuntime;
 
-const panelStyle = {
-  background: "rgba(255,255,255,0.025)",
-  border: "1px solid rgba(255,255,255,0.07)",
-};
-
-const modalStyle = {
-  background: "#0f172a",
-  border: "1px solid rgba(148,163,184,0.22)",
-  boxShadow: "0 32px 80px rgba(15,23,42,0.55)",
-};
+const shellClass =
+  "rounded-[32px] border border-slate-200/80 bg-[#f6f7fb] p-5 shadow-[0_30px_80px_rgba(15,23,42,0.08)] md:p-7 xl:p-8";
+const surfaceClass =
+  "rounded-[28px] border border-slate-200/80 bg-white p-5 shadow-[0_22px_50px_rgba(15,23,42,0.06)]";
+const insetClass = "rounded-[24px] border border-slate-200 bg-slate-50/80 p-4";
+const inputClass =
+  "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-900/5";
+const modalClass =
+  "w-full max-w-xl rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_30px_80px_rgba(15,23,42,0.25)]";
 
 function formatCurrency(value) {
-  return `KES ${Number(value ?? 0).toLocaleString()}`;
+  return `KES ${Number(value ?? 0).toLocaleString("en-KE", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
 }
 
 function toAmountInput(value) {
@@ -45,43 +47,59 @@ function normalizeGatewayStatus(value) {
 function invoiceBadgeClass(status) {
   return (
     {
-      paid: "bg-emerald-500/15 text-emerald-300",
-      partial: "bg-amber-500/15 text-amber-300",
-      partially_paid: "bg-amber-500/15 text-amber-300",
-      pending: "bg-sky-500/15 text-sky-300",
-      overdue: "bg-rose-500/15 text-rose-300",
-    }[normalizeStatus(status)] ?? "bg-slate-500/15 text-slate-300"
+      paid: "border-emerald-200 bg-emerald-50 text-emerald-700",
+      partial: "border-amber-200 bg-amber-50 text-amber-700",
+      partially_paid: "border-amber-200 bg-amber-50 text-amber-700",
+      pending: "border-sky-200 bg-sky-50 text-sky-700",
+      overdue: "border-rose-200 bg-rose-50 text-rose-700",
+    }[normalizeStatus(status)] ?? "border-slate-200 bg-slate-100 text-slate-700"
   );
 }
 
 function flashClass(tone) {
   return (
     {
-      success: "border-emerald-500/30 bg-emerald-500/10 text-emerald-200",
-      warning: "border-amber-500/30 bg-amber-500/10 text-amber-200",
-      error: "border-rose-500/30 bg-rose-500/10 text-rose-200",
-      info: "border-sky-500/30 bg-sky-500/10 text-sky-200",
-    }[tone] ?? "border-white/10 bg-white/[0.04] text-slate-200"
+      success: "border-emerald-200 bg-emerald-50 text-emerald-700",
+      warning: "border-amber-200 bg-amber-50 text-amber-700",
+      error: "border-rose-200 bg-rose-50 text-rose-700",
+      info: "border-sky-200 bg-sky-50 text-sky-700",
+    }[tone] ?? "border-slate-200 bg-slate-100 text-slate-700"
   );
 }
 
 function statusIcon(status) {
   const normalized = normalizeStatus(status);
   if (normalized === "paid") {
-    return jsx(CircleCheckBig, { size: 13, className: "text-emerald-400" });
+    return jsx(CircleCheckBig, { size: 13, className: "text-emerald-600" });
   }
   if (normalized === "partial" || normalized === "partially_paid" || normalized === "pending") {
-    return jsx(Clock, { size: 13, className: "text-amber-300" });
+    return jsx(Clock, { size: 13, className: "text-amber-600" });
   }
-  return jsx(CircleAlert, { size: 13, className: "text-rose-300" });
+  return jsx(CircleAlert, { size: 13, className: "text-rose-600" });
+}
+
+function MetricCard({ label, value, detail, tone = "text-slate-950" }) {
+  return jsxs("div", {
+    className: surfaceClass,
+    children: [
+      jsx("p", {
+        className: "text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400",
+        children: label,
+      }),
+      jsx("p", { className: `mt-3 text-2xl font-semibold ${tone}`, children: value }),
+      detail ? jsx("p", { className: "mt-2 text-sm text-slate-500", children: detail }) : null,
+    ],
+  });
 }
 
 function FeesPage() {
+  const [profile, setProfile] = React.useState(null);
   const [invoices, setInvoices] = React.useState([]);
   const [payments, setPayments] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState(null);
   const [flash, setFlash] = React.useState(null);
+  const [tab, setTab] = React.useState("invoices");
   const [paymentOpen, setPaymentOpen] = React.useState(false);
   const [selectedInvoice, setSelectedInvoice] = React.useState(null);
   const [paymentMethod, setPaymentMethod] = React.useState("mpesa");
@@ -94,12 +112,14 @@ function FeesPage() {
   const [polling, setPolling] = React.useState(false);
   const pollRef = React.useRef(null);
 
-  const refreshFees = async () => {
+  const refreshFees = React.useCallback(async () => {
     try {
-      const [invoiceResponse, paymentResponse] = await Promise.all([
+      const [profileResponse, invoiceResponse, paymentResponse] = await Promise.all([
+        api.get("/student-portal/profile/"),
         api.get("/student-portal/my-invoices/"),
         api.get("/student-portal/my-payments/"),
       ]);
+      setProfile(profileResponse.data ?? null);
       setInvoices(Array.isArray(invoiceResponse.data) ? invoiceResponse.data : []);
       setPayments(Array.isArray(paymentResponse.data) ? paymentResponse.data : []);
       setError(null);
@@ -108,7 +128,7 @@ function FeesPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   const clearPolling = () => {
     if (pollRef.current) {
@@ -123,7 +143,7 @@ function FeesPage() {
     return () => {
       clearPolling();
     };
-  }, []);
+  }, [refreshFees]);
 
   React.useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -159,14 +179,14 @@ function FeesPage() {
         window.clearTimeout(refreshTimer);
       }
     };
-  }, []);
+  }, [refreshFees]);
 
   const totalBilled = invoices.reduce((sum, invoice) => sum + Number(invoice.amount ?? 0), 0);
   const totalPaid = invoices.reduce((sum, invoice) => sum + Number(invoice.amount_paid ?? 0), 0);
   const balanceDue = invoices.reduce((sum, invoice) => sum + Number(invoice.balance ?? 0), 0);
-  const hasOverdue = invoices.some((invoice) => normalizeStatus(invoice.status) === "overdue");
   const outstandingInvoices = invoices.filter((invoice) => Number(invoice.balance ?? 0) > 0);
   const overdueInvoices = outstandingInvoices.filter((invoice) => normalizeStatus(invoice.status) === "overdue");
+  const overdueAmount = overdueInvoices.reduce((sum, invoice) => sum + Number(invoice.balance ?? 0), 0);
   const sortedOutstandingInvoices = [...outstandingInvoices].sort((left, right) => {
     const leftDate = left?.due_date ? new Date(left.due_date).getTime() : Number.POSITIVE_INFINITY;
     const rightDate = right?.due_date ? new Date(right.due_date).getTime() : Number.POSITIVE_INFINITY;
@@ -329,7 +349,7 @@ function FeesPage() {
         className: "space-y-3 text-center",
         children: [
           jsx("div", {
-            className: "mx-auto h-8 w-8 animate-spin rounded-full border-t-2 border-emerald-500",
+            className: "mx-auto h-8 w-8 animate-spin rounded-full border-t-2 border-slate-900",
           }),
           jsx("p", { className: "text-sm text-slate-500", children: "Loading fee information..." }),
         ],
@@ -338,489 +358,476 @@ function FeesPage() {
   }
 
   return jsxs("div", {
-    className: "mx-auto max-w-5xl space-y-6",
+    className: "space-y-6",
     children: [
-      jsxs("div", {
+      jsxs("section", {
+        className: shellClass,
         children: [
-          jsx("h1", { className: "text-2xl font-display font-bold text-white", children: "My Fees" }),
-          jsx("p", {
-            className: "mt-1 text-sm text-slate-500",
-            children: "View your invoices, payment history, and pay outstanding balances from the portal.",
-          }),
-        ],
-      }),
-      flash &&
-        jsx("div", {
-          className: `flex items-start gap-2 rounded-xl border px-4 py-3 text-sm ${flashClass(flash.tone)}`,
-          children: jsxs(React.Fragment, {
+          jsxs("div", {
+            className: "flex flex-col gap-5 border-b border-slate-200 pb-6 lg:flex-row lg:items-end lg:justify-between",
             children: [
-              jsx(CircleAlert, { size: 16, className: "mt-0.5 flex-shrink-0" }),
-              jsx("span", { children: flash.message }),
-            ],
-          }),
-        }),
-      error &&
-        jsxs("div", {
-          className: "flex items-start gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-300",
-          children: [jsx(CircleAlert, { size: 16, className: "mt-0.5 flex-shrink-0" }), error],
-        }),
-      hasOverdue &&
-        jsxs("div", {
-          className: "flex items-start gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-300",
-          children: [
-            jsx(CircleAlert, { size: 16, className: "mt-0.5 flex-shrink-0" }),
-            "One or more invoices are overdue. You can still settle them here via M-Pesa, bank transfer, or Stripe Checkout.",
-          ],
-        }),
-      balanceDue > 0 &&
-        jsxs("div", {
-          className: "flex flex-col gap-4 rounded-2xl px-5 py-4 sm:flex-row sm:items-center",
-          style: { background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.18)" },
-          children: [
-            jsxs("div", {
-              className: "flex items-start gap-3",
-              children: [
-                jsx(CreditCard, { size: 18, className: "mt-0.5 flex-shrink-0 text-emerald-300" }),
-                jsxs("div", {
-                  children: [
-                    jsx("p", { className: "text-sm font-semibold text-emerald-100", children: "Payments are live in the student portal" }),
-                    jsx("p", {
-                      className: "text-xs text-emerald-200/80",
-                      children: `Outstanding across your invoices: ${formatCurrency(balanceDue)}.`,
-                    }),
-                  ],
-                }),
-              ],
-            }),
-            outstandingInvoices[0] &&
-              jsx("button", {
-                type: "button",
-                onClick: () => openPaymentModal(outstandingInvoices[0], "mpesa"),
-                className:
-                  "w-full rounded-xl border border-emerald-400/40 bg-emerald-400/15 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-400/20 sm:ml-auto sm:w-auto",
-                children: "Pay now",
-              }),
-          ],
-        }),
-      jsx("div", {
-        className: "grid gap-3 md:grid-cols-3",
-        children: [
-          { label: "Total Billed", value: formatCurrency(totalBilled), color: "text-white" },
-          { label: "Total Paid", value: formatCurrency(totalPaid), color: "text-emerald-400" },
-          {
-            label: "Balance Due",
-            value: formatCurrency(balanceDue),
-            color: balanceDue > 0 ? "text-rose-400" : "text-emerald-400",
-          },
-        ].map((card) =>
-          jsxs(
-            "div",
-            {
-              className: "rounded-2xl p-4",
-              style: panelStyle,
-              children: [
-                jsx("p", { className: `text-xl font-bold ${card.color}`, children: card.value }),
-                jsx("p", { className: "mt-1 text-xs text-slate-500", children: card.label }),
-              ],
-            },
-            card.label,
-          ),
-        ),
-      }),
-      jsx("div", {
-        className: "grid gap-4 lg:grid-cols-[1.2fr,0.9fr]",
-        children: [
-          jsxs("section", {
-            className: "rounded-2xl p-5",
-            style: panelStyle,
-            children: [
-              jsx("p", {
-                className: "text-[10px] font-bold uppercase tracking-[0.28em] text-emerald-300",
-                children: "Quick pay",
-              }),
-              jsx("h2", {
-                className: "mt-2 text-lg font-semibold text-white",
-                children: "Settle the next fee item fast",
-              }),
-              jsx("p", {
-                className: "mt-1 text-sm text-slate-400",
-                children: nextDueInvoice
-                  ? `${nextDueInvoice.invoice_number || `Invoice #${nextDueInvoice.id}`} is the next best payment target.`
-                  : "There is no outstanding invoice requiring action right now.",
-              }),
-              jsx("div", {
-                className: "mt-4 grid gap-3 sm:grid-cols-3",
+              jsxs("div", {
+                className: "max-w-3xl",
                 children: [
-                  {
-                    label: "Pay by M-Pesa",
-                    note: "Send an STK push to your phone and stay on this screen while we confirm it.",
-                    action: () => openPaymentModal(nextDueInvoice, "mpesa"),
-                    disabled: !nextDueInvoice,
-                    tone: "border-emerald-400/30 bg-emerald-400/10 text-emerald-100",
-                  },
-                  {
-                    label: "Use Stripe",
-                    note: "Open secure hosted card checkout and return here after confirmation.",
-                    action: () => openPaymentModal(nextDueInvoice, "stripe"),
-                    disabled: !nextDueInvoice,
-                    tone: "border-sky-400/30 bg-sky-400/10 text-sky-100",
-                  },
-                  {
-                    label: "Create bank reference",
-                    note: "Use the portal reference in your transfer narration while finance reconciles it.",
-                    action: () => openPaymentModal(nextDueInvoice, "bank"),
-                    disabled: !nextDueInvoice,
-                    tone: "border-amber-400/30 bg-amber-400/10 text-amber-100",
-                  },
-                ].map((item) =>
-                  jsxs(
-                    "button",
-                    {
-                      type: "button",
-                      onClick: item.action,
-                      disabled: item.disabled,
-                      className: `rounded-2xl border p-4 text-left transition hover:translate-y-[-1px] disabled:cursor-not-allowed disabled:opacity-50 ${item.tone}`,
-                      children: [
-                        jsx("p", { className: "text-sm font-semibold", children: item.label }),
-                        jsx("p", { className: "mt-2 text-xs opacity-85", children: item.note }),
-                      ],
-                    },
-                    item.label,
-                  ),
-                ),
-              }),
-            ],
-          }),
-          jsxs("section", {
-            className: "rounded-2xl p-5",
-            style: panelStyle,
-            children: [
-              jsx("p", {
-                className: "text-[10px] font-bold uppercase tracking-[0.28em] text-amber-300",
-                children: "Planning snapshot",
-              }),
-              jsx("h2", {
-                className: "mt-2 text-lg font-semibold text-white",
-                children: "Know what to tackle next",
-              }),
-              jsx("div", {
-                className: "mt-4 space-y-3",
-                children: [
-                  {
-                    label: "Outstanding invoices",
-                    value: String(outstandingInvoices.length),
-                    detail: outstandingInvoices.length ? "Still open for payment in this portal" : "Nothing outstanding",
-                  },
-                  {
-                    label: "Overdue invoices",
-                    value: String(overdueInvoices.length),
-                    detail: overdueInvoices.length ? "Clear overdue items first when possible" : "No overdue invoices",
-                  },
-                  {
-                    label: "Next due date",
-                    value: nextDueInvoice?.due_date ? formatDate(nextDueInvoice.due_date) : "--",
-                    detail: nextDueInvoice
-                      ? `${nextDueInvoice.invoice_number || `Invoice #${nextDueInvoice.id}`} • ${formatCurrency(nextDueInvoice.balance)}`
-                      : "No next due invoice",
-                  },
-                  {
-                    label: "Latest payment",
-                    value: latestPayment?.payment_date ? formatDate(latestPayment.payment_date) : "--",
-                    detail: latestPayment
-                      ? `${formatCurrency(latestPayment.amount_paid)} via ${latestPayment.payment_method || "payment"}`
-                      : "No payment recorded yet",
-                  },
-                ].map((item) =>
-                  jsxs(
-                    "div",
-                    {
-                      className: "rounded-2xl border border-white/[0.07] bg-slate-950/70 p-4",
-                      children: [
-                        jsx("p", { className: "text-[11px] uppercase tracking-wide text-slate-500", children: item.label }),
-                        jsx("p", { className: "mt-2 text-lg font-semibold text-white", children: item.value }),
-                        jsx("p", { className: "mt-1 text-xs text-slate-500", children: item.detail }),
-                      ],
-                    },
-                    item.label,
-                  ),
-                ),
-              }),
-              jsx("p", {
-                className: "mt-4 text-xs text-slate-500",
-                children: "Recurring card charges are not enabled in the student portal, so each payment is confirmed explicitly by you.",
-              }),
-            ],
-          }),
-        ],
-      }),
-      invoices.length === 0
-        ? jsxs("div", {
-            className: "rounded-2xl p-8 text-center",
-            style: panelStyle,
-            children: [
-              jsx(CreditCard, { className: "mx-auto mb-3 text-slate-600", size: 32 }),
-              jsx("p", { className: "text-sm text-slate-400", children: "No fee invoices found for your account." }),
-              jsx("p", {
-                className: "mt-1 text-xs text-slate-600",
-                children: "Contact the school office if you believe this is an error.",
-              }),
-            ],
-          })
-        : jsxs("div", {
-            className: "space-y-3",
-            children: [
-              jsx("h2", { className: "text-sm font-semibold text-slate-300", children: "Invoices" }),
-              invoices.map((invoice) => {
-                const invoiceBalance = Number(invoice.balance ?? 0);
-                const invoiceStatus = normalizeStatus(invoice.status);
-                return jsx(
-                  "div",
-                  {
-                    className: "rounded-2xl p-5",
-                    style: panelStyle,
-                    children: jsxs("div", {
-                      className: "flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between",
-                      children: [
-                        jsxs("div", {
-                          className: "min-w-0 flex-1",
-                          children: [
-                            jsxs("div", {
-                              className: "flex flex-wrap items-center gap-2",
-                              children: [
-                                jsx("p", {
-                                  className: "text-sm font-semibold text-slate-200",
-                                  children: invoice.description || invoice.invoice_number || `Invoice #${invoice.id}`,
-                                }),
-                                jsxs("span", {
-                                  className: `inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${invoiceBadgeClass(
-                                    invoiceStatus,
-                                  )}`,
-                                  children: [statusIcon(invoiceStatus), String(invoice.status || "Pending").replace("_", " ")],
-                                }),
-                              ],
-                            }),
-                            jsxs("div", {
-                              className: "mt-2 flex flex-wrap gap-4 text-xs text-slate-500",
-                              children: [
-                                jsx("span", { children: invoice.invoice_number || `Invoice #${invoice.id}` }),
-                                invoice.term && jsxs("span", { children: ["Term: ", invoice.term] }),
-                                invoice.academic_year && jsxs("span", { children: ["Year: ", invoice.academic_year] }),
-                                invoice.due_date &&
-                                  jsxs("span", {
-                                    className: "inline-flex items-center gap-1",
-                                    children: [jsx(Clock, { size: 12 }), "Due: ", formatDate(invoice.due_date)],
-                                  }),
-                              ],
-                            }),
-                          ],
-                        }),
-                        jsxs("div", {
-                          className: "flex flex-col gap-3 lg:items-end",
-                          children: [
-                            jsxs("div", {
-                              className: "text-left lg:text-right",
-                              children: [
-                                jsx("p", { className: "text-sm font-bold text-white", children: formatCurrency(invoice.amount) }),
-                                jsx("p", {
-                                  className: "text-xs text-emerald-400",
-                                  children: `Paid: ${formatCurrency(invoice.amount_paid)}`,
-                                }),
-                                invoiceBalance > 0 &&
-                                  jsx("p", {
-                                    className: "text-xs text-rose-400",
-                                    children: `Due: ${formatCurrency(invoiceBalance)}`,
-                                  }),
-                              ],
-                            }),
-                            invoiceBalance > 0 &&
-                              jsx("button", {
-                                type: "button",
-                              onClick: () => openPaymentModal(invoice, "mpesa"),
-                              className:
-                                "rounded-xl border border-emerald-400/35 bg-emerald-400/10 px-4 py-2 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-400/15",
-                              children: "Pay now",
-                            }),
-                          ],
-                        }),
-                      ],
-                    }),
-                  },
-                  invoice.id,
-                );
-              }),
-            ],
-          }),
-      payments.length > 0 &&
-        jsxs("div", {
-          className: "space-y-3",
-          children: [
-            jsx("h2", { className: "text-sm font-semibold text-slate-300", children: "Payment History" }),
-            jsx("div", {
-              className: "overflow-x-auto rounded-2xl",
-              style: panelStyle,
-              children: jsxs("table", {
-                className: "w-full text-sm",
-                children: [
-                  jsx("thead", {
-                    children: jsx("tr", {
-                      className: "border-b border-white/[0.07]",
-                      children: ["Date", "Amount", "Method", "Reference", "Receipt"].map((label) =>
-                        jsx(
-                          "th",
-                          {
-                            className: "px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500",
-                            children: label,
-                          },
-                          label,
-                        ),
-                      ),
-                    }),
+                  jsx("p", {
+                    className: "text-[11px] font-semibold uppercase tracking-[0.32em] text-slate-400",
+                    children: "Student Portal",
                   }),
-                  jsx("tbody", {
-                    children: payments.map((payment, index) =>
+                  jsx("h1", {
+                    className: "mt-3 text-3xl font-semibold tracking-tight text-slate-950 md:text-[2.5rem]",
+                    children: "My School Fees",
+                  }),
+                  jsx("p", {
+                    className: "mt-3 max-w-2xl text-sm leading-6 text-slate-600",
+                    children:
+                      "Track invoices, check what is overdue, and complete payments from one cleaner student account view.",
+                  }),
+                ],
+              }),
+              profile
+                ? jsx("div", {
+                    className: "rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700",
+                    children: `${profile.first_name || ""} ${profile.last_name || ""}`.trim()
+                      ? `${`${profile.first_name || ""} ${profile.last_name || ""}`.trim()} • ${profile.admission_number || "No admission number"}`
+                      : profile.admission_number || "Student account",
+                  })
+                : null,
+            ],
+          }),
+          jsxs("div", {
+            className: "mt-6 space-y-4",
+            children: [
+              flash
+                ? jsx("div", {
+                    className: `rounded-[22px] border px-4 py-3 text-sm ${flashClass(flash.tone)}`,
+                    children: flash.message,
+                  })
+                : null,
+              error
+                ? jsx("div", {
+                    className: `rounded-[22px] border px-4 py-3 text-sm ${flashClass("error")}`,
+                    children: error,
+                  })
+                : null,
+              overdueInvoices.length > 0
+                ? jsx("div", {
+                    className: `rounded-[22px] border px-4 py-3 text-sm ${flashClass("warning")}`,
+                    children:
+                      "One or more invoices are overdue. You can still settle them here via M-Pesa, bank transfer, or Stripe Checkout.",
+                  })
+                : null,
+            ],
+          }),
+          jsx("div", {
+            className: "mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4",
+            children: [
+              {
+                label: "Total balance",
+                value: formatCurrency(balanceDue),
+                detail: "Outstanding across all open invoices.",
+                tone: balanceDue > 0 ? "text-amber-700" : "text-emerald-700",
+              },
+              {
+                label: "Amount paid",
+                value: formatCurrency(totalPaid),
+                detail: latestPayment ? `Latest payment on ${formatDate(latestPayment.payment_date)}.` : "No recent payment yet.",
+                tone: "text-emerald-700",
+              },
+              {
+                label: "Overdue amount",
+                value: formatCurrency(overdueAmount),
+                detail: overdueInvoices.length > 0 ? `${overdueInvoices.length} overdue invoice(s).` : "Nothing overdue right now.",
+                tone: overdueAmount > 0 ? "text-rose-700" : "text-slate-950",
+              },
+              {
+                label: "Next due date",
+                value: nextDueInvoice?.due_date ? formatDate(nextDueInvoice.due_date) : "--",
+                detail: nextDueInvoice ? `${nextDueInvoice.invoice_number || `Invoice #${nextDueInvoice.id}`}` : "No next due invoice.",
+                tone: "text-slate-950",
+              },
+            ].map((card) =>
+              jsx(
+                MetricCard,
+                {
+                  label: card.label,
+                  value: card.value,
+                  detail: card.detail,
+                  tone: card.tone,
+                },
+                card.label,
+              ),
+            ),
+          }),
+          jsx("div", {
+            className: "mt-6 grid gap-4 xl:grid-cols-[1.35fr,1fr]",
+            children: [
+              jsxs("section", {
+                className: surfaceClass,
+                children: [
+                  jsx("p", {
+                    className: "text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400",
+                    children: "Account Snapshot",
+                  }),
+                  jsx("h2", {
+                    className: "mt-2 text-xl font-semibold text-slate-950",
+                    children: profile
+                      ? `${`${profile.first_name || ""} ${profile.last_name || ""}`.trim() || "Student account"}`
+                      : "Student account",
+                  }),
+                  jsx("div", {
+                    className: "mt-4 grid gap-3 sm:grid-cols-2",
+                    children: [
+                      { label: "Admission No.", value: profile?.admission_number || "--" },
+                      { label: "Class", value: profile?.class_section || "--" },
+                      { label: "Outstanding invoices", value: String(outstandingInvoices.length) },
+                      { label: "Guardians on file", value: String(profile?.guardians?.length ?? 0) },
+                    ].map((item) =>
                       jsxs(
-                        "tr",
+                        "div",
                         {
-                          className: `border-b border-white/[0.04] ${index % 2 === 0 ? "" : "bg-white/[0.01]"}`,
+                          className: insetClass,
                           children: [
-                            jsx("td", {
-                              className: "whitespace-nowrap px-4 py-3 text-slate-400",
-                              children: formatDate(payment.payment_date),
+                            jsx("p", {
+                              className: "text-[11px] uppercase tracking-[0.22em] text-slate-400",
+                              children: item.label,
                             }),
-                            jsx("td", {
-                              className: "px-4 py-3 font-semibold text-emerald-300",
-                              children: formatCurrency(payment.amount_paid),
-                            }),
-                            jsx("td", {
-                              className: "px-4 py-3 capitalize text-slate-400",
-                              children: payment.payment_method?.replace(/_/g, " ") ?? "--",
-                            }),
-                            jsx("td", {
-                              className: "px-4 py-3 font-mono text-xs text-slate-500",
-                              children: payment.transaction_reference || "--",
-                            }),
-                            jsx("td", {
-                              className: "px-4 py-3",
-                              children: payment.receipt_url
-                                ? jsx("a", {
-                                    href: payment.receipt_url,
-                                    target: "_blank",
-                                    rel: "noreferrer",
-                                    className:
-                                      "inline-flex rounded-full border border-white/[0.1] px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-300 transition hover:bg-white/[0.04]",
-                                    children: "Receipt",
-                                  })
-                                : jsx("span", {
-                                    className: "text-xs text-slate-600",
-                                    children: "--",
-                                  }),
+                            jsx("p", {
+                              className: "mt-2 text-sm font-semibold text-slate-900",
+                              children: item.value,
                             }),
                           ],
                         },
-                        payment.id,
+                        item.label,
                       ),
                     ),
                   }),
                 ],
               }),
-            }),
-          ],
-        }),
-      paymentOpen &&
-        jsx("div", {
-          className: "fixed inset-0 z-50 flex items-center justify-center p-4",
-          style: { background: "rgba(2,6,23,0.78)" },
-          children: jsx("div", {
-            className: "w-full max-w-lg rounded-3xl p-6",
-            style: modalStyle,
-            children: jsxs("div", {
-              className: "space-y-5",
-              children: [
-                jsxs("div", {
-                  className: "flex items-start justify-between gap-4",
-                  children: [
-                    jsxs("div", {
-                      children: [
-                        jsx("h2", { className: "text-lg font-semibold text-white", children: "Pay invoice" }),
-                        jsx("p", {
-                          className: "mt-1 text-xs text-slate-400",
-                          children: selectedInvoice
-                            ? `${selectedInvoice.invoice_number || `Invoice #${selectedInvoice.id}`} | Outstanding ${formatCurrency(
-                                selectedInvoice.balance,
-                              )}`
-                            : "Select an invoice to continue.",
-                        }),
-                      ],
-                    }),
-                    jsx("button", {
-                      type: "button",
-                      onClick: closePaymentModal,
-                      className: "text-xl text-slate-500 transition hover:text-slate-300",
-                      children: "x",
-                    }),
-                  ],
-                }),
-                jsx("div", {
-                  className: "grid grid-cols-3 gap-2 rounded-2xl bg-slate-900/70 p-1",
-                  children: [
-                    { id: "mpesa", label: "M-Pesa" },
-                    { id: "stripe", label: "Card / Stripe" },
-                    { id: "bank", label: "Bank transfer" },
-                  ].map((method) =>
-                    jsx(
-                      "button",
+              jsxs("section", {
+                className: surfaceClass,
+                children: [
+                  jsx("p", {
+                    className: "text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400",
+                    children: "Quick Pay",
+                  }),
+                  jsx("h2", {
+                    className: "mt-2 text-xl font-semibold text-slate-950",
+                    children: "Pay the next invoice fast",
+                  }),
+                  jsx("p", {
+                    className: "mt-2 text-sm text-slate-500",
+                    children: nextDueInvoice
+                      ? `${nextDueInvoice.invoice_number || `Invoice #${nextDueInvoice.id}`} is the next recommended item to settle.`
+                      : "There is no outstanding invoice requiring action right now.",
+                  }),
+                  jsx("div", {
+                    className: "mt-4 space-y-3",
+                    children: [
                       {
-                        type: "button",
-                        onClick: () => {
-                          setPaymentMethod(method.id);
-                          setPaymentError(null);
-                        },
-                        className: `rounded-xl px-3 py-2 text-sm font-semibold transition ${
-                          paymentMethod === method.id
-                            ? "bg-emerald-400/15 text-emerald-100"
-                            : "text-slate-400 hover:text-slate-200"
-                        }`,
-                        children: method.label,
+                        label: "Pay by M-Pesa",
+                        note: "Send a prompt to your phone and keep this page open while we confirm it.",
+                        action: () => openPaymentModal(nextDueInvoice, "mpesa"),
+                        disabled: !nextDueInvoice,
                       },
-                      method.id,
+                      {
+                        label: "Use Stripe",
+                        note: "Continue to secure hosted card checkout and return here after confirmation.",
+                        action: () => openPaymentModal(nextDueInvoice, "stripe"),
+                        disabled: !nextDueInvoice,
+                      },
+                      {
+                        label: "Create bank reference",
+                        note: "Use the generated reference in your transfer narration while finance reconciles it.",
+                        action: () => openPaymentModal(nextDueInvoice, "bank"),
+                        disabled: !nextDueInvoice,
+                      },
+                    ].map((item) =>
+                      jsxs(
+                        "button",
+                        {
+                          type: "button",
+                          onClick: item.action,
+                          disabled: item.disabled,
+                          className:
+                            "w-full rounded-[24px] border border-slate-200 bg-white p-4 text-left transition hover:-translate-y-[1px] hover:border-slate-300 hover:shadow-[0_18px_40px_rgba(15,23,42,0.08)] disabled:cursor-not-allowed disabled:opacity-50",
+                          children: [
+                            jsx("p", { className: "text-sm font-semibold text-slate-950", children: item.label }),
+                            jsx("p", { className: "mt-2 text-sm leading-6 text-slate-500", children: item.note }),
+                          ],
+                        },
+                        item.label,
+                      ),
+                    ),
+                  }),
+                ],
+              }),
+            ],
+          }),
+          jsx("div", {
+            className: "mt-6 flex flex-wrap gap-2",
+            children: [
+              { id: "invoices", label: `Invoices (${invoices.length})` },
+              { id: "payments", label: `Payment History (${payments.length})` },
+            ].map((item) =>
+              jsx(
+                "button",
+                {
+                  type: "button",
+                  onClick: () => setTab(item.id),
+                  className: `rounded-full px-4 py-2 text-sm font-semibold transition ${
+                    tab === item.id
+                      ? "bg-slate-900 text-white shadow-[0_12px_30px_rgba(15,23,42,0.16)]"
+                      : "border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
+                  }`,
+                  children: item.label,
+                },
+                item.id,
+              ),
+            ),
+          }),
+          tab === "invoices"
+            ? invoices.length === 0
+              ? jsxs("div", {
+                  className: `${surfaceClass} mt-6 text-center`,
+                  children: [
+                    jsx(CreditCard, { className: "mx-auto mb-3 text-slate-300", size: 32 }),
+                    jsx("p", { className: "text-sm text-slate-500", children: "No fee invoices found for your account." }),
+                  ],
+                })
+              : jsx("div", {
+                  className: "mt-6 space-y-4",
+                  children: invoices.map((invoice) => {
+                    const invoiceBalance = Number(invoice.balance ?? 0);
+                    const invoiceStatus = normalizeStatus(invoice.status);
+                    return jsx(
+                      "div",
+                      {
+                        className: surfaceClass,
+                        children: jsxs("div", {
+                          className: "flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between",
+                          children: [
+                            jsxs("div", {
+                              className: "min-w-0 flex-1",
+                              children: [
+                                jsxs("div", {
+                                  className: "flex flex-wrap items-center gap-2",
+                                  children: [
+                                    jsx("p", {
+                                      className: "text-lg font-semibold text-slate-950",
+                                      children: invoice.description || invoice.invoice_number || `Invoice #${invoice.id}`,
+                                    }),
+                                    jsxs("span", {
+                                      className: `inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-semibold ${invoiceBadgeClass(
+                                        invoiceStatus,
+                                      )}`,
+                                      children: [statusIcon(invoiceStatus), String(invoice.status || "Pending").replace("_", " ")],
+                                    }),
+                                  ],
+                                }),
+                                jsxs("div", {
+                                  className: "mt-2 flex flex-wrap gap-4 text-sm text-slate-500",
+                                  children: [
+                                    jsx("span", { children: invoice.invoice_number || `Invoice #${invoice.id}` }),
+                                    invoice.term ? jsxs("span", { children: ["Term: ", invoice.term] }) : null,
+                                    invoice.academic_year ? jsxs("span", { children: ["Year: ", invoice.academic_year] }) : null,
+                                    invoice.due_date
+                                      ? jsxs("span", {
+                                          className: "inline-flex items-center gap-1",
+                                          children: [jsx(Clock, { size: 12 }), "Due: ", formatDate(invoice.due_date)],
+                                        })
+                                      : null,
+                                  ],
+                                }),
+                              ],
+                            }),
+                            jsxs("div", {
+                              className: "flex flex-col gap-3 lg:items-end",
+                              children: [
+                                jsxs("div", {
+                                  className: "text-left lg:text-right",
+                                  children: [
+                                    jsx("p", { className: "text-lg font-semibold text-slate-950", children: formatCurrency(invoice.amount) }),
+                                    jsx("p", {
+                                      className: "mt-1 text-sm text-emerald-600",
+                                      children: `Paid: ${formatCurrency(invoice.amount_paid)}`,
+                                    }),
+                                    invoiceBalance > 0
+                                      ? jsx("p", {
+                                          className: "mt-1 text-sm text-amber-600",
+                                          children: `Due: ${formatCurrency(invoiceBalance)}`,
+                                        })
+                                      : null,
+                                  ],
+                                }),
+                                invoiceBalance > 0
+                                  ? jsx("button", {
+                                      type: "button",
+                                      onClick: () => openPaymentModal(invoice, "mpesa"),
+                                      className:
+                                        "rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800",
+                                      children: "Pay now",
+                                    })
+                                  : null,
+                              ],
+                            }),
+                          ],
+                        }),
+                      },
+                      invoice.id,
+                    );
+                  }),
+                })
+            : payments.length > 0
+              ? jsx("div", {
+                  className: "mt-6 space-y-4",
+                  children: payments.map((payment) =>
+                    jsx(
+                      "div",
+                      {
+                        className: surfaceClass,
+                        children: jsxs("div", {
+                          className: "flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between",
+                          children: [
+                            jsxs("div", {
+                              children: [
+                                jsx("p", {
+                                  className: "text-sm font-semibold text-slate-950",
+                                  children: payment.transaction_reference || "Payment reference pending",
+                                }),
+                                jsx("p", {
+                                  className: "mt-1 text-sm text-slate-500",
+                                  children: `${formatDate(payment.payment_date)} • ${payment.payment_method?.replace(/_/g, " ") ?? "--"}`,
+                                }),
+                              ],
+                            }),
+                            jsxs("div", {
+                              className: "flex flex-wrap items-center gap-3",
+                              children: [
+                                jsx("span", {
+                                  className: "text-lg font-semibold text-emerald-700",
+                                  children: formatCurrency(payment.amount_paid),
+                                }),
+                                payment.receipt_url
+                                  ? jsx("a", {
+                                      href: payment.receipt_url,
+                                      target: "_blank",
+                                      rel: "noreferrer",
+                                      className:
+                                        "rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900",
+                                      children: "Receipt",
+                                    })
+                                  : null,
+                              ],
+                            }),
+                          ],
+                        }),
+                      },
+                      payment.id,
                     ),
                   ),
+                })
+              : jsx("div", {
+                  className: `${surfaceClass} mt-6 text-center text-sm text-slate-500`,
+                  children: "No payments recorded yet.",
                 }),
-                jsx("div", {
-                  className: `rounded-2xl border px-4 py-3 text-xs ${flashClass(paymentMethod === "bank" ? "info" : paymentMethod === "stripe" ? "success" : "warning")}`,
-                  children:
-                    paymentMethod === "mpesa"
-                      ? "Enter the Safaricom number that should receive the prompt. We keep checking the status until the transaction settles or times out."
-                      : paymentMethod === "stripe"
-                        ? "Stripe redirects you to a secure hosted checkout. After card payment succeeds, you return here and the balance refreshes."
-                        : "Bank transfer gives you a unique reference to include in your narration or deposit slip. The invoice clears after reconciliation, not instantly.",
-                }),
-                jsxs("div", {
-                  className: "space-y-3",
-                  children: [
-                    jsxs("label", {
-                      className: "block text-sm",
-                      children: [
-                        jsx("span", { className: "mb-1 block text-xs text-slate-400", children: "Amount (KES)" }),
-                        jsx("input", {
-                          type: "number",
-                          min: "1",
-                          max: selectedInvoice?.balance || undefined,
-                          value: paymentAmount,
-                          onChange: (event) => {
-                            setPaymentAmount(event.target.value);
+        ],
+      }),
+      paymentOpen
+        ? jsx("div", {
+            className: "fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4",
+            children: jsx("div", {
+              className: modalClass,
+              children: jsxs("div", {
+                className: "space-y-5",
+                children: [
+                  jsxs("div", {
+                    className: "flex items-start justify-between gap-4",
+                    children: [
+                      jsxs("div", {
+                        children: [
+                          jsx("p", {
+                            className: "text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400",
+                            children: "Pay Invoice",
+                          }),
+                          jsx("h2", {
+                            className: "mt-2 text-xl font-semibold text-slate-950",
+                            children: "Pay invoice",
+                          }),
+                          jsx("p", {
+                            className: "mt-1 text-sm text-slate-500",
+                            children: selectedInvoice
+                              ? `${selectedInvoice.invoice_number || `Invoice #${selectedInvoice.id}`} • Outstanding ${formatCurrency(selectedInvoice.balance)}`
+                              : "Select an invoice to continue.",
+                          }),
+                        ],
+                      }),
+                      jsx("button", {
+                        type: "button",
+                        onClick: closePaymentModal,
+                        className: "text-2xl leading-none text-slate-400 transition hover:text-slate-700",
+                        children: "×",
+                      }),
+                    ],
+                  }),
+                  jsx("div", {
+                    className: "grid grid-cols-3 gap-2 rounded-[24px] border border-slate-200 bg-slate-50 p-1",
+                    children: [
+                      { id: "mpesa", label: "M-Pesa" },
+                      { id: "stripe", label: "Card / Stripe" },
+                      { id: "bank", label: "Bank transfer" },
+                    ].map((method) =>
+                      jsx(
+                        "button",
+                        {
+                          type: "button",
+                          onClick: () => {
+                            setPaymentMethod(method.id);
                             setPaymentError(null);
                           },
-                          className:
-                            "w-full rounded-xl border border-white/[0.08] bg-slate-950 px-4 py-2.5 text-sm text-white outline-none focus:border-emerald-400/40",
-                        }),
-                      ],
-                    }),
-                    paymentMethod === "mpesa" &&
-                      jsxs("label", {
-                        className: "block text-sm",
+                          className: `rounded-[20px] px-3 py-2 text-sm font-semibold transition ${
+                            paymentMethod === method.id
+                              ? "bg-slate-900 text-white"
+                              : "text-slate-500 hover:text-slate-900"
+                          }`,
+                          children: method.label,
+                        },
+                        method.id,
+                      ),
+                    ),
+                  }),
+                  jsx("div", {
+                    className: `rounded-[22px] border px-4 py-3 text-sm ${flashClass(
+                      paymentMethod === "bank" ? "info" : paymentMethod === "stripe" ? "success" : "warning",
+                    )}`,
+                    children:
+                      paymentMethod === "mpesa"
+                        ? "Enter the Safaricom number that should receive the prompt. We keep checking the status until the transaction settles or times out."
+                        : paymentMethod === "stripe"
+                          ? "Stripe redirects you to a secure hosted checkout. After card payment succeeds, you return here and the balance refreshes."
+                          : "Bank transfer gives you a unique reference to include in your narration or deposit slip. The invoice clears after reconciliation, not instantly.",
+                  }),
+                  jsxs("label", {
+                    className: "block text-sm text-slate-700",
+                    children: [
+                      jsx("span", { className: "font-medium", children: "Amount (KES)" }),
+                      jsx("input", {
+                        type: "number",
+                        min: "1",
+                        max: selectedInvoice?.balance || undefined,
+                        value: paymentAmount,
+                        onChange: (event) => {
+                          setPaymentAmount(event.target.value);
+                          setPaymentError(null);
+                        },
+                        className: `mt-2 ${inputClass}`,
+                      }),
+                    ],
+                  }),
+                  paymentMethod === "mpesa"
+                    ? jsxs("label", {
+                        className: "block text-sm text-slate-700",
                         children: [
-                          jsx("span", { className: "mb-1 block text-xs text-slate-400", children: "Safaricom phone number" }),
+                          jsx("span", { className: "font-medium", children: "Safaricom phone number" }),
                           jsx("input", {
                             type: "tel",
                             value: phone,
@@ -829,70 +836,72 @@ function FeesPage() {
                               setPaymentError(null);
                             },
                             placeholder: "e.g. 0712345678",
-                            className:
-                              "w-full rounded-xl border border-white/[0.08] bg-slate-950 px-4 py-2.5 text-sm text-white outline-none focus:border-emerald-400/40",
+                            className: `mt-2 ${inputClass}`,
                           }),
                         ],
-                      }),
-                    paymentMethod === "bank" &&
-                      jsx("div", {
-                        className: "rounded-xl border border-sky-500/25 bg-sky-500/10 px-4 py-3 text-xs text-sky-100",
+                      })
+                    : null,
+                  paymentMethod === "bank"
+                    ? jsx("div", {
+                        className: "rounded-[22px] border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-700",
                         children:
                           "Create a bank-transfer reference here, then include it in your bank narration or deposit slip. Your balance updates after reconciliation.",
-                      }),
-                  ],
-                }),
-                paymentError &&
-                  jsx("div", {
-                    className: "rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200",
-                    children: paymentError,
-                  }),
-                paymentStatus &&
-                  jsx("div", {
-                    className: `rounded-xl border px-4 py-3 text-sm ${flashClass(
-                      paymentResult === "success"
-                        ? "success"
-                        : paymentResult === "failed"
-                          ? "error"
-                          : "info",
-                    )}`,
-                    children: paymentStatus,
-                  }),
-                jsxs("div", {
-                  className: "flex flex-col gap-2 sm:flex-row",
-                  children: [
-                    jsx("button", {
-                      type: "button",
-                      onClick: submitPayment,
-                      disabled: submitting || polling,
-                      className:
-                        "flex-1 rounded-xl bg-emerald-400 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60",
-                      children:
-                        paymentMethod === "stripe"
-                          ? submitting
-                            ? "Preparing checkout..."
-                            : "Continue to Stripe"
-                          : paymentMethod === "bank"
+                      })
+                    : null,
+                  paymentError
+                    ? jsx("div", {
+                        className: "rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700",
+                        children: paymentError,
+                      })
+                    : null,
+                  paymentStatus
+                    ? jsx("div", {
+                        className: `rounded-[22px] border px-4 py-3 text-sm ${flashClass(
+                          paymentResult === "success"
+                            ? "success"
+                            : paymentResult === "failed"
+                              ? "error"
+                              : "info",
+                        )}`,
+                        children: paymentStatus,
+                      })
+                    : null,
+                  jsxs("div", {
+                    className: "flex flex-col gap-2 sm:flex-row",
+                    children: [
+                      jsx("button", {
+                        type: "button",
+                        onClick: submitPayment,
+                        disabled: submitting || polling,
+                        className:
+                          "flex-1 rounded-full bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60",
+                        children:
+                          paymentMethod === "stripe"
                             ? submitting
-                              ? "Creating transfer reference..."
-                              : "Create bank reference"
-                            : submitting
-                              ? "Sending STK push..."
-                              : "Send M-Pesa prompt",
-                    }),
-                    jsx("button", {
-                      type: "button",
-                      onClick: closePaymentModal,
-                      className:
-                        "rounded-xl border border-white/[0.1] px-4 py-2.5 text-sm font-semibold text-slate-300 transition hover:bg-white/[0.04]",
-                      children: paymentResult === "success" ? "Close" : "Cancel",
-                    }),
-                  ],
-                }),
-              ],
+                              ? "Preparing checkout..."
+                              : "Continue to Stripe"
+                            : paymentMethod === "bank"
+                              ? submitting
+                                ? "Creating transfer reference..."
+                                : "Create bank reference"
+                              : submitting
+                                ? "Sending STK push..."
+                                : "Send M-Pesa prompt",
+                      }),
+                      jsx("button", {
+                        type: "button",
+                        onClick: closePaymentModal,
+                        className:
+                          "rounded-full border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900",
+                        children: paymentResult === "success" ? "Close" : "Cancel",
+                      }),
+                    ],
+                  }),
+                ],
+              }),
             }),
-          }),
-        }),
+          })
+        : null,
     ],
   });
 }

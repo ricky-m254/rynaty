@@ -1,1 +1,1249 @@
-import{a as Ue,u as Be,c as ze,r as a,j as e,b as d}from"./index-D7ltaYVC.js";import{n as R}from"./pagination-DjjjzeDo.js";import{C as Ge}from"./ConfirmDialog-WF6S4jMq.js";import{e as _}from"./forms-ZJa1TpnO.js";import{d as Oe}from"./download-EzDvBC7h.js";import{P as Qe}from"./PrintButton-BqR3sctp.js";import{P as Ve}from"./PageHero-Ct90nOAG.js";import{P as Je}from"./PermissionGate-pg50vBbt.js";const J=n=>Number(n??0).toLocaleString(void 0,{minimumFractionDigits:2,maximumFractionDigits:2}),be=n=>{if(!n)return"--";const C=new Date(n);return Number.isNaN(C.getTime())?n:C.toLocaleString()},He=n=>n==="Reversed"?"border-rose-500/40 bg-rose-500/10 text-rose-200":n==="Allocated"?"border-emerald-500/40 bg-emerald-500/10 text-emerald-200":n==="Partial"?"border-amber-500/40 bg-amber-500/10 text-amber-200":"border-slate-600 glass-panel text-slate-300",Ye=n=>n==="APPROVED"?"border-emerald-500/40 bg-emerald-500/10 text-emerald-200":n==="REJECTED"?"border-rose-500/40 bg-rose-500/10 text-rose-200":"border-amber-500/40 bg-amber-500/10 text-amber-200";function lt(){const n=Ue(t=>t.role),C=n==="ADMIN"||n==="TENANT_SUPER_ADMIN",A=Be(),y=ze(),[P,F]=a.useState([]),[M,ge]=a.useState([]),[je,H]=a.useState(!0),[Y,j]=a.useState(null),[ve,K]=a.useState(null),[w,k]=a.useState(null),[Ne,W]=a.useState(!1),[v,ye]=a.useState(""),[i,we]=a.useState("all"),[o,Se]=a.useState("all"),[c,Re]=a.useState("all"),[x,_e]=a.useState(""),[u,Ce]=a.useState(""),[p,h]=a.useState(1),[Pe,X]=a.useState(0),[T,Z]=a.useState(!1),[I,ee]=a.useState(null),[Ee,te]=a.useState(null),[L,se]=a.useState({}),[q,ae]=a.useState({}),[le,re]=a.useState(null),[ne,De]=a.useState([]),[Ae,de]=a.useState(!1),[ie,oe]=a.useState(null),[ce,m]=a.useState(null),[N,$]=a.useState(null),[U,E]=a.useState(""),[f,xe]=a.useState(!1),[g,ue]=a.useState(null),[B,Fe]=a.useState(""),[z,Me]=a.useState(""),[me,ke]=a.useState(y.state?.flash??null),G=8,pe=!!(x&&u&&x>u);a.useEffect(()=>{const t=y.state;t?.flash&&(ke(t.flash),A(y.pathname,{replace:!0}))},[y.state,y.pathname,A]);const O=async()=>{de(!0),oe(null);try{const t=await d.get("/finance/payment-reversals/",{params:{search:B.trim()||void 0,status:z||void 0}});De(R(t.data).items)}catch(t){oe(_(t,"Unable to load payment reversal requests."))}finally{de(!1)}};a.useEffect(()=>{let t=!0;return(async()=>{if(pe){t&&(j("Invalid payment date range: From date cannot be after To date."),H(!1));return}try{t&&j(null);const[l,r]=await Promise.all([d.get("/finance/payments/",{params:{page:p,search:v.trim()||void 0,student:i!=="all"?i:void 0,payment_method:o!=="all"?o:void 0,allocation_status:c!=="all"?c:void 0,date_from:x||void 0,date_to:u||void 0}}),d.get("/finance/ref/students/")]);if(t){const b=R(l.data);F(b.items),X(b.totalCount),Z(b.isPaginated),ge(R(r.data).items)}}catch(l){if(t){const r=l?.response?.status;j(r===401?"Session expired. Please log in again.":r===403?"Access denied. Ensure this user has the FINANCE module and proper role.":r===404?"Finance endpoints not found (404). Verify tenant routing.":_(l,"Unable to load payments. Please try again."))}}finally{t&&H(!1)}})(),()=>{t=!1}},[p,v,i,o,c,x,u,pe]),a.useEffect(()=>{O()},[B,z]);const Q=a.useMemo(()=>M.reduce((t,s)=>(t[s.id]=`${s.first_name} ${s.last_name} ${s.admission_number}`.trim(),t),{}),[M]),D=a.useMemo(()=>{const t=v.trim().toLowerCase();return P.filter(s=>{if(i!=="all"&&String(s.student)!==i||o!=="all"&&s.payment_method!==o)return!1;if(c!=="all"){const r=Number(s.unallocated_amount??0),b=Number(s.allocated_amount??0),S=r<=0&&b>0?"allocated":b>0?"partial":"unallocated";if(c!==S)return!1}if(x&&s.payment_date&&s.payment_date<x||u&&s.payment_date&&s.payment_date>u)return!1;if(!t)return!0;const l=Q[s.student]?.toLowerCase()??"";return String(s.receipt_no??s.receipt_number??"").toLowerCase().includes(t)||String(s.transaction_code??"").toLowerCase().includes(t)||String(s.vote_head_summary??"").toLowerCase().includes(t)||s.reference_number.toLowerCase().includes(t)||String(s.student).includes(t)||s.payment_method.toLowerCase().includes(t)||l.includes(t)})},[v,P,i,Q,o,c,x,u]),Te=a.useMemo(()=>{const t=new Set;return P.forEach(s=>{s.payment_method&&t.add(s.payment_method)}),Array.from(t).sort()},[P]),he=a.useMemo(()=>{if(T)return D;const t=(p-1)*G;return D.slice(t,t+G)},[D,p,T]),V=Math.max(1,Math.ceil((T?Pe:D.length)/G)),Ie=async()=>{if(w){K(null),W(!0);try{await d.delete(`/finance/payments/${w.id}/`),F(t=>t.filter(s=>s.id!==w.id)),k(null)}catch(t){K(_(t,"Unable to delete payment."))}finally{W(!1)}}},Le=async t=>{if(I===t.id){ee(null);return}ee(t.id);const s=t.student;if(!(L[s]&&q[s]!==void 0)){te(t.id),re(null);try{const[l,r]=await Promise.all([d.get(`/students/${s}/`),d.get("/finance/ref/enrollments/",{params:{student_id:s,active:!0}})]),b=R(r.data).items;se(S=>({...S,[s]:l.data})),ae(S=>({...S,[s]:b[0]??null}))}catch{se(l=>{const r={...l};return delete r[s],r}),ae(l=>({...l,[s]:null})),re("Student contact or class info not available.")}finally{te(null)}}},qe=t=>{if(!t.is_active){m("This payment is already reversed.");return}$(t),E(""),m(null)},$e=async()=>{if(!(!N||f||g!==null)){if(!U.trim()){m("Reversal reason is required.");return}xe(!0),m(null);try{await d.post("/finance/payment-reversals/",{payment:N.id,reason:U.trim()}),m(`Reversal request submitted for ${N?.receipt_no||N.reference_number}.`),$(null),E(""),await O()}catch(t){const s=_(t,`Failed to submit reversal request for ${N?.receipt_no||N.reference_number}.`);m(s)}finally{xe(!1)}}},fe=async(t,s)=>{if(!(g!==null||f)){m(null),ue(t);try{await d.post(`/finance/payment-reversals/${t}/${s}/`,{}),m(`Reversal ${s}d.`),await O();const l=await d.get("/finance/payments/",{params:{page:p,search:v.trim()||void 0,student:i!=="all"?i:void 0,payment_method:o!=="all"?o:void 0,allocation_status:c!=="all"?c:void 0,date_from:x||void 0,date_to:u||void 0}}),r=R(l.data);F(r.items),X(r.totalCount),Z(r.isPaginated)}catch(l){m(_(l,`Unable to ${s} reversal request.`))}finally{ue(null)}}};return e.jsxs("div",{className:"grid grid-cols-12 gap-6",children:[e.jsx(Ve,{badge:"FINANCE MODULE",badgeColor:"emerald",title:"Payments",subtitle:"Track collections and payment history.",icon:"Ã°Å¸â€™Â°"}),je?e.jsx("div",{className:"col-span-12 rounded-2xl glass-panel p-6",children:e.jsx("p",{className:"text-sm text-slate-300",children:"Loading payments..."})}):null,Y?e.jsx("div",{className:"col-span-12 rounded-2xl border border-rose-500/40 bg-rose-500/10 p-6",children:e.jsx("p",{className:"text-sm text-rose-300",children:Y})}):null,me?e.jsx("div",{className:"col-span-12 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-6",children:e.jsx("p",{className:"text-sm text-emerald-200",children:me})}):null,e.jsxs("section",{className:"col-span-12 rounded-2xl glass-panel p-6",children:[e.jsxs("div",{className:"flex flex-wrap items-center justify-between gap-4",children:[e.jsxs("div",{children:[e.jsx("h2",{className:"text-lg font-display font-semibold",children:"Payment list"}),e.jsx("p",{className:"mt-1 text-sm text-slate-400",children:"From `/api/finance/payments/`"})]}),e.jsxs("div",{className:"flex flex-wrap items-center gap-3",children:[e.jsx(Qe,{}),e.jsx("input",{className:"w-full max-w-xs rounded-xl border border-white/[0.07] bg-slate-950 px-4 py-2 text-sm text-white outline-none focus:border-emerald-400",placeholder:"Admission no., receipt no., transaction code, vote head",value:v,onChange:t=>{ye(t.target.value),h(1)}}),e.jsxs("select",{className:"w-full rounded-xl border border-white/[0.07] bg-slate-950 px-3 py-2 text-sm text-white sm:w-auto",value:i,onChange:t=>{we(t.target.value),h(1)},children:[e.jsx("option",{value:"all",children:"All students"}),M.map(t=>e.jsxs("option",{value:String(t.id),children:[t.first_name," ",t.last_name]},t.id))]}),e.jsxs("select",{className:"w-full rounded-xl border border-white/[0.07] bg-slate-950 px-3 py-2 text-sm text-white sm:w-auto",value:o,onChange:t=>{Se(t.target.value),h(1)},children:[e.jsx("option",{value:"all",children:"All methods"}),Te.map(t=>e.jsx("option",{value:t,children:t},t))]}),e.jsxs("select",{className:"w-full rounded-xl border border-white/[0.07] bg-slate-950 px-3 py-2 text-sm text-white sm:w-auto",value:c,onChange:t=>{Re(t.target.value),h(1)},children:[e.jsx("option",{value:"all",children:"All allocation"}),e.jsx("option",{value:"allocated",children:"Fully allocated"}),e.jsx("option",{value:"partial",children:"Partially allocated"}),e.jsx("option",{value:"unallocated",children:"Unallocated"})]}),e.jsx("input",{type:"date",className:"w-full rounded-xl border border-white/[0.07] bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400 sm:max-w-[150px]",value:x,onChange:t=>{_e(t.target.value),h(1)}}),e.jsx("input",{type:"date",className:"w-full rounded-xl border border-white/[0.07] bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400 sm:max-w-[150px]",value:u,onChange:t=>{Ce(t.target.value),h(1)}}),e.jsx(Je,{permission:"finance.payment.create",children:e.jsx("button",{className:"w-full rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-900 sm:w-auto",onClick:()=>A("/modules/finance/payments/new"),children:"Record payment"})})]})]}),e.jsx("p",{className:"mt-3 text-xs text-slate-500",children:"On small screens, scroll the table horizontally."}),e.jsx("div",{className:"mt-4 overflow-x-auto rounded-2xl border border-white/[0.07]",children:e.jsxs("table",{className:"min-w-[1120px] w-full text-left text-sm",children:[e.jsx("thead",{className:"bg-white/[0.03] text-xs uppercase tracking-wide text-slate-400",children:e.jsxs("tr",{children:[e.jsx("th",{className:"px-4 py-3",children:"Receipt"}),e.jsx("th",{className:"px-4 py-3",children:"Transaction"}),e.jsx("th",{className:"px-4 py-3",children:"Student"}),e.jsx("th",{className:"px-4 py-3",children:"Vote Head"}),e.jsx("th",{className:"px-4 py-3",children:"Method"}),e.jsx("th",{className:"px-4 py-3",children:"Amount"}),e.jsx("th",{className:"px-4 py-3",children:"Status"}),e.jsx("th",{className:"px-4 py-3",children:"Created"}),e.jsx("th",{className:"px-4 py-3",children:"Action"})]})}),e.jsxs("tbody",{className:"divide-y divide-slate-800",children:[he.map(t=>e.jsxs(a.Fragment,{children:[e.jsxs("tr",{className:"bg-slate-950/60",children:[e.jsx("td",{className:"px-4 py-3 font-semibold",children:t.receipt_no||t.receipt_number||`RCT-${t.id}`}),e.jsx("td",{className:"px-4 py-3",children:t.transaction_code||t.reference_number||"--"}),e.jsx("td",{className:"px-4 py-3",children:Q[t.student]??t.student}),e.jsx("td",{className:"px-4 py-3",children:t.vote_head_summary||"--"}),e.jsx("td",{className:"px-4 py-3",children:t.payment_method}),e.jsx("td",{className:"px-4 py-3",children:J(t.amount)}),e.jsx("td",{className:"px-4 py-3",children:(()=>{const s=t.status||"Active";const r=s==="Active"?Number(t.unallocated_amount??0)<=0&&Number(t.allocated_amount??0)>0?"Allocated":Number(t.allocated_amount??0)>0?"Partial":"Unallocated":s;const l=s==="Active"?`Active / ${r}`:s;return e.jsx("span",{className:`inline-flex rounded-full border px-2 py-0.5 text-xs ${He(r)}`,children:l})})()}),e.jsx("td",{className:"px-4 py-3",children:be(t.created_at||t.payment_date)}),e.jsxs("td",{className:"px-4 py-3",children:[e.jsx("button",{className:"rounded-lg border border-emerald-400/40 px-3 py-1 text-xs text-emerald-200",onClick:()=>Le(t),children:I===t.id?"Hide context":"Context"}),e.jsx("button",{className:"ml-2 rounded-lg border border-sky-500/50 px-3 py-1 text-xs text-sky-200 hover:bg-sky-900/30",onClick:async()=>{const s=await d.get(`/api/finance/payments/${t.id}/receipt/pdf/`,{responseType:"blob"});Oe(s.data,`receipt_${t.receipt_no||t.receipt_number||t.id}.pdf`)},children:"Receipt PDF"}),e.jsx("button",{className:"ml-2 rounded-lg border border-slate-600 px-3 py-1 text-xs text-slate-200",onClick:()=>k(t),disabled:!t.is_active,children:"Delete"}),e.jsx("button",{className:"ml-2 rounded-lg border border-amber-500/50 px-3 py-1 text-xs text-amber-200 disabled:opacity-50",onClick:()=>qe(t),disabled:!t.is_active,children:"Request reversal"})]})]}),I===t.id?e.jsx("tr",{className:"bg-slate-950/40",children:e.jsx("td",{colSpan:9,className:"px-4 py-4",children:Ee===t.id?e.jsx("p",{className:"text-xs text-slate-400",children:"Loading student context..."}):e.jsxs("div",{className:"grid gap-4 rounded-2xl border border-white/[0.07] bg-slate-950/60 p-4 md:grid-cols-3",children:[e.jsxs("div",{children:[e.jsx("p",{className:"text-[11px] uppercase text-slate-400",children:"Class / Term"}),e.jsxs("p",{className:"text-sm text-slate-200",children:[q[t.student]?.class_name??"--"," /"," ",q[t.student]?.term_name??"--"]})]}),e.jsxs("div",{className:"md:col-span-2",children:[e.jsx("p",{className:"text-[11px] uppercase text-slate-400",children:"Parents / Guardians"}),e.jsx("div",{className:"mt-2 grid gap-2 md:grid-cols-2",children:(L[t.student]?.guardians??[]).length>0?L[t.student]?.guardians?.map(s=>e.jsxs("div",{className:"rounded-xl border border-white/[0.07] p-3 text-xs text-slate-300",children:[e.jsx("p",{className:"text-sm text-white",children:s.name}),e.jsx("p",{className:"text-[11px] text-slate-400",children:s.relationship??"Guardian"}),e.jsxs("p",{className:"text-[11px] text-slate-400",children:[s.phone??"--"," | ",s.email??"--"]})]},s.id)):e.jsx("p",{className:"text-[11px] text-slate-400",children:"No guardian records found."})})]}),le?e.jsx("p",{className:"text-[11px] text-amber-200",children:le}):null]})})}):null]},t.id)),he.length===0?e.jsx("tr",{children:e.jsx("td",{className:"px-4 py-6 text-sm text-slate-400",colSpan:9,children:"No payments found."})}):null]})]})}),e.jsxs("div",{className:"mt-4 flex items-center justify-between text-sm text-slate-400",children:[e.jsxs("span",{children:["Page ",p," of ",V]}),e.jsxs("div",{className:"flex gap-2",children:[e.jsx("button",{className:"rounded-lg border border-white/[0.09] px-3 py-1 text-xs",disabled:p===1,onClick:()=>h(t=>Math.max(1,t-1)),children:"Prev"}),e.jsx("button",{className:"rounded-lg border border-white/[0.09] px-3 py-1 text-xs",disabled:p===V,onClick:()=>h(t=>Math.min(V,t+1)),children:"Next"})]})]})]}),e.jsxs("section",{className:"col-span-12 rounded-2xl glass-panel p-6",children:[e.jsxs("div",{className:"flex flex-wrap items-center justify-between gap-3",children:[e.jsxs("div",{children:[e.jsx("h2",{className:"text-lg font-display font-semibold",children:"Payment reversal requests"}),e.jsx("p",{className:"mt-1 text-sm text-slate-400",children:"Maker/checker queue for reversal approvals."})]}),e.jsxs("div",{className:"flex flex-wrap gap-2",children:[e.jsx("input",{className:"rounded-xl border border-white/[0.07] bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400",placeholder:"Search reference, receipt, reason",value:B,onChange:t=>Fe(t.target.value)}),e.jsxs("select",{className:"rounded-xl border border-white/[0.07] bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400",value:z,onChange:t=>Me(t.target.value),children:[e.jsx("option",{value:"",children:"All statuses"}),e.jsx("option",{value:"PENDING",children:"PENDING"}),e.jsx("option",{value:"APPROVED",children:"APPROVED"}),e.jsx("option",{value:"REJECTED",children:"REJECTED"})]})]})]}),ie?e.jsx("p",{className:"mt-3 text-xs text-rose-300",children:ie}):null,ce?e.jsx("p",{className:"mt-3 text-xs text-emerald-300",children:ce}):null,Ae?e.jsx("p",{className:"mt-4 text-sm text-slate-300",children:"Loading reversal requests..."}):e.jsx("div",{className:"mt-4 overflow-x-auto rounded-2xl border border-white/[0.07]",children:e.jsxs("table",{className:"min-w-[1120px] w-full text-left text-sm",children:[e.jsx("thead",{className:"bg-white/[0.03] text-xs uppercase tracking-wide text-slate-400",children:e.jsxs("tr",{children:[e.jsx("th",{className:"px-4 py-3",children:"Payment"}),e.jsx("th",{className:"px-4 py-3",children:"Receipt"}),e.jsx("th",{className:"px-4 py-3",children:"Reason"}),e.jsx("th",{className:"px-4 py-3",children:"Status"}),e.jsx("th",{className:"px-4 py-3",children:"Requested"}),e.jsx("th",{className:"px-4 py-3",children:"Reviewed By"}),e.jsx("th",{className:"px-4 py-3",children:"Actions"})]})}),e.jsxs("tbody",{className:"divide-y divide-slate-800",children:[ne.map(t=>e.jsxs("tr",{className:"bg-slate-950/60",children:[e.jsx("td",{className:"px-4 py-3",children:t.payment_reference||`PAY-${t.payment}`}),e.jsx("td",{className:"px-4 py-3",children:t.payment_receipt||"--"}),e.jsx("td",{className:"px-4 py-3",children:t.reason}),e.jsx("td",{className:"px-4 py-3",children:e.jsx("span",{className:`inline-flex rounded-full border px-2 py-0.5 text-xs ${Ye(t.status)}`,children:t.status})}),e.jsx("td",{className:"px-4 py-3",children:be(t.requested_at)}),e.jsx("td",{className:"px-4 py-3",children:t.reviewed_by_name||"--"}),e.jsx("td",{className:"px-4 py-3",children:C&&t.status==="PENDING"?e.jsxs("div",{className:"flex gap-2",children:[e.jsx("button",{className:"rounded border border-emerald-600 px-2 py-1 text-xs text-emerald-200 disabled:opacity-70",onClick:()=>{fe(t.id,"approve")},disabled:g!==null||f,children:"Approve"}),e.jsx("button",{className:"rounded border border-rose-600 px-2 py-1 text-xs text-rose-200 disabled:opacity-70",onClick:()=>{fe(t.id,"reject")},disabled:g!==null||f,children:"Reject"})]}):e.jsx("span",{className:"text-xs text-slate-500",children:"-"})})]},t.id)),ne.length===0?e.jsx("tr",{children:e.jsx("td",{className:"px-4 py-6 text-sm text-slate-400",colSpan:7,children:"No reversal requests found."})}):null]})]})})]}),e.jsx(Ge,{open:!!w,title:"Delete payment",description:e.jsxs(e.Fragment,{children:["This will remove payment ",e.jsx("strong",{children:w?.receipt_no||w?.reference_number}),". Continue?"]}),confirmLabel:"Confirm delete",isProcessing:Ne,error:ve,onConfirm:Ie,onCancel:()=>k(null)}),N?e.jsx("div",{className:"fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4",children:e.jsxs("div",{className:"w-full max-w-lg rounded-2xl border border-white/[0.07] bg-slate-950 p-6",children:[e.jsx("h3",{className:"text-lg font-display font-semibold",children:"Request payment reversal"}),e.jsxs("p",{className:"mt-2 text-sm text-slate-400",children:["Submit reversal request for ",e.jsx("strong",{children:N?.receipt_no||N.reference_number}),"."]}),e.jsxs("label",{className:"mt-4 block text-sm text-slate-200",children:["Reason",e.jsx("textarea",{className:"mt-2 w-full rounded-xl border border-white/[0.07] bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400",rows:3,value:U,onChange:t=>E(t.target.value),placeholder:"Enter reversal reason"})]}),e.jsxs("div",{className:"mt-5 flex flex-wrap gap-2",children:[e.jsx("button",{className:"rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-900 disabled:opacity-70",onClick:()=>{$e()},disabled:f||g!==null,children:f?"Submitting...":"Submit request"}),e.jsx("button",{className:"rounded-xl border border-white/[0.09] px-4 py-2 text-sm text-slate-200",onClick:()=>{f||g!==null||($(null),E(""))},disabled:f||g!==null,children:"Cancel"})]})]})}):null]})}export{lt as default};
+import {
+  a as useAppStore,
+  u as useNavigate,
+  c as useLocation,
+  r as React,
+  j as jsxRuntime,
+  b as api,
+} from "./index-D7ltaYVC.js";
+import { n as normalizePaginated } from "./pagination-DjjjzeDo.js";
+import { C as ConfirmDialog } from "./ConfirmDialog-WF6S4jMq.js";
+import { e as getErrorMessage } from "./forms-ZJa1TpnO.js";
+import { d as downloadBlob } from "./download-EzDvBC7h.js";
+import { P as PermissionGate } from "./PermissionGate-pg50vBbt.js";
+
+const { jsx, jsxs } = jsxRuntime;
+
+const PAGE_SIZE = 8;
+const shellClass =
+  "rounded-[32px] border border-slate-200/80 bg-[#f6f7fb] p-5 shadow-[0_30px_80px_rgba(15,23,42,0.08)] md:p-7 xl:p-8";
+const surfaceClass =
+  "rounded-[28px] border border-slate-200/80 bg-white p-5 shadow-[0_22px_50px_rgba(15,23,42,0.06)]";
+const insetClass = "rounded-[22px] border border-slate-200 bg-slate-50/80 p-4";
+const inputClass =
+  "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-900/5";
+const softButtonClass =
+  "rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900";
+
+function formatMoney(value) {
+  return `KES ${Number(value ?? 0).toLocaleString("en-KE", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+function formatDateTime(value) {
+  if (!value) return "--";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
+}
+
+function allocationState(payment) {
+  if (!payment?.is_active) {
+    return { key: "reversed", label: "Reversed" };
+  }
+  const unallocated = Number(payment.unallocated_amount ?? 0);
+  const allocated = Number(payment.allocated_amount ?? 0);
+  if (unallocated <= 0 && allocated > 0) {
+    return { key: "allocated", label: "Allocated" };
+  }
+  if (allocated > 0) {
+    return { key: "partial", label: "Partial" };
+  }
+  return { key: "unallocated", label: "Unallocated" };
+}
+
+function toneClass(value) {
+  return (
+    {
+      reversed: "border-rose-200 bg-rose-50 text-rose-700",
+      allocated: "border-emerald-200 bg-emerald-50 text-emerald-700",
+      partial: "border-amber-200 bg-amber-50 text-amber-700",
+      unallocated: "border-slate-200 bg-slate-100 text-slate-700",
+      APPROVED: "border-emerald-200 bg-emerald-50 text-emerald-700",
+      REJECTED: "border-rose-200 bg-rose-50 text-rose-700",
+      PENDING: "border-amber-200 bg-amber-50 text-amber-700",
+    }[String(value || "")] ?? "border-slate-200 bg-slate-100 text-slate-700"
+  );
+}
+
+function Notice({ tone = "success", message }) {
+  if (!message) return null;
+  const classes =
+    tone === "error"
+      ? "border-rose-200 bg-rose-50 text-rose-700"
+      : "border-emerald-200 bg-emerald-50 text-emerald-700";
+  return jsx("div", {
+    className: `rounded-[22px] border px-4 py-3 text-sm ${classes}`,
+    children: message,
+  });
+}
+
+function MetricCard({ label, value, detail }) {
+  return jsxs("div", {
+    className: surfaceClass,
+    children: [
+      jsx("p", {
+        className: "text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400",
+        children: label,
+      }),
+      jsx("p", { className: "mt-3 text-2xl font-semibold text-slate-950", children: value }),
+      jsx("p", { className: "mt-2 text-sm text-slate-500", children: detail }),
+    ],
+  });
+}
+
+function ActionChip({ active, onClick, children }) {
+  return jsx("button", {
+    type: "button",
+    onClick,
+    className: `rounded-full px-4 py-2 text-xs font-semibold transition ${
+      active
+        ? "bg-slate-900 text-white shadow-[0_12px_30px_rgba(15,23,42,0.16)]"
+        : "border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
+    }`,
+    children,
+  });
+}
+
+function buildCsv(rows) {
+  return rows
+    .map((row) => row.map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(","))
+    .join("\n");
+}
+
+function FinancePaymentsPage() {
+  const role = useAppStore((state) => state.role);
+  const canReviewReversals = role === "ADMIN" || role === "TENANT_SUPER_ADMIN";
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const [payments, setPayments] = React.useState([]);
+  const [students, setStudents] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [loadError, setLoadError] = React.useState(null);
+  const [flash, setFlash] = React.useState(null);
+  const [page, setPage] = React.useState(1);
+  const [totalCount, setTotalCount] = React.useState(0);
+  const [isServerPaginated, setIsServerPaginated] = React.useState(false);
+  const [search, setSearch] = React.useState("");
+  const [studentFilter, setStudentFilter] = React.useState("all");
+  const [methodFilter, setMethodFilter] = React.useState("all");
+  const [allocationFilter, setAllocationFilter] = React.useState("all");
+  const [dateFrom, setDateFrom] = React.useState("");
+  const [dateTo, setDateTo] = React.useState("");
+  const [expandedPaymentId, setExpandedPaymentId] = React.useState(null);
+  const [contextLoadingId, setContextLoadingId] = React.useState(null);
+  const [studentProfiles, setStudentProfiles] = React.useState({});
+  const [enrollments, setEnrollments] = React.useState({});
+  const [contextWarnings, setContextWarnings] = React.useState({});
+  const [deleteTarget, setDeleteTarget] = React.useState(null);
+  const [deleteProcessing, setDeleteProcessing] = React.useState(false);
+  const [deleteError, setDeleteError] = React.useState(null);
+  const [reversalTarget, setReversalTarget] = React.useState(null);
+  const [reversalReason, setReversalReason] = React.useState("");
+  const [reversalSubmitting, setReversalSubmitting] = React.useState(false);
+  const [reversalModalError, setReversalModalError] = React.useState(null);
+  const [reversals, setReversals] = React.useState([]);
+  const [reversalsLoading, setReversalsLoading] = React.useState(false);
+  const [reversalQueueError, setReversalQueueError] = React.useState(null);
+  const [reversalQueueFlash, setReversalQueueFlash] = React.useState(null);
+  const [reversalSearch, setReversalSearch] = React.useState("");
+  const [reversalStatus, setReversalStatus] = React.useState("");
+  const [reversalActionId, setReversalActionId] = React.useState(null);
+
+  const invalidDateRange = Boolean(dateFrom && dateTo && dateFrom > dateTo);
+
+  React.useEffect(() => {
+    const state = location.state;
+    if (state?.flash) {
+      setFlash(state.flash);
+      navigate(location.pathname, { replace: true });
+    }
+  }, [location.state, location.pathname, navigate]);
+
+  const loadPayments = React.useCallback(async () => {
+    if (invalidDateRange) {
+      setLoadError("Invalid payment date range: From date cannot be after To date.");
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const [paymentResponse, studentResponse] = await Promise.all([
+        api.get("/finance/payments/", {
+          params: {
+            page,
+            search: search.trim() || undefined,
+            student: studentFilter !== "all" ? studentFilter : undefined,
+            payment_method: methodFilter !== "all" ? methodFilter : undefined,
+            allocation_status: allocationFilter !== "all" ? allocationFilter : undefined,
+            date_from: dateFrom || undefined,
+            date_to: dateTo || undefined,
+          },
+        }),
+        api.get("/finance/ref/students/"),
+      ]);
+      const normalizedPayments = normalizePaginated(paymentResponse.data);
+      setPayments(normalizedPayments.items);
+      setTotalCount(normalizedPayments.totalCount);
+      setIsServerPaginated(normalizedPayments.isPaginated);
+      setStudents(normalizePaginated(studentResponse.data).items);
+    } catch (error) {
+      const statusCode = error?.response?.status;
+      setLoadError(
+        statusCode === 401
+          ? "Session expired. Please sign in again."
+          : statusCode === 403
+            ? "Access denied. Ensure this account has finance access."
+            : statusCode === 404
+              ? "Finance payment endpoints were not found for this tenant."
+              : getErrorMessage(error, "Unable to load payment collections."),
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [allocationFilter, dateFrom, dateTo, invalidDateRange, methodFilter, page, search, studentFilter]);
+
+  const loadReversals = React.useCallback(async () => {
+    setReversalsLoading(true);
+    setReversalQueueError(null);
+    try {
+      const response = await api.get("/finance/payment-reversals/", {
+        params: {
+          search: reversalSearch.trim() || undefined,
+          status: reversalStatus || undefined,
+        },
+      });
+      setReversals(normalizePaginated(response.data).items);
+    } catch (error) {
+      setReversalQueueError(getErrorMessage(error, "Unable to load payment reversal requests."));
+    } finally {
+      setReversalsLoading(false);
+    }
+  }, [reversalSearch, reversalStatus]);
+
+  React.useEffect(() => {
+    loadPayments();
+  }, [loadPayments]);
+
+  React.useEffect(() => {
+    loadReversals();
+  }, [loadReversals]);
+
+  const studentLookup = React.useMemo(
+    () =>
+      students.reduce((accumulator, item) => {
+        accumulator[item.id] = `${item.first_name} ${item.last_name}`.trim() || item.admission_number || String(item.id);
+        return accumulator;
+      }, {}),
+    [students],
+  );
+
+  const filteredPayments = React.useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return payments.filter((payment) => {
+      if (studentFilter !== "all" && String(payment.student) !== studentFilter) return false;
+      if (methodFilter !== "all" && payment.payment_method !== methodFilter) return false;
+      if (allocationFilter !== "all" && allocationState(payment).key !== allocationFilter) return false;
+      if (dateFrom && payment.payment_date && payment.payment_date < dateFrom) return false;
+      if (dateTo && payment.payment_date && payment.payment_date > dateTo) return false;
+      if (!term) return true;
+
+      const studentLabel = (studentLookup[payment.student] || "").toLowerCase();
+      return [
+        payment.receipt_no || payment.receipt_number || "",
+        payment.transaction_code || "",
+        payment.reference_number || "",
+        payment.vote_head_summary || "",
+        payment.payment_method || "",
+        String(payment.student || ""),
+        studentLabel,
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(term);
+    });
+  }, [allocationFilter, dateFrom, dateTo, methodFilter, payments, search, studentFilter, studentLookup]);
+
+  const visiblePayments = React.useMemo(() => {
+    if (isServerPaginated) return filteredPayments;
+    const start = (page - 1) * PAGE_SIZE;
+    return filteredPayments.slice(start, start + PAGE_SIZE);
+  }, [filteredPayments, isServerPaginated, page]);
+
+  const totalPages = Math.max(1, Math.ceil((isServerPaginated ? totalCount : filteredPayments.length) / PAGE_SIZE));
+  const methodOptions = React.useMemo(() => Array.from(new Set(payments.map((item) => item.payment_method).filter(Boolean))).sort(), [payments]);
+  const activePayments = filteredPayments.filter((item) => item.is_active);
+  const totalCollected = activePayments.reduce((sum, item) => sum + Number(item.amount ?? 0), 0);
+  const unallocatedTotal = activePayments.reduce((sum, item) => sum + Number(item.unallocated_amount ?? 0), 0);
+  const pendingReversals = reversals.filter((item) => item.status === "PENDING").length;
+
+  const exportPaymentsCsv = () => {
+    const csv = buildCsv([
+      ["receipt", "transaction", "student", "method", "amount", "allocation", "payment_date", "reference"],
+      ...filteredPayments.map((payment) => [
+        payment.receipt_no || payment.receipt_number || `RCT-${payment.id}`,
+        payment.transaction_code || payment.reference_number || "",
+        studentLookup[payment.student] || payment.student,
+        payment.payment_method || "",
+        payment.amount || "",
+        allocationState(payment).label,
+        payment.payment_date || "",
+        payment.reference_number || "",
+      ]),
+    ]);
+    downloadBlob(new Blob([csv], { type: "text/csv;charset=utf-8;" }), "finance_payments.csv");
+  };
+
+  const toggleContext = async (payment) => {
+    if (expandedPaymentId === payment.id) {
+      setExpandedPaymentId(null);
+      return;
+    }
+
+    setExpandedPaymentId(payment.id);
+    const studentId = payment.student;
+    if (studentProfiles[studentId] || contextWarnings[studentId]) {
+      return;
+    }
+
+    setContextLoadingId(payment.id);
+    try {
+      const [studentResponse, enrollmentResponse] = await Promise.all([
+        api.get(`/students/${studentId}/`),
+        api.get("/finance/ref/enrollments/", { params: { student_id: studentId, active: true } }),
+      ]);
+      const enrollmentItems = Array.isArray(enrollmentResponse.data)
+        ? enrollmentResponse.data
+        : enrollmentResponse.data?.results ?? [];
+      setStudentProfiles((current) => ({ ...current, [studentId]: studentResponse.data }));
+      setEnrollments((current) => ({ ...current, [studentId]: enrollmentItems[0] ?? null }));
+    } catch {
+      setContextWarnings((current) => ({
+        ...current,
+        [studentId]: "Student contact or class details could not be loaded.",
+      }));
+    } finally {
+      setContextLoadingId(null);
+    }
+  };
+
+  const handleDeletePayment = async () => {
+    if (!deleteTarget) return;
+    setDeleteProcessing(true);
+    setDeleteError(null);
+    try {
+      await api.delete(`/finance/payments/${deleteTarget.id}/`);
+      setFlash({
+        tone: "success",
+        message: `Deleted payment ${deleteTarget.receipt_no || deleteTarget.reference_number || deleteTarget.id}.`,
+      });
+      setDeleteTarget(null);
+      await loadPayments();
+    } catch (error) {
+      setDeleteError(getErrorMessage(error, "Unable to delete payment."));
+    } finally {
+      setDeleteProcessing(false);
+    }
+  };
+
+  const downloadReceiptPdf = async (payment) => {
+    try {
+      const response = await api.get(`/api/finance/payments/${payment.id}/receipt/pdf/`, {
+        responseType: "blob",
+      });
+      downloadBlob(response.data, `receipt_${payment.receipt_no || payment.receipt_number || payment.id}.pdf`);
+    } catch (error) {
+      setLoadError(getErrorMessage(error, "Unable to download the receipt PDF."));
+    }
+  };
+
+  const openReversalModal = (payment) => {
+    if (!payment.is_active) {
+      setFlash({ tone: "error", message: "This payment is already reversed." });
+      return;
+    }
+    setReversalTarget(payment);
+    setReversalReason("");
+    setReversalModalError(null);
+  };
+
+  const submitReversalRequest = async () => {
+    if (!reversalTarget || reversalSubmitting) return;
+    if (!reversalReason.trim()) {
+      setReversalModalError("Reversal reason is required.");
+      return;
+    }
+    setReversalSubmitting(true);
+    setReversalModalError(null);
+    try {
+      await api.post("/finance/payment-reversals/", {
+        payment: reversalTarget.id,
+        reason: reversalReason.trim(),
+      });
+      setFlash({
+        tone: "success",
+        message: `Reversal request submitted for ${reversalTarget.receipt_no || reversalTarget.reference_number}.`,
+      });
+      setReversalTarget(null);
+      setReversalReason("");
+      await loadReversals();
+    } catch (error) {
+      setReversalModalError(
+        getErrorMessage(error, `Failed to submit reversal request for ${reversalTarget.receipt_no || reversalTarget.reference_number}.`),
+      );
+    } finally {
+      setReversalSubmitting(false);
+    }
+  };
+
+  const reviewReversal = async (requestId, action) => {
+    if (reversalActionId !== null) return;
+    setReversalActionId(requestId);
+    setReversalQueueFlash(null);
+    setReversalQueueError(null);
+    try {
+      await api.post(`/finance/payment-reversals/${requestId}/${action}/`, {});
+      setReversalQueueFlash(`Reversal ${action}d successfully.`);
+      await Promise.all([loadReversals(), loadPayments()]);
+    } catch (error) {
+      setReversalQueueError(getErrorMessage(error, `Unable to ${action} reversal request.`));
+    } finally {
+      setReversalActionId(null);
+    }
+  };
+
+  return jsxs("div", {
+    className: "space-y-6",
+    children: [
+      jsxs("section", {
+        className: shellClass,
+        children: [
+          jsxs("div", {
+            className: "flex flex-col gap-5 border-b border-slate-200 pb-6 lg:flex-row lg:items-end lg:justify-between",
+            children: [
+              jsxs("div", {
+                className: "max-w-3xl",
+                children: [
+                  jsx("p", {
+                    className: "text-[11px] font-semibold uppercase tracking-[0.32em] text-slate-400",
+                    children: "Payment Management System",
+                  }),
+                  jsx("h1", {
+                    className: "mt-3 text-3xl font-semibold tracking-tight text-slate-950 md:text-[2.5rem]",
+                    children: "Bursar collections workspace",
+                  }),
+                  jsx("p", {
+                    className: "mt-3 max-w-2xl text-sm leading-6 text-slate-600",
+                    children:
+                      "Track receipts, spot allocation gaps, review student context, and manage reversal approvals from one light, faster workflow.",
+                  }),
+                ],
+              }),
+              jsxs("div", {
+                className: "flex flex-wrap gap-2",
+                children: [
+                  jsx(ActionChip, { active: false, onClick: () => navigate("/modules/finance"), children: "Overview" }),
+                  jsx(ActionChip, {
+                    active: false,
+                    onClick: () => navigate("/modules/finance/payments/new"),
+                    children: "Record Payment",
+                  }),
+                  jsx(ActionChip, { active: true, onClick: () => {}, children: "Payments" }),
+                  jsx(ActionChip, {
+                    active: false,
+                    onClick: () => navigate("/modules/finance/reconciliation"),
+                    children: "Reconciliation",
+                  }),
+                  jsx(ActionChip, {
+                    active: false,
+                    onClick: () => navigate("/modules/finance/invoices"),
+                    children: "Arrears",
+                  }),
+                ],
+              }),
+            ],
+          }),
+          jsxs("div", {
+            className: "mt-6 space-y-4",
+            children: [
+              jsx(Notice, { tone: flash?.tone, message: flash?.message }),
+              jsx(Notice, { tone: "error", message: loadError }),
+            ],
+          }),
+          jsx("div", {
+            className: "mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4",
+            children: [
+              {
+                label: "Collected on screen",
+                value: formatMoney(totalCollected),
+                detail: `${activePayments.length} active payments in the current view.`,
+              },
+              {
+                label: "Unallocated still open",
+                value: formatMoney(unallocatedTotal),
+                detail: "Money still waiting to be fully mapped to invoices or vote heads.",
+              },
+              {
+                label: "Students represented",
+                value: String(new Set(filteredPayments.map((item) => item.student)).size),
+                detail: "Unique learner accounts visible in the current filter set.",
+              },
+              {
+                label: "Pending reversals",
+                value: String(pendingReversals),
+                detail: "Maker-checker requests still waiting for review.",
+              },
+            ].map((card) =>
+              jsx(MetricCard, { label: card.label, value: card.value, detail: card.detail }, card.label),
+            ),
+          }),
+          jsxs("section", {
+            className: `${surfaceClass} mt-6`,
+            children: [
+              jsxs("div", {
+                className: "flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between",
+                children: [
+                  jsxs("div", {
+                    children: [
+                      jsx("p", {
+                        className: "text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400",
+                        children: "Payments",
+                      }),
+                      jsx("h2", {
+                        className: "mt-2 text-xl font-semibold text-slate-950",
+                        children: "Collections ledger",
+                      }),
+                      jsx("p", {
+                        className: "mt-1 text-sm text-slate-500",
+                        children:
+                          "Search by receipt, admission number, transaction code, or vote head. Allocation state is surfaced directly in the table now.",
+                      }),
+                    ],
+                  }),
+                  jsxs("div", {
+                    className: "flex flex-wrap gap-2",
+                    children: [
+                      jsx("button", {
+                        type: "button",
+                        className: softButtonClass,
+                        onClick: exportPaymentsCsv,
+                        children: "Export CSV",
+                      }),
+                      jsx("button", {
+                        type: "button",
+                        className: softButtonClass,
+                        onClick: () => {
+                          if (typeof window !== "undefined") window.print();
+                        },
+                        children: "Print view",
+                      }),
+                      jsx(PermissionGate, {
+                        permission: "finance.payment.create",
+                        children: jsx("button", {
+                          type: "button",
+                          className:
+                            "rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800",
+                          onClick: () => navigate("/modules/finance/payments/new"),
+                          children: "Record payment",
+                        }),
+                      }),
+                    ],
+                  }),
+                ],
+              }),
+              jsx("div", {
+                className: "mt-5 grid gap-3 lg:grid-cols-2 xl:grid-cols-6",
+                children: [
+                  jsx("input", {
+                    className: `${inputClass} xl:col-span-2`,
+                    placeholder: "Search receipt, transaction, vote head, or student",
+                    value: search,
+                    onChange: (event) => {
+                      setSearch(event.target.value);
+                      setPage(1);
+                    },
+                  }),
+                  jsxs("select", {
+                    className: inputClass,
+                    value: studentFilter,
+                    onChange: (event) => {
+                      setStudentFilter(event.target.value);
+                      setPage(1);
+                    },
+                    children: [
+                      jsx("option", { value: "all", children: "All students" }),
+                      students.map((item) =>
+                        jsxs(
+                          "option",
+                          { value: String(item.id), children: [item.first_name, " ", item.last_name] },
+                          item.id,
+                        ),
+                      ),
+                    ],
+                  }),
+                  jsxs("select", {
+                    className: inputClass,
+                    value: methodFilter,
+                    onChange: (event) => {
+                      setMethodFilter(event.target.value);
+                      setPage(1);
+                    },
+                    children: [
+                      jsx("option", { value: "all", children: "All methods" }),
+                      methodOptions.map((method) => jsx("option", { value: method, children: method }, method)),
+                    ],
+                  }),
+                  jsxs("select", {
+                    className: inputClass,
+                    value: allocationFilter,
+                    onChange: (event) => {
+                      setAllocationFilter(event.target.value);
+                      setPage(1);
+                    },
+                    children: [
+                      jsx("option", { value: "all", children: "All allocation states" }),
+                      jsx("option", { value: "allocated", children: "Allocated" }),
+                      jsx("option", { value: "partial", children: "Partial" }),
+                      jsx("option", { value: "unallocated", children: "Unallocated" }),
+                      jsx("option", { value: "reversed", children: "Reversed" }),
+                    ],
+                  }),
+                  jsx("input", {
+                    type: "date",
+                    className: inputClass,
+                    value: dateFrom,
+                    onChange: (event) => {
+                      setDateFrom(event.target.value);
+                      setPage(1);
+                    },
+                  }),
+                  jsx("input", {
+                    type: "date",
+                    className: inputClass,
+                    value: dateTo,
+                    onChange: (event) => {
+                      setDateTo(event.target.value);
+                      setPage(1);
+                    },
+                  }),
+                ],
+              }),
+              invalidDateRange
+                ? jsx("p", {
+                    className: "mt-3 text-sm text-rose-600",
+                    children: "Date range is invalid. Adjust the dates before continuing.",
+                  })
+                : null,
+              jsx("div", {
+                className: "mt-5 flex flex-wrap gap-2",
+                children: [
+                  { label: "Allocated", key: "allocated" },
+                  { label: "Partial", key: "partial" },
+                  { label: "Unallocated", key: "unallocated" },
+                  { label: "Reversed", key: "reversed" },
+                ].map((item) =>
+                  jsx(
+                    "span",
+                    {
+                      className: `inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${toneClass(item.key)}`,
+                      children: item.label,
+                    },
+                    item.key,
+                  ),
+                ),
+              }),
+              jsx("div", {
+                className: "mt-5 overflow-x-auto rounded-[24px] border border-slate-200",
+                children: jsxs("table", {
+                  className: "min-w-[1100px] w-full text-left text-sm",
+                  children: [
+                    jsx("thead", {
+                      className: "bg-slate-50 text-[11px] uppercase tracking-[0.2em] text-slate-500",
+                      children: jsxs("tr", {
+                        children: [
+                          jsx("th", { className: "px-4 py-3 font-semibold", children: "Receipt" }),
+                          jsx("th", { className: "px-4 py-3 font-semibold", children: "Student" }),
+                          jsx("th", { className: "px-4 py-3 font-semibold", children: "Method" }),
+                          jsx("th", { className: "px-4 py-3 font-semibold", children: "Amount" }),
+                          jsx("th", { className: "px-4 py-3 font-semibold", children: "Allocation" }),
+                          jsx("th", { className: "px-4 py-3 font-semibold", children: "Created" }),
+                          jsx("th", { className: "px-4 py-3 font-semibold", children: "Actions" }),
+                        ],
+                      }),
+                    }),
+                    jsxs("tbody", {
+                      className: "divide-y divide-slate-200",
+                      children: [
+                        loading
+                          ? jsx("tr", {
+                              children: jsx("td", {
+                                className: "px-4 py-8 text-sm text-slate-500",
+                                colSpan: 7,
+                                children: "Loading payments...",
+                              }),
+                            })
+                          : null,
+                        !loading && visiblePayments.length === 0
+                          ? jsx("tr", {
+                              children: jsx("td", {
+                                className: "px-4 py-8 text-sm text-slate-500",
+                                colSpan: 7,
+                                children: "No payments match the current filters.",
+                              }),
+                            })
+                          : null,
+                        visiblePayments.map((payment) => {
+                          const allocation = allocationState(payment);
+                          const studentId = payment.student;
+                          const studentProfile = studentProfiles[studentId];
+                          const enrollment = enrollments[studentId];
+                          const guardians = studentProfile?.guardians ?? [];
+                          const expanded = expandedPaymentId === payment.id;
+                          return jsxs(
+                            React.Fragment,
+                            {
+                              children: [
+                                jsxs("tr", {
+                                  className: "align-top hover:bg-slate-50/80",
+                                  children: [
+                                    jsx("td", {
+                                      className: "px-4 py-4",
+                                      children: jsxs("div", {
+                                        children: [
+                                          jsx("p", {
+                                            className: "font-semibold text-slate-900",
+                                            children: payment.receipt_no || payment.receipt_number || `RCT-${payment.id}`,
+                                          }),
+                                          jsx("p", {
+                                            className: "mt-1 text-xs text-slate-500",
+                                            children: payment.transaction_code || payment.reference_number || "--",
+                                          }),
+                                        ],
+                                      }),
+                                    }),
+                                    jsx("td", {
+                                      className: "px-4 py-4",
+                                      children: jsxs("div", {
+                                        children: [
+                                          jsx("p", {
+                                            className: "font-medium text-slate-900",
+                                            children: studentLookup[payment.student] || payment.student,
+                                          }),
+                                          jsx("p", {
+                                            className: "mt-1 text-xs text-slate-500",
+                                            children: payment.vote_head_summary || "Vote head not supplied",
+                                          }),
+                                        ],
+                                      }),
+                                    }),
+                                    jsx("td", {
+                                      className: "px-4 py-4 text-slate-700",
+                                      children: payment.payment_method || "--",
+                                    }),
+                                    jsx("td", {
+                                      className: "px-4 py-4",
+                                      children: jsxs("div", {
+                                        children: [
+                                          jsx("p", { className: "font-semibold text-slate-900", children: formatMoney(payment.amount) }),
+                                          jsx("p", {
+                                            className: "mt-1 text-xs text-slate-500",
+                                            children: `Allocated ${formatMoney(payment.allocated_amount)} • Open ${formatMoney(payment.unallocated_amount)}`,
+                                          }),
+                                        ],
+                                      }),
+                                    }),
+                                    jsx("td", {
+                                      className: "px-4 py-4",
+                                      children: jsxs("div", {
+                                        className: "flex flex-wrap gap-2",
+                                        children: [
+                                          jsx("span", {
+                                            className: `inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${toneClass(allocation.key)}`,
+                                            children: allocation.label,
+                                          }),
+                                          jsx("span", {
+                                            className: `inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${
+                                              payment.is_active
+                                                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                                : "border-rose-200 bg-rose-50 text-rose-700"
+                                            }`,
+                                            children: payment.is_active ? "Active" : "Inactive",
+                                          }),
+                                        ],
+                                      }),
+                                    }),
+                                    jsx("td", {
+                                      className: "px-4 py-4 text-slate-600",
+                                      children: formatDateTime(payment.created_at || payment.payment_date),
+                                    }),
+                                    jsx("td", {
+                                      className: "px-4 py-4",
+                                      children: jsxs("div", {
+                                        className: "flex flex-wrap gap-2",
+                                        children: [
+                                          jsx("button", {
+                                            type: "button",
+                                            className: softButtonClass,
+                                            onClick: () => toggleContext(payment),
+                                            children: expanded ? "Hide context" : "Context",
+                                          }),
+                                          jsx("button", {
+                                            type: "button",
+                                            className: softButtonClass,
+                                            onClick: () => downloadReceiptPdf(payment),
+                                            children: "Receipt PDF",
+                                          }),
+                                          jsx("button", {
+                                            type: "button",
+                                            className:
+                                              "rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-700 transition hover:border-amber-300 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50",
+                                            onClick: () => openReversalModal(payment),
+                                            disabled: !payment.is_active,
+                                            children: "Request reversal",
+                                          }),
+                                          jsx("button", {
+                                            type: "button",
+                                            className:
+                                              "rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 transition hover:border-rose-300 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50",
+                                            onClick: () => setDeleteTarget(payment),
+                                            disabled: !payment.is_active,
+                                            children: "Delete",
+                                          }),
+                                        ],
+                                      }),
+                                    }),
+                                  ],
+                                }),
+                                expanded
+                                  ? jsx("tr", {
+                                      children: jsx("td", {
+                                        colSpan: 7,
+                                        className: "bg-slate-50/70 px-4 py-4",
+                                        children:
+                                          contextLoadingId === payment.id
+                                            ? jsx("p", {
+                                                className: "text-sm text-slate-500",
+                                                children: "Loading student context...",
+                                              })
+                                            : jsxs("div", {
+                                                className: "grid gap-4 lg:grid-cols-[0.8fr,1.2fr]",
+                                                children: [
+                                                  jsxs("div", {
+                                                    className: "grid gap-3 sm:grid-cols-2",
+                                                    children: [
+                                                      {
+                                                        label: "Class",
+                                                        value: enrollment?.class_name ?? "--",
+                                                      },
+                                                      {
+                                                        label: "Term",
+                                                        value: enrollment?.term_name ?? "--",
+                                                      },
+                                                      {
+                                                        label: "Reference",
+                                                        value: payment.reference_number || "--",
+                                                      },
+                                                      {
+                                                        label: "Notes",
+                                                        value: payment.notes || "No notes saved",
+                                                      },
+                                                    ].map((item) =>
+                                                      jsxs(
+                                                        "div",
+                                                        {
+                                                          className: insetClass,
+                                                          children: [
+                                                            jsx("p", {
+                                                              className:
+                                                                "text-[11px] uppercase tracking-[0.22em] text-slate-400",
+                                                              children: item.label,
+                                                            }),
+                                                            jsx("p", {
+                                                              className: "mt-2 text-sm font-semibold text-slate-900",
+                                                              children: item.value,
+                                                            }),
+                                                          ],
+                                                        },
+                                                        item.label,
+                                                      ),
+                                                    ),
+                                                  }),
+                                                  jsxs("div", {
+                                                    className: "space-y-3",
+                                                    children: [
+                                                      jsx("p", {
+                                                        className:
+                                                          "text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400",
+                                                        children: "Parents / Guardians",
+                                                      }),
+                                                      guardians.length > 0
+                                                        ? guardians.map((guardian) =>
+                                                            jsxs(
+                                                              "div",
+                                                              {
+                                                                className: insetClass,
+                                                                children: [
+                                                                  jsx("p", {
+                                                                    className: "text-sm font-semibold text-slate-900",
+                                                                    children: guardian.name,
+                                                                  }),
+                                                                  jsx("p", {
+                                                                    className:
+                                                                      "mt-1 text-[11px] uppercase tracking-[0.18em] text-slate-400",
+                                                                    children: guardian.relationship || "Guardian",
+                                                                  }),
+                                                                  jsx("p", {
+                                                                    className: "mt-2 text-sm text-slate-600",
+                                                                    children:
+                                                                      guardian.phone || guardian.email
+                                                                        ? `${guardian.phone ?? "--"} ${guardian.email ? `• ${guardian.email}` : ""}`
+                                                                        : "No contact details captured",
+                                                                  }),
+                                                                ],
+                                                              },
+                                                              guardian.id,
+                                                            ),
+                                                          )
+                                                        : jsx("div", {
+                                                            className: insetClass,
+                                                            children: jsx("p", {
+                                                              className: "text-sm text-slate-500",
+                                                              children:
+                                                                contextWarnings[studentId] ||
+                                                                "No guardian records were found for this student.",
+                                                            }),
+                                                          }),
+                                                    ],
+                                                  }),
+                                                ],
+                                              }),
+                                      }),
+                                    })
+                                  : null,
+                              ],
+                            },
+                            payment.id,
+                          );
+                        }),
+                      ],
+                    }),
+                  ],
+                }),
+              }),
+              jsxs("div", {
+                className: "mt-4 flex items-center justify-between text-sm text-slate-500",
+                children: [
+                  jsxs("span", { children: ["Page ", page, " of ", totalPages] }),
+                  jsxs("div", {
+                    className: "flex gap-2",
+                    children: [
+                      jsx("button", {
+                        type: "button",
+                        className: softButtonClass,
+                        disabled: page === 1,
+                        onClick: () => setPage((current) => Math.max(1, current - 1)),
+                        children: "Previous",
+                      }),
+                      jsx("button", {
+                        type: "button",
+                        className: softButtonClass,
+                        disabled: page === totalPages,
+                        onClick: () => setPage((current) => Math.min(totalPages, current + 1)),
+                        children: "Next",
+                      }),
+                    ],
+                  }),
+                ],
+              }),
+            ],
+          }),
+          jsxs("section", {
+            className: `${surfaceClass} mt-6`,
+            children: [
+              jsxs("div", {
+                className: "flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between",
+                children: [
+                  jsxs("div", {
+                    children: [
+                      jsx("p", {
+                        className: "text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400",
+                        children: "Maker / Checker",
+                      }),
+                      jsx("h2", {
+                        className: "mt-2 text-xl font-semibold text-slate-950",
+                        children: "Payment reversal requests",
+                      }),
+                      jsx("p", {
+                        className: "mt-1 text-sm text-slate-500",
+                        children:
+                          "Review office-initiated reversal requests, inspect reasons, and approve or reject them with clear status chips.",
+                      }),
+                    ],
+                  }),
+                  jsx("div", {
+                    className: "grid gap-3 sm:grid-cols-2",
+                    children: [
+                      jsx("input", {
+                        className: inputClass,
+                        placeholder: "Search receipt, reference, or reason",
+                        value: reversalSearch,
+                        onChange: (event) => setReversalSearch(event.target.value),
+                      }),
+                      jsxs("select", {
+                        className: inputClass,
+                        value: reversalStatus,
+                        onChange: (event) => setReversalStatus(event.target.value),
+                        children: [
+                          jsx("option", { value: "", children: "All statuses" }),
+                          jsx("option", { value: "PENDING", children: "Pending" }),
+                          jsx("option", { value: "APPROVED", children: "Approved" }),
+                          jsx("option", { value: "REJECTED", children: "Rejected" }),
+                        ],
+                      }),
+                    ],
+                  }),
+                ],
+              }),
+              jsx("div", {
+                className: "mt-4 space-y-3",
+                children: [
+                  jsx(Notice, { tone: "error", message: reversalQueueError }),
+                  jsx(Notice, { tone: "success", message: reversalQueueFlash }),
+                ],
+              }),
+              jsx("div", {
+                className: "mt-4 overflow-x-auto rounded-[24px] border border-slate-200",
+                children: jsxs("table", {
+                  className: "min-w-[960px] w-full text-left text-sm",
+                  children: [
+                    jsx("thead", {
+                      className: "bg-slate-50 text-[11px] uppercase tracking-[0.2em] text-slate-500",
+                      children: jsxs("tr", {
+                        children: [
+                          jsx("th", { className: "px-4 py-3 font-semibold", children: "Payment" }),
+                          jsx("th", { className: "px-4 py-3 font-semibold", children: "Receipt" }),
+                          jsx("th", { className: "px-4 py-3 font-semibold", children: "Reason" }),
+                          jsx("th", { className: "px-4 py-3 font-semibold", children: "Status" }),
+                          jsx("th", { className: "px-4 py-3 font-semibold", children: "Requested" }),
+                          jsx("th", { className: "px-4 py-3 font-semibold", children: "Reviewed By" }),
+                          jsx("th", { className: "px-4 py-3 font-semibold", children: "Actions" }),
+                        ],
+                      }),
+                    }),
+                    jsx("tbody", {
+                      className: "divide-y divide-slate-200",
+                      children: reversalsLoading
+                        ? jsx("tr", {
+                            children: jsx("td", {
+                              className: "px-4 py-8 text-sm text-slate-500",
+                              colSpan: 7,
+                              children: "Loading reversal requests...",
+                            }),
+                          })
+                        : reversals.length === 0
+                          ? jsx("tr", {
+                              children: jsx("td", {
+                                className: "px-4 py-8 text-sm text-slate-500",
+                                colSpan: 7,
+                                children: "No reversal requests found.",
+                              }),
+                            })
+                          : reversals.map((item) =>
+                              jsxs(
+                                "tr",
+                                {
+                                  className: "hover:bg-slate-50/80",
+                                  children: [
+                                    jsx("td", {
+                                      className: "px-4 py-4 font-medium text-slate-900",
+                                      children: item.payment_reference || `PAY-${item.payment}`,
+                                    }),
+                                    jsx("td", {
+                                      className: "px-4 py-4 text-slate-600",
+                                      children: item.payment_receipt || "--",
+                                    }),
+                                    jsx("td", {
+                                      className: "px-4 py-4 text-slate-600",
+                                      children: item.reason,
+                                    }),
+                                    jsx("td", {
+                                      className: "px-4 py-4",
+                                      children: jsx("span", {
+                                        className: `inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${toneClass(item.status)}`,
+                                        children: item.status,
+                                      }),
+                                    }),
+                                    jsx("td", {
+                                      className: "px-4 py-4 text-slate-600",
+                                      children: formatDateTime(item.requested_at),
+                                    }),
+                                    jsx("td", {
+                                      className: "px-4 py-4 text-slate-600",
+                                      children: item.reviewed_by_name || "--",
+                                    }),
+                                    jsx("td", {
+                                      className: "px-4 py-4",
+                                      children:
+                                        canReviewReversals && item.status === "PENDING"
+                                          ? jsxs("div", {
+                                              className: "flex flex-wrap gap-2",
+                                              children: [
+                                                jsx("button", {
+                                                  type: "button",
+                                                  className:
+                                                    "rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50",
+                                                  onClick: () => reviewReversal(item.id, "approve"),
+                                                  disabled: reversalActionId !== null,
+                                                  children: "Approve",
+                                                }),
+                                                jsx("button", {
+                                                  type: "button",
+                                                  className:
+                                                    "rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 transition hover:border-rose-300 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50",
+                                                  onClick: () => reviewReversal(item.id, "reject"),
+                                                  disabled: reversalActionId !== null,
+                                                  children: "Reject",
+                                                }),
+                                              ],
+                                            })
+                                          : jsx("span", { className: "text-xs text-slate-400", children: "No action" }),
+                                    }),
+                                  ],
+                                },
+                                item.id,
+                              ),
+                            ),
+                    }),
+                  ],
+                }),
+              }),
+            ],
+          }),
+        ],
+      }),
+      jsx(ConfirmDialog, {
+        open: !!deleteTarget,
+        title: "Delete payment",
+        description: jsxs(React.Fragment, {
+          children: [
+            "This will remove payment ",
+            jsx("strong", { children: deleteTarget?.receipt_no || deleteTarget?.reference_number }),
+            ". Continue?",
+          ],
+        }),
+        confirmLabel: "Confirm delete",
+        isProcessing: deleteProcessing,
+        error: deleteError,
+        onConfirm: handleDeletePayment,
+        onCancel: () => setDeleteTarget(null),
+      }),
+      reversalTarget
+        ? jsx("div", {
+            className: "fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 px-4",
+            children: jsx("div", {
+              className:
+                "w-full max-w-xl rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_30px_80px_rgba(15,23,42,0.25)]",
+              children: jsxs("div", {
+                className: "space-y-5",
+                children: [
+                  jsxs("div", {
+                    className: "flex items-start justify-between gap-4",
+                    children: [
+                      jsxs("div", {
+                        children: [
+                          jsx("p", {
+                            className: "text-[11px] font-semibold uppercase tracking-[0.26em] text-slate-400",
+                            children: "Reversal Request",
+                          }),
+                          jsx("h3", {
+                            className: "mt-2 text-xl font-semibold text-slate-950",
+                            children: "Request payment reversal",
+                          }),
+                          jsx("p", {
+                            className: "mt-1 text-sm text-slate-600",
+                            children: `Submit a maker-checker reversal request for ${reversalTarget.receipt_no || reversalTarget.reference_number}.`,
+                          }),
+                        ],
+                      }),
+                      jsx("button", {
+                        type: "button",
+                        className: "text-2xl leading-none text-slate-400 transition hover:text-slate-700",
+                        onClick: () => setReversalTarget(null),
+                        children: "×",
+                      }),
+                    ],
+                  }),
+                  jsx("div", {
+                    className: "grid gap-3 sm:grid-cols-2",
+                    children: [
+                      {
+                        label: "Receipt",
+                        value: reversalTarget.receipt_no || reversalTarget.receipt_number || "--",
+                      },
+                      {
+                        label: "Amount",
+                        value: formatMoney(reversalTarget.amount),
+                      },
+                    ].map((item) =>
+                      jsxs(
+                        "div",
+                        {
+                          className: insetClass,
+                          children: [
+                            jsx("p", { className: "text-[11px] uppercase tracking-[0.22em] text-slate-400", children: item.label }),
+                            jsx("p", { className: "mt-2 text-sm font-semibold text-slate-900", children: item.value }),
+                          ],
+                        },
+                        item.label,
+                      ),
+                    ),
+                  }),
+                  jsxs("label", {
+                    className: "block text-sm text-slate-700",
+                    children: [
+                      jsx("span", { className: "font-medium", children: "Reason" }),
+                      jsx("textarea", {
+                        rows: 4,
+                        className:
+                          "mt-2 w-full rounded-[22px] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-900/5",
+                        value: reversalReason,
+                        onChange: (event) => setReversalReason(event.target.value),
+                        placeholder: "Explain why this payment should be reversed and what evidence supports the request.",
+                      }),
+                    ],
+                  }),
+                  jsx(Notice, { tone: "error", message: reversalModalError }),
+                  jsxs("div", {
+                    className: "flex flex-wrap gap-3",
+                    children: [
+                      jsx("button", {
+                        type: "button",
+                        className:
+                          "rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60",
+                        onClick: submitReversalRequest,
+                        disabled: reversalSubmitting,
+                        children: reversalSubmitting ? "Submitting..." : "Submit request",
+                      }),
+                      jsx("button", {
+                        type: "button",
+                        className: softButtonClass,
+                        onClick: () => setReversalTarget(null),
+                        disabled: reversalSubmitting,
+                        children: "Cancel",
+                      }),
+                    ],
+                  }),
+                ],
+              }),
+            }),
+          })
+        : null,
+    ],
+  });
+}
+
+export { FinancePaymentsPage as default };
