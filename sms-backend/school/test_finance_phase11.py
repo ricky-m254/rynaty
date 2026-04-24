@@ -42,9 +42,18 @@ class FinancePhase11PaymentReversalTests(TenantTestBase):
         super().setUp()
         self.factory = APIRequestFactory()
 
-        finance_module = Module.objects.create(key="FINANCE", name="Finance")
-        accountant_role = Role.objects.create(name="ACCOUNTANT", description="Finance")
-        admin_role = Role.objects.create(name="ADMIN", description="Admin")
+        finance_module, _ = Module.objects.get_or_create(
+            key="FINANCE",
+            defaults={"name": "Finance"},
+        )
+        accountant_role, _ = Role.objects.get_or_create(
+            name="ACCOUNTANT",
+            defaults={"description": "Finance"},
+        )
+        admin_role, _ = Role.objects.get_or_create(
+            name="ADMIN",
+            defaults={"description": "Admin"},
+        )
 
         self.requester = User.objects.create_user(username="finance_requester", password="pass1234")
         UserProfile.objects.create(user=self.requester, role=accountant_role)
@@ -95,4 +104,3 @@ class FinancePhase11PaymentReversalTests(TenantTestBase):
 
         self.payment.refresh_from_db()
         self.assertFalse(self.payment.is_active)
-

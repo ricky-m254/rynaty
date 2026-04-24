@@ -165,6 +165,38 @@ class StoreWorkflowServiceTests(unittest.TestCase):
         self.assertEqual(repository.order_items[7].approved_total, Decimal("125.00"))
         self.assertEqual(repository.saved_order_items[0][0], 7)
 
+    def test_review_order_coerces_string_payload_numbers(self):
+        repository = FakeRepository()
+        service = StoreOrderWorkflowService(repository)
+
+        response = service.review_order(
+            order_id=3,
+            payload={
+                "action": "APPROVE",
+                "approved_items": [{"id": 7, "quantity_approved": "5.00", "quoted_unit_price": "31.25"}],
+            },
+            reviewer="auditor",
+        )
+
+        self.assertEqual(response["status"], "APPROVED")
+        self.assertEqual(repository.order_items[7].quantity_approved, Decimal("5.00"))
+        self.assertEqual(repository.order_items[7].quoted_unit_price, Decimal("31.25"))
+        self.assertEqual(repository.order_items[7].approved_total, Decimal("156.2500"))
+
+    def test_review_order_rejects_invalid_numeric_payload(self):
+        repository = FakeRepository()
+        service = StoreOrderWorkflowService(repository)
+
+        with self.assertRaises(InventoryValidationError):
+            service.review_order(
+                order_id=3,
+                payload={
+                    "action": "APPROVE",
+                    "approved_items": [{"id": 7, "quantity_approved": "five"}],
+                },
+                reviewer="auditor",
+            )
+
     def test_review_order_records_fulfillment_and_receiving_state(self):
         repository = FakeRepository()
         repository.order.status = "APPROVED"

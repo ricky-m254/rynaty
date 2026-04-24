@@ -30,6 +30,7 @@ from school.views import (
     FinanceLaunchReadinessView,
     FinanceGatewayWebhookView,
     MpesaStkCallbackView,
+    MpesaStkStatusView,
     PaymentGatewayWebhookEventViewSet,
     StripeCheckoutSessionView,
     StripeTestConnectionView,
@@ -375,6 +376,55 @@ class FinancePhase4WebhookAndReconciliationTests(TenantTestBase):
         event = PaymentGatewayWebhookEvent.objects.get()
         self.assertTrue(event.processed)
         self.assertEqual(event.error, "")
+
+    def test_mpesa_status_returns_receipt_urls_after_successful_callback(self):
+        PaymentGatewayTransaction.objects.create(
+            provider="mpesa",
+            external_id="ws_CO_STATUS",
+            student=self.student,
+            amount="500.00",
+            status="PENDING",
+            payload={"reference": "FEES-STATUS"},
+        )
+        payload = self._mpesa_success_payload(
+            checkout_id="ws_CO_STATUS",
+            receipt="MPESA-STATUS-001",
+        )
+
+        callback_response = self._post_mpesa_callback(payload)
+        self.assertEqual(callback_response.status_code, 200)
+
+        payment = Payment.objects.get(reference_number="MPESA-STATUS-001")
+        self.assertTrue(payment.receipt_number)
+
+        tx = PaymentGatewayTransaction.objects.get(external_id="ws_CO_STATUS")
+        self.assertTrue(tx.is_reconciled)
+        self.assertEqual(tx.payload.get("payment_id"), payment.id)
+        self.assertEqual(tx.payload.get("payment_reference"), payment.reference_number)
+
+        status_request = self.factory.get(
+            "/api/finance/mpesa/status/",
+            {"checkout_request_id": "ws_CO_STATUS"},
+        )
+        force_authenticate(status_request, user=self.user)
+        status_response = MpesaStkStatusView.as_view()(status_request)
+
+        self.assertEqual(status_response.status_code, 200)
+        self.assertEqual(status_response.data["status"], "SUCCEEDED")
+        self.assertEqual(status_response.data["mpesa_receipt"], "MPESA-STATUS-001")
+        self.assertEqual(status_response.data["payment_id"], payment.id)
+        self.assertEqual(status_response.data["payment_reference"], payment.reference_number)
+        self.assertEqual(status_response.data["payment_receipt_number"], payment.receipt_number)
+        self.assertTrue(
+            status_response.data["receipt_json_url"].endswith(
+                f"/api/finance/payments/{payment.id}/receipt/?format=json"
+            )
+        )
+        self.assertTrue(
+            status_response.data["receipt_pdf_url"].endswith(
+                f"/api/finance/payments/{payment.id}/receipt/pdf/"
+            )
+        )
 
     @patch("clients.billing_engine.BillingEngine.for_tenant")
     def test_mpesa_callback_records_billing_fee_using_active_tenant_context(self, mock_for_tenant):

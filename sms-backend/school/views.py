@@ -10251,7 +10251,8 @@ class MpesaStkStatusView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        from .models import PaymentGatewayTransaction
+        from .models import PaymentGatewayTransaction, Payment
+        from .payment_receipts import payment_receipt_number, payment_receipt_urls
 
         checkout_id = request.query_params.get("checkout_request_id", "").strip()
         if not checkout_id:
@@ -10263,13 +10264,54 @@ class MpesaStkStatusView(APIView):
         if not tx:
             return Response({"error": "Transaction not found."}, status=status.HTTP_404_NOT_FOUND)
 
+        tx_payload = dict(tx.payload or {})
+        payment = None
+        payment_id = tx_payload.get("payment_id")
+        if payment_id:
+            payment = Payment.objects.filter(pk=payment_id).first()
+
+        if not payment:
+            payment_reference = str(
+                tx_payload.get("payment_reference")
+                or tx_payload.get("mpesa_receipt")
+                or ""
+            ).strip()
+            if payment_reference:
+                payment = Payment.objects.filter(reference_number=payment_reference).first()
+
+        receipt_urls = (
+            payment_receipt_urls(payment, request=request)
+            if payment
+            else {"receipt_json_url": "", "receipt_pdf_url": ""}
+        )
+        payment_reference = (
+            str(getattr(payment, "reference_number", "") or "").strip()
+            if payment
+            else str(
+                tx_payload.get("payment_reference")
+                or tx_payload.get("mpesa_receipt")
+                or ""
+            ).strip()
+        )
+        payment_receipt = (
+            payment_receipt_number(payment)
+            if payment
+            else str(tx_payload.get("payment_receipt_number") or "").strip()
+        )
+
         return Response({
             "transaction_id": tx.id,
             "status": tx.status,
             "amount": str(tx.amount),
-            "mpesa_receipt": tx.payload.get("mpesa_receipt"),
-            "result_desc": tx.payload.get("callback_result_desc") or tx.payload.get("result_desc"),
-            "friendly_message": tx.payload.get("callback_friendly_message", ""),
+            "reference": tx_payload.get("reference") or payment_reference or tx_payload.get("mpesa_receipt"),
+            "mpesa_receipt": tx_payload.get("mpesa_receipt"),
+            "result_desc": tx_payload.get("callback_result_desc") or tx_payload.get("result_desc"),
+            "friendly_message": tx_payload.get("callback_friendly_message", ""),
+            "payment_id": getattr(payment, "id", None) or tx_payload.get("payment_id"),
+            "payment_reference": payment_reference,
+            "payment_receipt_number": payment_receipt,
+            "receipt_json_url": receipt_urls["receipt_json_url"],
+            "receipt_pdf_url": receipt_urls["receipt_pdf_url"],
             "updated_at": tx.updated_at,
         })
 

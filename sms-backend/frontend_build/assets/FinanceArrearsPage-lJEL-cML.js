@@ -31,34 +31,6 @@ function daysOverdue(value) {
   return Math.max(0, diff);
 }
 
-function PortalSwitch({ active }) {
-  const links = [
-    { key: "student", label: "Student Portal", path: "/student-portal/fees" },
-    { key: "parent", label: "Parent Portal", path: "/modules/parent-portal/finance" },
-    { key: "bursar", label: "Bursar Portal", path: "/modules/finance/arrears" },
-  ];
-
-  return jsx("div", {
-    className: "inline-flex rounded-full border border-slate-200 bg-white p-1 shadow-[0_12px_30px_rgba(15,23,42,0.06)]",
-    children: links.map((link) =>
-      jsx(
-        "button",
-        {
-          type: "button",
-          onClick: () => go(link.path),
-          className: `rounded-full px-4 py-2 text-sm font-semibold transition ${
-            active === link.key
-              ? "bg-slate-900 text-white"
-              : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
-          }`,
-          children: link.label,
-        },
-        link.key,
-      ),
-    ),
-  });
-}
-
 function FinanceTabs({ active }) {
   const tabs = [
     { key: "overview", label: "Overview", path: "/modules/finance" },
@@ -196,7 +168,7 @@ function FinanceArrearsPage() {
         className: shellClass,
         children: [
           jsxs("div", {
-            className: "flex flex-col gap-4 border-b border-slate-200 pb-6 xl:flex-row xl:items-start xl:justify-between",
+            className: "border-b border-slate-200 pb-6",
             children: [
               jsxs("div", {
                 children: [
@@ -210,7 +182,6 @@ function FinanceArrearsPage() {
                   }),
                 ],
               }),
-              jsx(PortalSwitch, { active: "bursar" }),
             ],
           }),
           error

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any, Protocol
 
 from django.utils import timezone
@@ -67,6 +67,17 @@ def extract_order_items_payload(payload: dict[str, Any]) -> list[dict[str, Any]]
     if items is None:
         items = payload.get("items", [])
     return items or []
+
+
+def _coerce_decimal(value: Any, *, field_name: str) -> Decimal:
+    if value in (None, ""):
+        return Decimal("0.00")
+    if isinstance(value, Decimal):
+        return value
+    try:
+        return Decimal(str(value).strip())
+    except (InvalidOperation, ValueError):
+        raise InventoryValidationError(f"{field_name} must be a valid number.") from None
 
 
 def _order_trail_entry(*, action: str, reviewer, notes: str, status: str, order) -> dict[str, Any]:
@@ -149,17 +160,18 @@ class StoreOrderWorkflowService:
             order_item = current_item_map.get(order_item_id) or self.repository.find_order_item(order_item_id)
             if order_item is None:
                 continue
-            order_item.quantity_approved = approved_item.get(
-                "quantity_approved",
-                order_item.quantity_requested,
+            order_item.quantity_approved = _coerce_decimal(
+                approved_item.get("quantity_approved", order_item.quantity_requested),
+                field_name="quantity_approved",
             )
             quoted_unit_price = approved_item.get("quoted_unit_price", order_item.quoted_unit_price)
             if quoted_unit_price in (None, ""):
                 quoted_unit_price = order_item.item.cost_price if order_item.item_id and order_item.item else Decimal("0.00")
-            order_item.quoted_unit_price = quoted_unit_price
-            order_item.approved_total = (order_item.quantity_approved or Decimal("0.00")) * (
-                order_item.quoted_unit_price or Decimal("0.00")
+            order_item.quoted_unit_price = _coerce_decimal(
+                quoted_unit_price,
+                field_name="quoted_unit_price",
             )
+            order_item.approved_total = order_item.quantity_approved * order_item.quoted_unit_price
             approved_total += order_item.approved_total
             self.repository.save_order_item(
                 order_item,

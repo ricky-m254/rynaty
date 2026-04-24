@@ -1,4 +1,4 @@
-import { u as useNavigate, r as React, j as jsxRuntime, b as api } from "./index-D7ltaYVC.js";
+import { r as React, j as jsxRuntime, b as api } from "./index-D7ltaYVC.js";
 import { n as normalizePaginated } from "./pagination-DjjjzeDo.js";
 import { e as getErrorMessage, m as getFieldErrors } from "./forms-ZJa1TpnO.js";
 
@@ -68,34 +68,6 @@ function methodDescription(method) {
     return "Capture cheque receipts with the exact cheque or teller reference used in the office record.";
   }
   return "Record an office-collected payment and generate a receipt immediately.";
-}
-
-function PortalSwitch({ active }) {
-  const links = [
-    { key: "student", label: "Student Portal", path: "/student-portal/fees" },
-    { key: "parent", label: "Parent Portal", path: "/modules/parent-portal/finance" },
-    { key: "bursar", label: "Bursar Portal", path: "/modules/finance" },
-  ];
-
-  return jsx("div", {
-    className: "inline-flex rounded-full border border-slate-200 bg-white p-1 shadow-[0_12px_30px_rgba(15,23,42,0.06)]",
-    children: links.map((link) =>
-      jsx(
-        "button",
-        {
-          type: "button",
-          onClick: () => go(link.path),
-          className: `rounded-full px-4 py-2 text-sm font-semibold transition ${
-            active === link.key
-              ? "bg-slate-900 text-white"
-              : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
-          }`,
-          children: link.label,
-        },
-        link.key,
-      ),
-    ),
-  });
 }
 
 function FinanceTabs({ active }) {
@@ -481,7 +453,6 @@ function PaymentReceiptPanel({
 }
 
 function FinancePaymentFormPage() {
-  const navigate = useNavigate();
   const [students, setStudents] = React.useState([]);
   const [loadingStudents, setLoadingStudents] = React.useState(true);
   const [formError, setFormError] = React.useState(null);
@@ -722,6 +693,34 @@ function FinancePaymentFormPage() {
     [form.student],
   );
 
+  const hydratePaymentFromStatusPayload = React.useCallback(
+    (payload) => {
+      if (!payload?.payment_id) return null;
+      const reference =
+        payload.payment_reference || payload.mpesa_receipt || payload.reference || payload.transaction_id || "";
+      const receiptNumber = payload.payment_receipt_number || payload.mpesa_receipt || "";
+      const nextPayment = {
+        id: payload.payment_id,
+        amount: Number(payload.amount ?? form.amount ?? 0),
+        payment_method: "M-Pesa",
+        method: "M-Pesa",
+        status: "Active",
+        reference_number: reference,
+        transaction_code: reference,
+        receipt_no: receiptNumber,
+        receipt_number: receiptNumber,
+        receipt_json_url: payload.receipt_json_url || "",
+        receipt_pdf_url: payload.receipt_pdf_url || "",
+        student_name: selectedStudentLabel || "",
+        admission_number: student?.admission_number || "",
+        notes: `M-Pesa STK Push${stkPhone.trim() ? ` | ${stkPhone.trim()}` : ""}`,
+      };
+      setLastPayment(nextPayment);
+      return nextPayment;
+    },
+    [form.amount, selectedStudentLabel, student?.admission_number, stkPhone],
+  );
+
   const startStkPolling = React.useCallback(
     (checkoutRequestId) => {
       if (typeof window === "undefined" || !checkoutRequestId) return;
@@ -744,11 +743,25 @@ function FinancePaymentFormPage() {
             clearStkPolling();
             setStkResult("success");
             setStkStatus(payload.friendly_message || payload.result_desc || payload.message || "Payment confirmed.");
+            const hydratedPayment = hydratePaymentFromStatusPayload(payload);
+            const matchedPayment =
+              hydratedPayment ??
+              (await lookupPaymentByReferences([
+                payload.payment_reference,
+                payload.payment_receipt_number,
+                payload.mpesa_receipt,
+                payload.transaction_id,
+                payload.reference,
+              ]));
+            const receiptReady = Boolean(
+              hydratedPayment?.receipt_pdf_url || matchedPayment?.receipt_pdf_url || payload.receipt_pdf_url,
+            );
             setFlash({
               tone: "success",
-              message: "M-Pesa payment confirmed. Receipt details are being refreshed below.",
+              message: receiptReady
+                ? "M-Pesa payment confirmed. The downloadable receipt is ready below."
+                : "M-Pesa payment confirmed. Receipt details are being refreshed below.",
             });
-            await lookupPaymentByReferences([payload.mpesa_receipt, payload.transaction_id, payload.reference]);
             return;
           }
 
@@ -773,7 +786,7 @@ function FinancePaymentFormPage() {
         }
       }, 4000);
     },
-    [clearStkPolling, lookupPaymentByReferences],
+    [clearStkPolling, hydratePaymentFromStatusPayload, lookupPaymentByReferences],
   );
 
   const handleMpesaStkPush = async () => {
@@ -787,7 +800,7 @@ function FinancePaymentFormPage() {
     const session = response.data ?? {};
     setStripeSession(null);
     setLastPayment(null);
-    setStkSession(session);
+    setStkSession({ ...session, phone: stkPhone.trim() });
     setStkStatus(session.message || "STK prompt sent. Ask the payer to approve on their phone.");
     setStkResult("pending");
     setFlash({
@@ -847,6 +860,7 @@ function FinancePaymentFormPage() {
         "payment_date",
         "payment_method",
         "reference_number",
+        "stk_phone",
       ]);
       if (Object.keys(mappedErrors).length > 0) {
         setFieldErrors((current) => ({ ...current, ...mappedErrors }));
@@ -920,7 +934,7 @@ function FinancePaymentFormPage() {
         className: shellClass,
         children: [
           jsxs("div", {
-            className: "flex flex-col gap-4 border-b border-slate-200 pb-6 xl:flex-row xl:items-start xl:justify-between",
+            className: "border-b border-slate-200 pb-6",
             children: [
               jsxs("div", {
                 children: [
@@ -934,7 +948,6 @@ function FinancePaymentFormPage() {
                   }),
                 ],
               }),
-              jsx(PortalSwitch, { active: "bursar" }),
             ],
           }),
           jsx("div", { className: "mt-6", children: jsx(FinanceTabs, { active: "record" }) }),
