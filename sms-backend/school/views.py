@@ -3303,6 +3303,21 @@ class SecurityPolicyView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
+class SessionTimeoutSettingsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        policy = get_or_create_security_policy()
+        timeout_minutes = max(int(policy.session_timeout_minutes or 60), 5)
+        return Response(
+            {
+                "session_timeout_minutes": timeout_minutes,
+                "warning_seconds": 120,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
 def _lifecycle_error_response(exc: LifecycleAutomationError, *, run: InstitutionLifecycleRun | None = None):
     payload = {
         "error": exc.message,
@@ -9475,6 +9490,14 @@ class MpesaCallbackUrlView(APIView):
 
     CALLBACK_PATH = "/api/finance/mpesa/callback/"
     SETTING_KEY = "system.callback_base_url"
+    SOURCE_LABELS = {
+        "tenant_settings": "Tenant callback override",
+        "SITE_BASE_URL": "SITE_BASE_URL environment variable",
+        "REPLIT_DOMAINS": "Replit public domain",
+        "tenant_domain": "Tenant primary domain",
+        "request_fallback": "Incoming request host fallback",
+        "unresolved": "Not resolved",
+    }
 
     def _resolve_effective_base_url(self, request):
         """
@@ -9488,17 +9511,53 @@ class MpesaCallbackUrlView(APIView):
         setting = TenantSettings.objects.filter(key=self.SETTING_KEY).first()
         return (setting.value or "").strip().rstrip("/") if setting else ""
 
-    def get(self, request):
-        override = self._get_override()
+    def _get_mpesa_summary(self):
+        from .models import TenantSettings
+
+        setting = TenantSettings.objects.filter(key="integrations.mpesa").first()
+        config = setting.value if setting and isinstance(setting.value, dict) else {}
+        shortcode = str(config.get("shortcode") or "").strip()
+        environment = str(config.get("environment") or "sandbox").lower()
+        enabled = config.get("enabled", True) is not False
+        return {
+            "shortcode": shortcode,
+            "party_b": shortcode,
+            "environment": environment,
+            "enabled": enabled,
+        }
+
+    def _build_response_payload(self, request, callback_base_url):
         effective_base, source = self._resolve_effective_base_url(request)
         full_callback_url = f"{effective_base}{self.CALLBACK_PATH}" if effective_base else ""
-        return Response({
-            "callback_base_url": override,
+        uses_https = bool(full_callback_url.startswith("https://"))
+        callback_warning = ""
+        if source == "request_fallback":
+            callback_warning = (
+                "This callback URL is still being derived from the current request host. "
+                "Set a stable public base URL before production use."
+            )
+        elif full_callback_url and not uses_https:
+            callback_warning = (
+                "This callback URL is not HTTPS. Sandbox may tolerate this, but Safaricom "
+                "requires HTTPS in production."
+            )
+
+        payload = {
+            "callback_base_url": callback_base_url,
             "effective_base_url": effective_base,
             "full_callback_url": full_callback_url,
             "callback_path": self.CALLBACK_PATH,
             "source": source,
-        })
+            "source_label": self.SOURCE_LABELS.get(source, source),
+            "uses_https": uses_https,
+            "callback_warning": callback_warning,
+        }
+        payload.update(self._get_mpesa_summary())
+        return payload
+
+    def get(self, request):
+        override = self._get_override()
+        return Response(self._build_response_payload(request, override))
 
     def put(self, request):
         from .models import TenantSettings, AuditLog
@@ -9537,17 +9596,9 @@ class MpesaCallbackUrlView(APIView):
             details=f"Admin set system.callback_base_url = {raw!r}",
         )
 
-        effective_base, source = self._resolve_effective_base_url(request)
-        full_callback_url = f"{effective_base}{self.CALLBACK_PATH}" if effective_base else ""
-
-        return Response({
-            "callback_base_url": raw,
-            "effective_base_url": effective_base,
-            "full_callback_url": full_callback_url,
-            "callback_path": self.CALLBACK_PATH,
-            "source": source,
-            "message": message,
-        })
+        response_payload = self._build_response_payload(request, raw)
+        response_payload["message"] = message
+        return Response(response_payload)
 
 
 class FinanceLaunchReadinessView(APIView):
@@ -9659,6 +9710,8 @@ class FinanceLaunchReadinessView(APIView):
             "configured": bool(config) and enabled and not missing_fields,
             "enabled": enabled,
             "environment": environment,
+            "shortcode": str(config.get("shortcode") or "").strip(),
+            "party_b": str(config.get("shortcode") or "").strip(),
             "has_consumer_key": required_fields["consumer_key"],
             "has_consumer_secret": required_fields["consumer_secret"],
             "has_shortcode": required_fields["shortcode"],

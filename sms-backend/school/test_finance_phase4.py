@@ -30,6 +30,7 @@ from school.views import (
     FinanceLaunchReadinessView,
     FinanceGatewayWebhookView,
     MpesaStkCallbackView,
+    MpesaCallbackUrlView,
     MpesaStkStatusView,
     PaymentGatewayWebhookEventViewSet,
     StripeCheckoutSessionView,
@@ -759,6 +760,75 @@ class FinancePhase4WebhookAndReconciliationTests(TenantTestBase):
         self.assertEqual(
             response.data["stripe"]["webhook_url"],
             "https://finance-phase4.localhost/api/finance/gateway/webhooks/stripe/",
+        )
+
+    def test_mpesa_callback_url_view_returns_exact_callback_details(self):
+        TenantSettings.objects.create(
+            key="integrations.mpesa",
+            value={
+                "enabled": True,
+                "consumer_key": "ck_demo",
+                "consumer_secret": "cs_demo",
+                "shortcode": "174379",
+                "passkey": "passkey_demo",
+                "environment": "sandbox",
+            },
+            category="integrations",
+        )
+
+        request = self.factory.get("/api/finance/mpesa/callback-url/")
+        force_authenticate(request, user=self.user)
+        with patch.object(MpesaCallbackUrlView, "permission_classes", []):
+            response = MpesaCallbackUrlView.as_view()(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["party_b"], "174379")
+        self.assertEqual(response.data["shortcode"], "174379")
+        self.assertEqual(response.data["environment"], "sandbox")
+        self.assertEqual(response.data["source"], "tenant_domain")
+        self.assertEqual(response.data["source_label"], "Tenant primary domain")
+        self.assertTrue(response.data["uses_https"])
+        self.assertEqual(
+            response.data["full_callback_url"],
+            "https://finance-phase4.localhost/api/finance/mpesa/callback/",
+        )
+        self.assertEqual(response.data["callback_warning"], "")
+
+    def test_mpesa_callback_url_view_put_persists_override_and_warning_state(self):
+        TenantSettings.objects.create(
+            key="integrations.mpesa",
+            value={
+                "enabled": True,
+                "consumer_key": "ck_demo",
+                "consumer_secret": "cs_demo",
+                "shortcode": "600000",
+                "passkey": "passkey_demo",
+                "environment": "production",
+            },
+            category="integrations",
+        )
+
+        request = self.factory.put(
+            "/api/finance/mpesa/callback-url/",
+            {"callback_base_url": "http://ops.school.example.com"},
+            format="json",
+        )
+        force_authenticate(request, user=self.user)
+        with patch.object(MpesaCallbackUrlView, "permission_classes", []):
+            response = MpesaCallbackUrlView.as_view()(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["callback_base_url"], "http://ops.school.example.com")
+        self.assertEqual(response.data["effective_base_url"], "http://ops.school.example.com")
+        self.assertEqual(response.data["party_b"], "600000")
+        self.assertEqual(response.data["environment"], "production")
+        self.assertEqual(response.data["source"], "tenant_settings")
+        self.assertEqual(response.data["source_label"], "Tenant callback override")
+        self.assertFalse(response.data["uses_https"])
+        self.assertIn("not HTTPS", response.data["callback_warning"])
+        self.assertEqual(
+            response.data["full_callback_url"],
+            "http://ops.school.example.com/api/finance/mpesa/callback/",
         )
 
     def test_stripe_webhook_rejects_invalid_signature(self):

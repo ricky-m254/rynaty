@@ -29,6 +29,7 @@ from school.views import (
     LifecycleTemplateListView,
     SchoolProfileView,
     SecurityPolicyView,
+    SessionTimeoutSettingsView,
 )
 
 
@@ -196,6 +197,28 @@ class Session10ControlPlaneTests(TenantTestBase):
         self.assertTrue(policy.ip_whitelist_enabled)
         self.assertEqual(policy.allowed_ip_ranges, ["192.168.1.0/24", "10.0.0.1"])
         self.assertEqual(policy.updated_by, self.user)
+
+    def test_session_timeout_endpoint_returns_timeout_to_authenticated_non_admin(self):
+        teacher = User.objects.create_user(username="session10_teacher", password="pass1234")
+        role = self.ensure_role("TEACHER", "Teacher")
+        UserProfile.objects.create(user=teacher, role=role)
+        InstitutionSecurityPolicy.objects.update_or_create(
+            pk=1,
+            defaults={
+                "session_timeout_minutes": 45,
+                "updated_by": self.user,
+            },
+        )
+
+        request = self.factory.get("/api/settings/session-timeout/")
+        request.tenant = self.tenant
+        force_authenticate(request, user=teacher)
+
+        response = SessionTimeoutSettingsView.as_view()(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["session_timeout_minutes"], 45)
+        self.assertEqual(response.data["warning_seconds"], 120)
 
     def test_school_profile_patch_bridges_legacy_security_config_to_security_policy(self):
         SchoolProfile.objects.create(

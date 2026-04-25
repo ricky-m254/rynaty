@@ -51,6 +51,20 @@ const DEFAULT_MPESA = {
   passkey: "",
   environment: "sandbox",
 };
+const DEFAULT_MPESA_DIAGNOSTICS = {
+  callback_base_url: "",
+  effective_base_url: "",
+  full_callback_url: "",
+  callback_path: "/api/finance/mpesa/callback/",
+  source: "",
+  source_label: "",
+  uses_https: true,
+  callback_warning: "",
+  shortcode: "",
+  party_b: "",
+  environment: "sandbox",
+  enabled: true,
+};
 const DEFAULT_STRIPE = {
   enabled: true,
   publishable_key: "",
@@ -134,10 +148,12 @@ function SettingsFinancePage() {
   const [finance, setFinance] = React.useState(DEFAULT_FINANCE);
   const [lateRule, setLateRule] = React.useState(DEFAULT_LATE_RULE);
   const [mpesa, setMpesa] = React.useState(DEFAULT_MPESA);
+  const [mpesaDiagnostics, setMpesaDiagnostics] = React.useState(DEFAULT_MPESA_DIAGNOSTICS);
   const [stripe, setStripe] = React.useState(DEFAULT_STRIPE);
   const [loading, setLoading] = React.useState(true);
   const [savingFinance, setSavingFinance] = React.useState(false);
   const [savingMpesa, setSavingMpesa] = React.useState(false);
+  const [savingMpesaCallback, setSavingMpesaCallback] = React.useState(false);
   const [savingStripe, setSavingStripe] = React.useState(false);
   const [addingRule, setAddingRule] = React.useState(false);
   const [notice, setNotice] = React.useState(null);
@@ -157,6 +173,11 @@ function SettingsFinancePage() {
   const loadFinanceSettings = React.useCallback(async () => {
     const response = await api.get("/settings/finance/");
     setFinance({ ...DEFAULT_FINANCE, ...response.data });
+  }, []);
+
+  const loadMpesaDiagnostics = React.useCallback(async () => {
+    const response = await api.get("/finance/mpesa/callback-url/");
+    setMpesaDiagnostics({ ...DEFAULT_MPESA_DIAGNOSTICS, ...response.data });
   }, []);
 
   const testMpesaConnection = React.useCallback(async (payload = mpesa, silent = false) => {
@@ -245,11 +266,43 @@ function SettingsFinancePage() {
     }
   }, [testMpesaConnection, testStripeConnection]);
 
+  const saveMpesaCallbackUrl = async () => {
+    setSavingMpesaCallback(true);
+    try {
+      const response = await api.put("/finance/mpesa/callback-url/", {
+        callback_base_url: mpesaDiagnostics.callback_base_url || "",
+      });
+      setMpesaDiagnostics({ ...DEFAULT_MPESA_DIAGNOSTICS, ...response.data });
+      showNotice(response.data?.message || "M-Pesa callback URL saved.");
+    } catch (error) {
+      showNotice(error?.response?.data?.error || "Unable to save the M-Pesa callback URL.", false);
+    } finally {
+      setSavingMpesaCallback(false);
+    }
+  };
+
+  const copyToClipboard = async (value, label) => {
+    if (!value) {
+      showNotice(`No ${label.toLowerCase()} available to copy.`, false);
+      return;
+    }
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value);
+      } else {
+        window.prompt(`Copy ${label}`, value);
+      }
+      showNotice(`${label} copied.`);
+    } catch {
+      showNotice(`Unable to copy ${label.toLowerCase()}.`, false);
+    }
+  };
+
   React.useEffect(() => {
     let active = true;
     (async () => {
       try {
-        await Promise.all([loadFinanceSettings(), loadIntegrations()]);
+        await Promise.all([loadFinanceSettings(), loadIntegrations(), loadMpesaDiagnostics()]);
       } catch {
         if (active) showNotice("Failed to load finance settings.", false);
       } finally {
@@ -260,7 +313,7 @@ function SettingsFinancePage() {
     return () => {
       active = false;
     };
-  }, [loadFinanceSettings, loadIntegrations, showNotice]);
+  }, [loadFinanceSettings, loadIntegrations, loadMpesaDiagnostics, showNotice]);
 
   const saveFinance = async () => {
     setSavingFinance(true);
@@ -333,6 +386,7 @@ function SettingsFinancePage() {
       if (mpesa.enabled !== false) {
         await testMpesaConnection(mpesa, true);
       }
+      await loadMpesaDiagnostics();
     } catch {
       showNotice("Unable to save M-Pesa credentials.", false);
     } finally {
@@ -695,7 +749,7 @@ function SettingsFinancePage() {
             children: [
               jsxRuntime.jsx("p", {
                 className: "text-xs text-white/40",
-                children: "Safaricom Daraja STK push credentials. Test connection only performs the OAuth handshake.",
+                children: "Safaricom Daraja STK push credentials. OAuth connection only verifies the Daraja app keys — live STK also depends on shortcode, passkey, PartyB, and the exact callback URL shown below.",
               }),
               jsxRuntime.jsxs("label", {
                 className: "flex items-center gap-2 text-sm text-slate-200",
@@ -761,6 +815,114 @@ function SettingsFinancePage() {
                         jsxRuntime.jsx("option", { value: "production", children: "Production (live)" }),
                       ],
                     }),
+                  }),
+                ],
+              }),
+              jsxRuntime.jsxs("div", {
+                className: "space-y-3 rounded-xl border border-white/10 bg-white/3 p-4",
+                children: [
+                  jsxRuntime.jsxs("div", {
+                    className: "flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between",
+                    children: [
+                      jsxRuntime.jsxs("div", {
+                        children: [
+                          jsxRuntime.jsx("div", { className: "text-xs font-semibold uppercase tracking-wide text-white/55", children: "STK Callback Diagnostics" }),
+                          jsxRuntime.jsx("p", {
+                            className: "text-xs text-white/40",
+                            children: "This is the exact callback URL and receiving account the backend will send to Daraja for STK push.",
+                          }),
+                        ],
+                      }),
+                      jsxRuntime.jsxs("div", {
+                        className: "flex flex-wrap gap-2",
+                        children: [
+                          mpesaDiagnostics.source_label
+                            ? jsxRuntime.jsx(StatusChip, {
+                                tone: mpesaDiagnostics.source === "request_fallback" ? "warn" : "neutral",
+                                children: mpesaDiagnostics.source_label,
+                              })
+                            : null,
+                          jsxRuntime.jsx(StatusChip, {
+                            tone: mpesaDiagnostics.uses_https ? "good" : "warn",
+                            children: mpesaDiagnostics.uses_https ? "HTTPS callback" : "HTTP callback",
+                          }),
+                        ],
+                      }),
+                    ],
+                  }),
+                  jsxRuntime.jsxs("div", {
+                    className: "grid grid-cols-1 gap-3 lg:grid-cols-2",
+                    children: [
+                      jsxRuntime.jsx(Field, {
+                        label: "Callback Base URL Override",
+                        hint: "Set a stable public base URL for Daraja. Leave blank to fall back to environment or tenant-domain detection.",
+                        children: jsxRuntime.jsx("input", {
+                          className: inputClass,
+                          value: mpesaDiagnostics.callback_base_url,
+                          onChange: (event) =>
+                            setMpesaDiagnostics((current) => ({ ...current, callback_base_url: event.target.value })),
+                          placeholder: "https://smsb.replit.app",
+                        }),
+                      }),
+                      jsxRuntime.jsx(Field, {
+                        label: "Receiving Shortcode / PartyB",
+                        hint: "Read-only receiving account used in the STK payload.",
+                        children: jsxRuntime.jsx("input", {
+                          className: inputClass,
+                          value: mpesaDiagnostics.party_b || mpesa.shortcode || "",
+                          readOnly: true,
+                        }),
+                      }),
+                      jsxRuntime.jsx(Field, {
+                        label: "Exact Callback URL Sent to Daraja",
+                        hint: mpesaDiagnostics.source ? `Resolved from ${mpesaDiagnostics.source_label || mpesaDiagnostics.source}.` : "The backend could not resolve a callback URL yet.",
+                        children: jsxRuntime.jsx("textarea", {
+                          className: `${inputClass} min-h-[92px] resize-none`,
+                          value: mpesaDiagnostics.full_callback_url,
+                          readOnly: true,
+                        }),
+                      }),
+                      jsxRuntime.jsx(Field, {
+                        label: "Saved M-Pesa Environment",
+                        hint: "This reflects the saved tenant configuration the backend will use for STK push.",
+                        children: jsxRuntime.jsx("input", {
+                          className: inputClass,
+                          value: mpesaDiagnostics.environment || mpesa.environment || "sandbox",
+                          readOnly: true,
+                        }),
+                      }),
+                    ],
+                  }),
+                  mpesaDiagnostics.callback_warning
+                    ? jsxRuntime.jsx(InlineNotice, {
+                        notice: { msg: mpesaDiagnostics.callback_warning, ok: false },
+                      })
+                    : null,
+                  jsxRuntime.jsxs("div", {
+                    className: "flex flex-wrap gap-3",
+                    children: [
+                      jsxRuntime.jsxs("button", {
+                        type: "button",
+                        onClick: saveMpesaCallbackUrl,
+                        disabled: savingMpesaCallback,
+                        className:
+                          "flex items-center gap-2 rounded-lg border border-violet-500/20 bg-violet-500/10 px-4 py-2 text-sm text-violet-300 transition hover:bg-violet-500/20 disabled:opacity-50",
+                        children: [
+                          jsxRuntime.jsx(Save, { className: "h-4 w-4" }),
+                          savingMpesaCallback ? "Saving callback..." : "Save Callback URL",
+                        ],
+                      }),
+                      jsxRuntime.jsxs("button", {
+                        type: "button",
+                        onClick: () => copyToClipboard(mpesaDiagnostics.full_callback_url, "Callback URL"),
+                        className:
+                          "flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/70 transition hover:bg-white/10 hover:text-white",
+                        children: [
+                          jsxRuntime.jsx(FileText, { className: "h-4 w-4" }),
+                          "Copy Callback URL",
+                        ],
+                      }),
+                    ],
                   }),
                 ],
               }),

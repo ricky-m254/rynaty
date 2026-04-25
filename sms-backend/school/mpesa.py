@@ -168,21 +168,122 @@ def _friendly_stk_push_response_code(response_code: str, description: str, envir
     )
 
 
+def _mask_value(value, keep_start=3, keep_end=2):
+    """Mask sensitive values before writing them to logs."""
+    text = str(value or "")
+    if not text:
+        return ""
+    if len(text) <= keep_start + keep_end:
+        return "*" * len(text)
+    masked_len = max(len(text) - keep_start - keep_end, 1)
+    return f"{text[:keep_start]}{'*' * masked_len}{text[-keep_end:]}"
+
+
+def _mask_phone(value):
+    return _mask_value(value, keep_start=6, keep_end=2)
+
+
+def _sanitise_daraja_data(value):
+    """Recursively mask secrets in Daraja request/response payloads."""
+    if isinstance(value, dict):
+        redacted = {}
+        for key, item in value.items():
+            lowered = str(key or "").lower()
+            if lowered in {
+                "password",
+                "passkey",
+                "consumer_secret",
+                "authorization",
+                "access_token",
+                "securitycredential",
+            }:
+                redacted[key] = "***redacted***"
+            elif lowered in {"phone", "phonenumber", "partya"}:
+                redacted[key] = _mask_phone(item)
+            elif lowered in {"consumer_key"}:
+                redacted[key] = _mask_value(item, keep_start=4, keep_end=2)
+            else:
+                redacted[key] = _sanitise_daraja_data(item)
+        return redacted
+    if isinstance(value, list):
+        return [_sanitise_daraja_data(item) for item in value]
+    return value
+
+
+def _safe_response_body(resp):
+    try:
+        return _sanitise_daraja_data(resp.json())
+    except Exception:
+        raw = str(getattr(resp, "text", "") or "").strip()
+        return {"raw": raw[:500]} if raw else {}
+
+
 def _friendly_daraja_error(status_code, response_body, environment):
     """
     Convert a Daraja HTTP error response into a plain-English message that a
     school admin can act on.  ``response_body`` is the parsed JSON dict (or
     empty dict if parsing failed).
     """
-    error_code = response_body.get("errorCode", "")
-    error_msg = response_body.get("errorMessage", "")
+    error_code = str(response_body.get("errorCode", "") or "").strip()
+    error_msg = str(
+        response_body.get("errorMessage", "")
+        or response_body.get("ResponseDescription", "")
+        or response_body.get("error_description", "")
+        or ""
+    ).strip()
+    detail_blob = f"{error_code} {error_msg}".lower()
 
-    # --- credential / auth problems ---
-    if status_code in (400, 401) or error_code.startswith("400.002"):
+    # --- clearly invalid callback URL / public URL problems ---
+    if "callback" in detail_blob and (
+        "url" in detail_blob or "https" in detail_blob or "host" in detail_blob or "valid" in detail_blob
+    ):
+        return (
+            "Daraja rejected the callback URL. Confirm the public callback URL is correct, "
+            "HTTPS, and reachable from Safaricom, then test again."
+            + (f" Daraja said: {error_msg}" if error_msg else "")
+        )
         return (
             "Invalid consumer key or secret — double-check your Daraja app "
             "credentials. Make sure you copied them from the correct Daraja "
             "app and haven't included extra spaces."
+        )
+
+    # --- shortcode / PartyB / receiving account problems ---
+    if (
+        "shortcode" in detail_blob
+        or "short code" in detail_blob
+        or "partyb" in detail_blob
+        or "paybill" in detail_blob
+        or "till" in detail_blob
+        or "businessshortcode" in detail_blob
+    ):
+        return (
+            "Daraja rejected the Business Short Code / PartyB receiving account. "
+            "Confirm the shortcode is correct for this tenant and matches the selected environment."
+            + (f" Daraja said: {error_msg}" if error_msg else "")
+        )
+
+    # --- passkey / generated password problems ---
+    if "passkey" in detail_blob or "password" in detail_blob:
+        return (
+            "Daraja rejected the passkey for this shortcode. "
+            "Confirm the Daraja passkey matches the Business Short Code and environment."
+            + (f" Daraja said: {error_msg}" if error_msg else "")
+        )
+
+    # --- credential / auth problems ---
+    if (
+        status_code == 401
+        or "consumer key" in detail_blob
+        or "consumer secret" in detail_blob
+        or "access token" in detail_blob
+        or "oauth" in detail_blob
+        or error_code.startswith("401")
+    ):
+        return (
+            "Daraja rejected the consumer key or secret. Double-check the Daraja app "
+            "credentials, make sure they match the selected environment, and confirm "
+            "you have not included extra spaces."
         )
 
     # --- wrong environment (sandbox key vs production URL or vice-versa) ---
@@ -208,6 +309,14 @@ def _friendly_daraja_error(status_code, response_body, environment):
             "This is on Safaricom's side — try again in a few minutes."
         )
 
+    # --- generic request validation problems ---
+    if status_code == 400 or error_code.startswith("400.002"):
+        return (
+            "Daraja rejected the STK request before it reached the phone. "
+            "Check the selected environment, Business Short Code, PassKey, and callback URL, then test again."
+            + (f" Daraja said: {error_msg}" if error_msg else "")
+        )
+
     # --- fallback: include the Daraja error code if available ---
     if error_code and error_msg:
         return f"Daraja rejected the request (code {error_code}): {error_msg}"
@@ -227,6 +336,13 @@ def _get_access_token(creds):
     url = f"{creds['base_url']}/oauth/v1/generate?grant_type=client_credentials"
     raw = f"{creds['consumer_key']}:{creds['consumer_secret']}"
     b64 = base64.b64encode(raw.encode()).decode()
+    logger.debug(
+        "M-Pesa OAuth token request | env=%s url=%s consumer_key=%s shortcode=%s",
+        creds.get("environment", "sandbox"),
+        url,
+        _mask_value(creds.get("consumer_key"), keep_start=4, keep_end=2),
+        creds.get("shortcode", ""),
+    )
 
     try:
         resp = requests.get(url, headers={"Authorization": f"Basic {b64}"}, timeout=15)
@@ -246,12 +362,26 @@ def _get_access_token(creds):
             "Check your internet connection and try again."
         )
 
+    logger.debug(
+        "M-Pesa OAuth token response | env=%s status=%s body=%s",
+        creds.get("environment", "sandbox"),
+        resp.status_code,
+        _safe_response_body(resp),
+    )
+
     if not resp.ok:
         try:
             body = resp.json()
         except Exception:
             body = {}
-        msg = _friendly_daraja_error(resp.status_code, body, creds.get("environment", "sandbox"))
+        if resp.status_code in (400, 401):
+            msg = (
+                "Daraja rejected the consumer key or secret. Double-check the Daraja app "
+                "credentials, make sure they match the selected environment, and confirm "
+                "you have not included extra spaces."
+            )
+        else:
+            msg = _friendly_daraja_error(resp.status_code, body, creds.get("environment", "sandbox"))
         raise MpesaError(msg)
 
     data = resp.json()
@@ -333,6 +463,15 @@ def initiate_stk_push(phone: str, amount: Decimal, account_ref: str, callback_ur
     }
 
     url = f"{creds['base_url']}/mpesa/stkpush/v1/processrequest"
+    logger.debug(
+        "M-Pesa STK push request | env=%s url=%s shortcode=%s party_b=%s callback_url=%s payload=%s",
+        creds.get("environment", "sandbox"),
+        url,
+        creds["shortcode"],
+        payload["PartyB"],
+        callback_url,
+        _sanitise_daraja_data(payload),
+    )
     try:
         resp = requests.post(
             url,
@@ -358,6 +497,13 @@ def initiate_stk_push(phone: str, amount: Decimal, account_ref: str, callback_ur
             "An unexpected network error occurred while sending the payment request. "
             "Check your internet connection and try again."
         ) from exc
+
+    logger.debug(
+        "M-Pesa STK push response | env=%s status=%s body=%s",
+        creds.get("environment", "sandbox"),
+        resp.status_code,
+        _safe_response_body(resp),
+    )
 
     if not resp.ok:
         try:
@@ -418,6 +564,14 @@ def query_stk_status(checkout_request_id: str) -> dict:
     }
 
     url = f"{creds['base_url']}/mpesa/stkpushquery/v1/query"
+    logger.debug(
+        "M-Pesa STK query request | env=%s url=%s shortcode=%s checkout_request_id=%s payload=%s",
+        creds.get("environment", "sandbox"),
+        url,
+        creds["shortcode"],
+        _mask_value(checkout_request_id, keep_start=8, keep_end=4),
+        _sanitise_daraja_data(payload),
+    )
     try:
         resp = requests.post(
             url,
@@ -438,6 +592,14 @@ def query_stk_status(checkout_request_id: str) -> dict:
         )
     except requests.exceptions.RequestException as exc:
         raise MpesaError(f"STK query request failed: {exc}") from exc
+
+    logger.debug(
+        "M-Pesa STK query response | env=%s status=%s checkout_request_id=%s body=%s",
+        creds.get("environment", "sandbox"),
+        resp.status_code,
+        _mask_value(checkout_request_id, keep_start=8, keep_end=4),
+        _safe_response_body(resp),
+    )
 
     if not resp.ok:
         try:

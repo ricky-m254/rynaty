@@ -23,6 +23,7 @@ from school.mpesa import (
     PRODUCTION_BASE,
     _friendly_daraja_error,
     _get_access_token,
+    _sanitise_daraja_data,
 )
 
 
@@ -69,15 +70,34 @@ class TestFriendlyDarajaError(unittest.TestCase):
     """Direct unit tests for _friendly_daraja_error — no Django required."""
 
     # --- 400 Bad Request ---
-    def test_400_returns_credential_message(self):
+    def test_400_returns_generic_request_validation_message(self):
         msg = _friendly_daraja_error(400, {}, "sandbox")
-        self.assertIn("consumer key or secret", msg.lower())
-        self.assertIn("double-check", msg.lower())
+        self.assertIn("before it reached the phone", msg.lower())
+        self.assertIn("callback url", msg.lower())
 
-    def test_400_with_error_body_still_credential_message(self):
+    def test_400_with_error_body_returns_generic_request_validation_message(self):
         body = {"errorCode": "400.002.02", "errorMessage": "Invalid credentials"}
         msg = _friendly_daraja_error(400, body, "sandbox")
-        self.assertIn("consumer key or secret", msg.lower())
+        self.assertIn("before it reached the phone", msg.lower())
+        self.assertIn("invalid credentials", msg.lower())
+
+    def test_400_with_passkey_hint_returns_passkey_message(self):
+        body = {"errorCode": "400.001.01", "errorMessage": "Invalid PassKey"}
+        msg = _friendly_daraja_error(400, body, "sandbox")
+        self.assertIn("passkey", msg.lower())
+        self.assertIn("shortcode", msg.lower())
+
+    def test_400_with_shortcode_hint_returns_shortcode_message(self):
+        body = {"errorCode": "400.001.02", "errorMessage": "Invalid BusinessShortCode"}
+        msg = _friendly_daraja_error(400, body, "sandbox")
+        self.assertIn("partyb", msg.lower())
+        self.assertIn("shortcode", msg.lower())
+
+    def test_400_with_callback_hint_returns_callback_message(self):
+        body = {"errorCode": "400.001.03", "errorMessage": "Invalid CallBackURL"}
+        msg = _friendly_daraja_error(400, body, "sandbox")
+        self.assertIn("callback url", msg.lower())
+        self.assertIn("https", msg.lower())
 
     # --- 401 Unauthorized ---
     def test_401_returns_credential_message(self):
@@ -89,10 +109,10 @@ class TestFriendlyDarajaError(unittest.TestCase):
         self.assertIn("extra spaces", msg.lower())
 
     # --- 400.002 error code on a non-400/401 status (edge case) ---
-    def test_400002_error_code_triggers_credential_message(self):
+    def test_400002_error_code_triggers_generic_request_message(self):
         body = {"errorCode": "400.002.03", "errorMessage": "Bad request"}
         msg = _friendly_daraja_error(200, body, "sandbox")
-        self.assertIn("consumer key or secret", msg.lower())
+        self.assertIn("before it reached the phone", msg.lower())
 
     # --- 404 Not Found ---
     def test_404_sandbox_suggests_production_switch(self):
@@ -147,6 +167,26 @@ class TestFriendlyDarajaError(unittest.TestCase):
         body = {"errorCode": "", "errorMessage": ""}
         msg = _friendly_daraja_error(418, body, "sandbox")
         self.assertIn("418", msg)
+
+
+class TestDarajaPayloadSanitisation(unittest.TestCase):
+    def test_sanitise_masks_password_token_and_phone_fields(self):
+        payload = {
+            "Password": "abc123",
+            "PhoneNumber": "254700123456",
+            "PartyA": "254700123456",
+            "consumer_key": "consumer-key-123",
+            "access_token": "token-xyz",
+            "nested": {"passkey": "passkey-demo"},
+        }
+        result = _sanitise_daraja_data(payload)
+
+        self.assertEqual(result["Password"], "***redacted***")
+        self.assertEqual(result["access_token"], "***redacted***")
+        self.assertEqual(result["nested"]["passkey"], "***redacted***")
+        self.assertNotEqual(result["PhoneNumber"], payload["PhoneNumber"])
+        self.assertNotEqual(result["PartyA"], payload["PartyA"])
+        self.assertIn("*", result["consumer_key"])
 
 
 # ===========================================================================
