@@ -9206,11 +9206,11 @@ class FinanceSettingsView(APIView):
 
     def patch(self, request):
         profile = self._get_profile()
-        for field in self._FINANCE_FIELDS:
-            if field in request.data:
-                setattr(profile, field, request.data[field])
-        profile.save(update_fields=self._FINANCE_FIELDS + ['updated_at'])
-        data = {f: getattr(profile, f) for f in self._FINANCE_FIELDS}
+        payload = {field: request.data[field] for field in self._FINANCE_FIELDS if field in request.data}
+        serializer = SchoolProfileSerializer(profile, data=payload, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        data = {f: serializer.data.get(f) for f in self._FINANCE_FIELDS}
         return Response({'detail': 'Finance settings updated.', **data})
 
 

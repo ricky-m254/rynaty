@@ -156,6 +156,19 @@ class SchoolProfileSerializer(serializers.ModelSerializer):
             'whatsapp_api_key': {'write_only': True},
         }
 
+    def validate_accepted_payment_methods(self, value):
+        if value in (None, ""):
+            return []
+        if not isinstance(value, list):
+            raise serializers.ValidationError("Accepted payment methods must be a list.")
+        normalized = []
+        for item in value:
+            label = str(item or "").strip()
+            if not label:
+                raise serializers.ValidationError("Payment method labels cannot be blank.")
+            normalized.append(label)
+        return normalized
+
     def get_logo_url(self, obj):
         request = self.context.get('request')
         if obj.logo and request:

@@ -1,9 +1,25 @@
 from django.db import models, transaction
-from django.core.validators import MinValueValidator
+from django.core.validators import MaxValueValidator, MinValueValidator, RegexValidator
 from django.utils import timezone
 from decimal import Decimal
 
 from school.identity import generate_ulid
+
+
+SCHOOL_PREFIX_VALIDATOR = RegexValidator(
+    regex=r"^[A-Z0-9-]{1,10}$",
+    message="Prefix must be uppercase letters, numbers, or hyphens only (max 10 chars).",
+)
+ADMISSION_PREFIX_VALIDATOR = RegexValidator(
+    regex=r"^[A-Z0-9-]{1,20}$",
+    message="Admission prefix must be uppercase letters, numbers, or hyphens only (max 20 chars).",
+)
+SMS_SENDER_ID_VALIDATOR = RegexValidator(
+    regex=r"^[A-Za-z0-9]{1,20}$",
+    message="SMS sender ID must be alphanumeric, max 20 chars.",
+)
+NON_NEGATIVE_DECIMAL_VALIDATOR = MinValueValidator(Decimal("0"))
+PERCENTAGE_MAX_VALIDATOR = MaxValueValidator(Decimal("100"))
 
 # ==========================================
 # 1. CORE ADMINISTRATION
@@ -31,15 +47,32 @@ class SchoolProfile(models.Model):
 
     # --- Finance Settings ---
     currency = models.CharField(max_length=10, default='KES', help_text="e.g. KES, USD")
-    tax_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
-    receipt_prefix = models.CharField(max_length=10, default='RCT-')
-    invoice_prefix = models.CharField(max_length=10, default='INV-')
+    tax_percentage = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=0.00,
+        validators=[NON_NEGATIVE_DECIMAL_VALIDATOR, PERCENTAGE_MAX_VALIDATOR],
+    )
+    receipt_prefix = models.CharField(
+        max_length=10,
+        default='RCT-',
+        validators=[SCHOOL_PREFIX_VALIDATOR],
+    )
+    invoice_prefix = models.CharField(
+        max_length=10,
+        default='INV-',
+        validators=[SCHOOL_PREFIX_VALIDATOR],
+    )
     admission_number_mode = models.CharField(
         max_length=20,
         choices=ADMISSION_NUMBER_MODE_CHOICES,
         default="AUTO",
     )
-    admission_number_prefix = models.CharField(max_length=20, default="ADM-")
+    admission_number_prefix = models.CharField(
+        max_length=20,
+        default="ADM-",
+        validators=[ADMISSION_PREFIX_VALIDATOR],
+    )
     admission_number_padding = models.PositiveIntegerField(default=4)
 
     # --- Locale Settings ---
@@ -50,8 +83,19 @@ class SchoolProfile(models.Model):
     # --- Finance Settings ---
     late_fee_grace_days = models.PositiveIntegerField(default=0, help_text='Days after due date before late fee applies')
     late_fee_type = models.CharField(max_length=10, choices=[('FLAT', 'Flat'), ('PERCENT', 'Percent')], default='FLAT')
-    late_fee_value = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    late_fee_max = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    late_fee_value = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        validators=[NON_NEGATIVE_DECIMAL_VALIDATOR],
+    )
+    late_fee_max = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[NON_NEGATIVE_DECIMAL_VALIDATOR],
+    )
     accepted_payment_methods = models.JSONField(default=list, blank=True, help_text='e.g. ["Cash","MPesa","Bank Transfer"]')
 
     # --- Communication Settings ---
@@ -63,7 +107,7 @@ class SchoolProfile(models.Model):
     sms_provider = models.CharField(max_length=50, blank=True, help_text="e.g. africastalking, twilio")
     sms_api_key = models.CharField(max_length=255, blank=True)
     sms_username = models.CharField(max_length=100, blank=True)
-    sms_sender_id = models.CharField(max_length=20, blank=True)
+    sms_sender_id = models.CharField(max_length=20, blank=True, validators=[SMS_SENDER_ID_VALIDATOR])
     whatsapp_api_key = models.CharField(max_length=255, blank=True)
     whatsapp_phone_id = models.CharField(max_length=100, blank=True)
 
