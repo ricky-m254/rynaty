@@ -10,6 +10,7 @@ from communication.models import SmsMessage
 from communication.services import send_sms_placeholder
 
 from .events import payment_recorded
+from .finance_ops import notify_finance_payment_event
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +82,43 @@ def _build_payment_sms_message(payment):
     )
 
 
+def _payment_notification_event_key(payment):
+    method = str(getattr(payment, "payment_method", "") or "").strip().lower()
+    normalized = method.replace("-", "").replace(" ", "")
+    if normalized == "mpesa":
+        return "mpesa_received"
+    if "stripe" in normalized:
+        return "stripe_received"
+    return "manual_payment_recorded"
+
+
+def _build_finance_payment_notification(payment):
+    event_key = _payment_notification_event_key(payment)
+    student = getattr(payment, "student", None)
+    student_name = (
+        f"{getattr(student, 'first_name', '').strip()} {getattr(student, 'last_name', '').strip()}".strip()
+        or getattr(student, "admission_number", "")
+        or "Unknown Student"
+    )
+    amount_value = Decimal(str(getattr(payment, "amount", Decimal("0.00")) or Decimal("0.00")))
+    receipt_number = (getattr(payment, "receipt_number", "") or "").strip() or f"RCT-{getattr(payment, 'pk', 0):06d}"
+    reference_number = (getattr(payment, "reference_number", "") or "").strip() or receipt_number
+
+    if event_key == "mpesa_received":
+        title = "M-Pesa Payment Received"
+    elif event_key == "stripe_received":
+        title = "Stripe Payment Received"
+    else:
+        title = "Payment Recorded"
+
+    message = (
+        f"KES {amount_value:,.2f} recorded for {student_name}. "
+        f"Method: {getattr(payment, 'payment_method', 'Unknown')}. "
+        f"Receipt: {receipt_number}. Ref: {reference_number}."
+    )
+    return event_key, title, message
+
+
 
 @receiver(post_save, sender="school.AttendanceRecord")
 def notify_parent_on_absence(sender, instance, created, **kwargs):
@@ -149,7 +187,7 @@ def notify_parent_on_absence(sender, instance, created, **kwargs):
 
 @receiver(payment_recorded)
 def notify_on_payment_recorded(sender, payment_id, skip_notifications=False, **kwargs):
-    """Create the financial SMS audit trail after a payment is recorded."""
+    """Create the payment SMS audit trail and finance in-app alerts after a payment is recorded."""
     try:
         if skip_notifications:
             return
@@ -160,6 +198,16 @@ def notify_on_payment_recorded(sender, payment_id, skip_notifications=False, **k
             .prefetch_related("student__guardians")
             .get(pk=payment_id)
         )
+        event_key, title, finance_message = _build_finance_payment_notification(payment)
+        finance_alerts = notify_finance_payment_event(event_key, title=title, message=finance_message)
+        if finance_alerts:
+            logger.info(
+                "Sent %d finance in-app payment notifications for payment %s (%s).",
+                finance_alerts,
+                payment_id,
+                event_key,
+            )
+
         recipient_phone = _payment_sms_recipient(payment)
         if not recipient_phone:
             logger.info("Skipping payment SMS for payment %s because no recipient phone is on file.", payment_id)

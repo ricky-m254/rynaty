@@ -8,7 +8,7 @@ from django.utils import timezone
 from django_tenants.utils import schema_context
 
 from clients.models import Domain, Tenant
-from school.models import AcademicYear, Invoice, Payment, PaymentGatewayTransaction, Student, Term
+from school.models import AcademicYear, Invoice, Payment, PaymentGatewayTransaction, Student, TenantSettings, Term
 
 
 class TenantTestBase(TestCase):
@@ -63,7 +63,7 @@ class MpesaReconcilePendingCommandTests(TenantTestBase):
             is_active=True,
         )
 
-    def _pending_tx(self, external_id, amount="500.00"):
+    def _pending_tx(self, external_id, amount="500.00", age_minutes=30):
         tx = PaymentGatewayTransaction.objects.create(
             provider="mpesa",
             external_id=external_id,
@@ -76,7 +76,7 @@ class MpesaReconcilePendingCommandTests(TenantTestBase):
             is_reconciled=False,
         )
         PaymentGatewayTransaction.objects.filter(pk=tx.pk).update(
-            created_at=timezone.now() - timedelta(minutes=30)
+            created_at=timezone.now() - timedelta(minutes=age_minutes)
         )
         tx.refresh_from_db()
         return tx
@@ -152,3 +152,28 @@ class MpesaReconcilePendingCommandTests(TenantTestBase):
         self.assertEqual(tx.status, "PENDING")
         self.assertFalse(tx.is_reconciled)
         self.assertEqual(Payment.objects.count(), 0)
+
+    @patch("school.mpesa.query_stk_status")
+    def test_command_uses_saved_reconciliation_interval_when_minutes_omitted(self, mock_query_stk_status):
+        TenantSettings.objects.create(
+            key="finance.operations",
+            value={"mpesa_reconciliation_minutes": 5},
+            category="finance",
+        )
+        tx = self._pending_tx("ws_CO_RECON_SETTINGS", age_minutes=8)
+        mock_query_stk_status.return_value = {
+            "success": True,
+            "result_code": 0,
+            "result_desc": "The service request is processed successfully.",
+            "friendly_message": "Payment confirmed successfully.",
+            "mpesa_receipt": "MPESA-RECON-SETTINGS-001",
+            "amount": Decimal("500.00"),
+            "checkout_request_id": tx.external_id,
+        }
+
+        call_command("reconcile_mpesa_pending")
+
+        tx.refresh_from_db()
+        self.assertEqual(tx.status, "SUCCEEDED")
+        self.assertTrue(tx.is_reconciled)
+        self.assertEqual(Payment.objects.filter(reference_number="MPESA-RECON-SETTINGS-001").count(), 1)

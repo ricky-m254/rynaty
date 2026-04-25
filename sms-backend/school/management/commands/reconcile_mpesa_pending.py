@@ -47,10 +47,11 @@ class Command(BaseCommand):
         parser.add_argument(
             "--minutes",
             type=int,
-            default=15,
+            default=None,
             help=(
                 "Only reconcile PENDING transactions older than this many "
-                "minutes (default: 15). Avoids racing a callback that is "
+                "minutes (defaults to finance.operations.mpesa_reconciliation_minutes "
+                "or 15). Avoids racing a callback that is "
                 "still in flight."
             ),
         )
@@ -115,12 +116,14 @@ class Command(BaseCommand):
             self._reconcile_schema("<current>", options)
 
     def _reconcile_schema(self, schema_label, options):
+        from school.finance_ops import get_finance_operations_settings, notify_finance_mpesa_failure
         from school.models import PaymentGatewayTransaction, Payment, Invoice
         from school.services import FinanceService
         from school.mpesa import query_stk_status, MpesaError
 
         dry_run = options["dry_run"]
-        minutes = options["minutes"]
+        configured_minutes = get_finance_operations_settings()["mpesa_reconciliation_minutes"]
+        minutes = options["minutes"] if options["minutes"] is not None else configured_minutes
         threshold = timezone.now() - timedelta(minutes=minutes)
 
         pending_qs = PaymentGatewayTransaction.objects.filter(
@@ -259,6 +262,12 @@ class Command(BaseCommand):
                         "reconciled_at": timezone.now().isoformat(),
                     })
                     tx.save(update_fields=["status", "is_reconciled", "payload", "updated_at"])
+                    notify_finance_mpesa_failure(
+                        tx,
+                        result_code=result_code,
+                        result_desc=result.get("friendly_message") or result_desc,
+                        checkout_id=checkout_id,
+                    )
                     reconciled_fail += 1
                 except Exception as save_exc:
                     logger.error(

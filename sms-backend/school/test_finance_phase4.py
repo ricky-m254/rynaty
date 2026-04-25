@@ -16,6 +16,7 @@ import requests
 
 from clients.models import Tenant, Domain
 from clients.models import RevenueLog
+from communication.models import Notification
 from school.models import (
     Role,
     UserProfile,
@@ -110,6 +111,18 @@ class FinancePhase4WebhookAndReconciliationTests(TenantTestBase):
                             {"Name": "PhoneNumber", "Value": 254700123456},
                         ]
                     },
+                }
+            }
+        }
+
+    def _mpesa_failure_payload(self, checkout_id, result_code=1032, result_desc="Request cancelled by user"):
+        return {
+            "Body": {
+                "stkCallback": {
+                    "MerchantRequestID": "29115-34620561-1",
+                    "CheckoutRequestID": checkout_id,
+                    "ResultCode": result_code,
+                    "ResultDesc": result_desc,
                 }
             }
         }
@@ -451,6 +464,87 @@ class FinancePhase4WebhookAndReconciliationTests(TenantTestBase):
                 f"/api/finance/payments/{payment.id}/receipt/pdf/"
             )
         )
+
+    def test_mpesa_callback_notifies_finance_users_when_payment_lands(self):
+        TenantSettings.objects.create(
+            key="finance.operations",
+            value={"payment_notification_events": {"mpesa_received": True}},
+            category="finance",
+        )
+        PaymentGatewayTransaction.objects.create(
+            provider="mpesa",
+            external_id="ws_CO_NOTIFY_SUCCESS",
+            student=self.student,
+            amount="500.00",
+            status="PENDING",
+            payload={},
+        )
+
+        response = self._post_mpesa_callback(
+            self._mpesa_success_payload(
+                checkout_id="ws_CO_NOTIFY_SUCCESS",
+                receipt="MPESA-NOTIFY-001",
+            )
+        )
+
+        self.assertEqual(response.status_code, 200)
+        notification = Notification.objects.get(recipient=self.user, notification_type="Financial")
+        self.assertEqual(notification.title, "M-Pesa Payment Received")
+        self.assertIn("MPESA-NOTIFY-001", notification.message)
+        self.assertIn("Amina Otieno", notification.message)
+
+    def test_mpesa_callback_suppresses_finance_notice_when_success_event_disabled(self):
+        TenantSettings.objects.create(
+            key="finance.operations",
+            value={"payment_notification_events": {"mpesa_received": False}},
+            category="finance",
+        )
+        PaymentGatewayTransaction.objects.create(
+            provider="mpesa",
+            external_id="ws_CO_NOTIFY_DISABLED",
+            student=self.student,
+            amount="500.00",
+            status="PENDING",
+            payload={},
+        )
+
+        response = self._post_mpesa_callback(
+            self._mpesa_success_payload(
+                checkout_id="ws_CO_NOTIFY_DISABLED",
+                receipt="MPESA-NOTIFY-OFF-001",
+            )
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Notification.objects.filter(recipient=self.user, notification_type="Financial").exists())
+
+    def test_mpesa_callback_notifies_finance_users_when_failure_event_enabled(self):
+        TenantSettings.objects.create(
+            key="finance.operations",
+            value={"payment_notification_events": {"mpesa_failed": True}},
+            category="finance",
+        )
+        PaymentGatewayTransaction.objects.create(
+            provider="mpesa",
+            external_id="ws_CO_NOTIFY_FAIL",
+            student=self.student,
+            amount="500.00",
+            status="PENDING",
+            payload={},
+        )
+
+        response = self._post_mpesa_callback(
+            self._mpesa_failure_payload(
+                checkout_id="ws_CO_NOTIFY_FAIL",
+                result_desc="The customer cancelled the payment request.",
+            )
+        )
+
+        self.assertEqual(response.status_code, 200)
+        notification = Notification.objects.get(recipient=self.user, notification_type="Financial")
+        self.assertEqual(notification.title, "M-Pesa Payment Failed")
+        self.assertIn("ws_CO_NOTIFY_FAIL", notification.message)
+        self.assertIn("Amina Otieno", notification.message)
 
     @patch("school.mpesa.query_stk_status")
     def test_mpesa_status_queries_daraja_for_pending_transaction(self, mock_query_stk_status):

@@ -10207,50 +10207,6 @@ class MpesaStkCallbackView(APIView):
                             except Exception as _audit_err:
                                 log.warning("Audit log error (non-fatal): %s", _audit_err)
 
-                            # ── In-app notification: alert finance staff ──────────
-                            try:
-                                from communication.models import Notification as _Notif
-                                from school.models import UserModuleAssignment as _UMA
-                                _student_name = (
-                                    f"{tx.student.first_name} {tx.student.last_name}"
-                                    if tx.student else "Unknown Student"
-                                )
-                                _amount_str = str(parsed.get("amount") or payment.amount)
-                                _receipt = parsed.get("mpesa_receipt") or ""
-                                _ts = parsed.get("transaction_date") or ""
-                                _notif_title = "M-Pesa Payment Received"
-                                _notif_message = (
-                                    f"KES {_amount_str} received from {_student_name}. "
-                                    f"Receipt: {_receipt}. Time: {_ts}."
-                                )
-                                _finance_user_ids = list(
-                                    _UMA.objects.filter(
-                                        module__key="FINANCE",
-                                        is_active=True,
-                                        user__is_active=True,
-                                    ).values_list("user_id", flat=True)
-                                )
-                                if _finance_user_ids:
-                                    _Notif.objects.bulk_create(
-                                        [
-                                            _Notif(
-                                                recipient_id=_uid,
-                                                notification_type="Financial",
-                                                title=_notif_title,
-                                                message=_notif_message,
-                                                priority="Important",
-                                                action_url="/dashboard/finance/payments/",
-                                                delivery_status="Sent",
-                                            )
-                                            for _uid in _finance_user_ids
-                                        ],
-                                    )
-                                    log.info(
-                                        "M-Pesa payment notification sent to %d finance staff (receipt %s)",
-                                        len(_finance_user_ids), _receipt,
-                                    )
-                            except Exception as _notif_err:
-                                log.warning("M-Pesa finance notification error (non-fatal): %s", _notif_err)
                 else:
                     tx.status = "FAILED"
                     tx.payload.update({
@@ -10381,50 +10337,6 @@ class MpesaStkCallbackView(APIView):
                     )
                 except Exception as audit_err:
                     log.warning("Audit log error (non-fatal): %s", audit_err)
-
-                try:
-                    from communication.models import Notification as _Notif
-                    from school.models import UserModuleAssignment as _UMA
-
-                    student_name = (
-                        f"{tx.student.first_name} {tx.student.last_name}"
-                        if tx.student else "Unknown Student"
-                    )
-                    amount_str = str(parsed.get("amount") or payment.amount)
-                    receipt = parsed.get("mpesa_receipt") or ""
-                    transaction_time = parsed.get("transaction_date") or ""
-                    finance_user_ids = list(
-                        _UMA.objects.filter(
-                            module__key="FINANCE",
-                            is_active=True,
-                            user__is_active=True,
-                        ).values_list("user_id", flat=True)
-                    )
-                    if finance_user_ids:
-                        _Notif.objects.bulk_create(
-                            [
-                                _Notif(
-                                    recipient_id=user_id,
-                                    notification_type="Financial",
-                                    title="M-Pesa Payment Received",
-                                    message=(
-                                        f"KES {amount_str} received from {student_name}. "
-                                        f"Receipt: {receipt}. Time: {transaction_time}."
-                                    ),
-                                    priority="Important",
-                                    action_url="/dashboard/finance/payments/",
-                                    delivery_status="Sent",
-                                )
-                                for user_id in finance_user_ids
-                            ],
-                        )
-                        log.info(
-                            "M-Pesa payment notification sent to %d finance staff (receipt %s)",
-                            len(finance_user_ids),
-                            receipt,
-                        )
-                except Exception as notif_err:
-                    log.warning("M-Pesa finance notification error (non-fatal): %s", notif_err)
 
             if not result["processed"]:
                 _log_mpesa_callback_retry(log, result["error"])

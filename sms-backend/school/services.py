@@ -681,6 +681,17 @@ class FinanceService:
         tx.is_reconciled = True
         tx.payload = tx_payload
         tx.save(update_fields=["status", "is_reconciled", "payload", "updated_at"])
+        try:
+            from .finance_ops import notify_finance_mpesa_failure
+
+            notify_finance_mpesa_failure(
+                tx,
+                result_code=result.get("result_code"),
+                result_desc=result.get("friendly_message") or result.get("result_desc") or "",
+                checkout_id=tx.external_id,
+            )
+        except Exception:
+            pass
         return {
             "transaction": tx,
             "queried": True,
@@ -797,6 +808,17 @@ class FinanceService:
         tx.payload = {**dict(tx.payload or {}), **payload_updates}
         tx.is_reconciled = False
         tx.save(update_fields=["status", "payload", "is_reconciled", "updated_at"])
+        try:
+            from .finance_ops import notify_finance_mpesa_failure
+
+            notify_finance_mpesa_failure(
+                tx,
+                result_code=parsed.get("result_code"),
+                result_desc=parsed.get("friendly_message") or parsed.get("result_desc") or "",
+                checkout_id=checkout_id,
+            )
+        except Exception:
+            pass
         event.processed = True
         event.processed_at = timezone.now()
         event.error = ""

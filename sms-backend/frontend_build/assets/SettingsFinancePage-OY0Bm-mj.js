@@ -71,6 +71,33 @@ const DEFAULT_STRIPE = {
   secret_key: "",
   webhook_secret: "",
 };
+const DEFAULT_FINANCE_OPS = {
+  mpesa_reconciliation_minutes: 15,
+  payment_notification_events: {
+    mpesa_received: true,
+    mpesa_failed: false,
+    stripe_received: false,
+    manual_payment_recorded: false,
+  },
+};
+const FINANCE_NOTIFICATION_LABELS = {
+  mpesa_received: {
+    title: "M-Pesa payment received",
+    detail: "Alert finance users when a settled M-Pesa payment creates a real payment record.",
+  },
+  mpesa_failed: {
+    title: "M-Pesa payment failed",
+    detail: "Alert finance users when Daraja confirms a failed STK push or reconciliation failure.",
+  },
+  stripe_received: {
+    title: "Stripe payment received",
+    detail: "Alert finance users when Stripe checkout settles into a real payment.",
+  },
+  manual_payment_recorded: {
+    title: "Manual payment recorded",
+    detail: "Alert finance users when a cashier or bursar records a manual payment entry.",
+  },
+};
 
 function Section({ title, icon, accent = "text-emerald-400", status, children }) {
   return jsxRuntime.jsxs("div", {
@@ -155,6 +182,7 @@ function SettingsFinancePage() {
   const [savingMpesa, setSavingMpesa] = React.useState(false);
   const [savingMpesaCallback, setSavingMpesaCallback] = React.useState(false);
   const [savingStripe, setSavingStripe] = React.useState(false);
+  const [savingFinanceOps, setSavingFinanceOps] = React.useState(false);
   const [addingRule, setAddingRule] = React.useState(false);
   const [notice, setNotice] = React.useState(null);
   const [mpesaReachability, setMpesaReachability] = React.useState(null);
@@ -165,6 +193,7 @@ function SettingsFinancePage() {
   const [hasStripeConfig, setHasStripeConfig] = React.useState(false);
   const [mpesaProductionWarning, setMpesaProductionWarning] = React.useState(null);
   const [mpesaProductionConfirmed, setMpesaProductionConfirmed] = React.useState(false);
+  const [financeOps, setFinanceOps] = React.useState(DEFAULT_FINANCE_OPS);
 
   const showNotice = React.useCallback((msg, ok = true) => {
     setNotice({ msg, ok });
@@ -236,9 +265,19 @@ function SettingsFinancePage() {
 
     const mpesaConfig = { ...DEFAULT_MPESA, ...resolveIntegration(settings, grouped, "integrations.mpesa") };
     const stripeConfig = { ...DEFAULT_STRIPE, ...resolveIntegration(settings, grouped, "integrations.stripe") };
+    const opsConfigRaw = resolveIntegration(settings, grouped, "finance.operations");
+    const opsConfig = {
+      ...DEFAULT_FINANCE_OPS,
+      ...opsConfigRaw,
+      payment_notification_events: {
+        ...DEFAULT_FINANCE_OPS.payment_notification_events,
+        ...(opsConfigRaw?.payment_notification_events || {}),
+      },
+    };
 
     setMpesa(mpesaConfig);
     setStripe(stripeConfig);
+    setFinanceOps(opsConfig);
     setMpesaProductionWarning(null);
     setMpesaProductionConfirmed(false);
 
@@ -428,6 +467,25 @@ function SettingsFinancePage() {
       showNotice("Unable to save Stripe credentials.", false);
     } finally {
       setSavingStripe(false);
+    }
+  };
+
+  const saveFinanceOps = async () => {
+    setSavingFinanceOps(true);
+    try {
+      await api.post("/settings/", {
+        key: "finance.operations",
+        value: {
+          ...financeOps,
+          mpesa_reconciliation_minutes: Math.max(1, Number(financeOps.mpesa_reconciliation_minutes) || 15),
+        },
+        category: "finance",
+      });
+      showNotice("Finance operations settings saved.");
+    } catch {
+      showNotice("Unable to save finance operations settings.", false);
+    } finally {
+      setSavingFinanceOps(false);
     }
   };
 
@@ -1170,6 +1228,78 @@ function SettingsFinancePage() {
                       savingStripe ? "Saving..." : "Save Credentials",
                     ],
                   }),
+                ],
+              }),
+            ],
+          }),
+          jsxRuntime.jsxs(Section, {
+            title: "Finance Ops Automation",
+            icon: RefreshCw,
+            accent: "text-cyan-400",
+            children: [
+              jsxRuntime.jsx("p", {
+                className: "text-xs text-white/40",
+                children: "Control the background M-Pesa reconciliation interval and choose which payment events should create in-app alerts for finance users.",
+              }),
+              jsxRuntime.jsx(Field, {
+                label: "M-Pesa reconciliation interval (minutes)",
+                hint: "Used when the reconcile_mpesa_pending command runs without an explicit --minutes override.",
+                children: jsxRuntime.jsx("input", {
+                  className: inputClass,
+                  type: "number",
+                  min: "1",
+                  step: "1",
+                  value: financeOps.mpesa_reconciliation_minutes,
+                  onChange: (event) =>
+                    setFinanceOps((current) => ({
+                      ...current,
+                      mpesa_reconciliation_minutes: parseInt(event.target.value, 10) || 1,
+                    })),
+                }),
+              }),
+              jsxRuntime.jsx("div", {
+                className: "space-y-3",
+                children: Object.entries(FINANCE_NOTIFICATION_LABELS).map(([eventKey, meta]) =>
+                  jsxRuntime.jsxs(
+                    "label",
+                    {
+                      className: "flex items-start gap-3 rounded-lg border border-white/10 bg-white/3 px-4 py-3",
+                      children: [
+                        jsxRuntime.jsx("input", {
+                          type: "checkbox",
+                          className: "mt-1",
+                          checked: !!financeOps.payment_notification_events[eventKey],
+                          onChange: (event) =>
+                            setFinanceOps((current) => ({
+                              ...current,
+                              payment_notification_events: {
+                                ...current.payment_notification_events,
+                                [eventKey]: event.target.checked,
+                              },
+                            })),
+                        }),
+                        jsxRuntime.jsxs("div", {
+                          className: "space-y-1",
+                          children: [
+                            jsxRuntime.jsx("div", { className: "text-sm font-medium text-white/80", children: meta.title }),
+                            jsxRuntime.jsx("div", { className: "text-xs leading-5 text-white/40", children: meta.detail }),
+                          ],
+                        }),
+                      ],
+                    },
+                    eventKey,
+                  ),
+                ),
+              }),
+              jsxRuntime.jsxs("button", {
+                type: "button",
+                onClick: saveFinanceOps,
+                disabled: savingFinanceOps,
+                className:
+                  "flex items-center gap-2 rounded-lg border border-cyan-500/20 bg-cyan-500/10 px-4 py-2 text-sm text-cyan-300 transition hover:bg-cyan-500/20 disabled:opacity-50",
+                children: [
+                  jsxRuntime.jsx(Save, { className: "h-4 w-4" }),
+                  savingFinanceOps ? "Saving ops settings..." : "Save Ops Automation",
                 ],
               }),
             ],

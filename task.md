@@ -259,26 +259,29 @@ Reason:
 ### Task #25
 Add the health-check banner to the platform admin login page.
 
-Status: `Deferred`
+Status: `Completed`
 
 Reason:
-- Valid platform hardening task, but not ahead of payment failure and session security fixes.
+- Added an in-flow platform DB-health banner to the platform login surface.
+- The banner reads the live `/api/health/` probe, shows last-check time, and explains impact on Global Super Admin authentication.
 
 ### Task #26
 Surface DB health status on the platform monitoring dashboard.
 
-Status: `Deferred`
+Status: `Completed`
 
 Reason:
-- Useful, but lower urgency than live payment and security issues.
+- Added a first-class DB health card to the platform monitoring page using the same public health probe.
+- Operators can now refresh the probe directly from monitoring and see endpoint, impact, state, and detail in one place.
 
 ### Task #27
 Keep the health banner from covering fixed navigation bars.
 
-Status: `Deferred`
+Status: `Completed`
 
 Reason:
-- UX/layout hardening, not higher priority than payment or security work.
+- Implemented the login and monitoring health surfaces inside normal page flow instead of as a fixed overlay.
+- This avoids covering platform chrome or login content while still keeping the health state prominent.
 
 ### Task #28
 Add automated tests to confirm DB errors return 503, not auth errors.
@@ -339,26 +342,32 @@ Reason:
 ### Task #34
 Make the reconciliation interval configurable from the Settings page.
 
-Status: `Deferred`
+Status: `Completed`
 
 Reason:
-- Configuration improvement, but not blocking current payment diagnosis.
+- Added a finance operations settings object with `mpesa_reconciliation_minutes` and surfaced it in the finance settings UI.
+- The `reconcile_mpesa_pending` command now uses the saved interval whenever `--minutes` is omitted.
+- Focused verification passed: `school.test_mpesa_reconciliation_command`
 
 ### Task #35
 Add automated tests to confirm finance staff get notified when an M-Pesa payment lands.
 
-Status: `Deferred`
+Status: `Completed`
 
 Reason:
-- Valuable, but behind payment correctness and diagnostics.
+- Added focused regressions proving finance users receive in-app notifications when an M-Pesa payment settles into a real payment record.
+- Coverage now includes callback-driven success notifications and suppression when the success event is disabled.
+- Focused verification passed: `school.test_finance_phase4.FinancePhase4WebhookAndReconciliationTests`
 
 ### Task #36
 Let finance staff choose which payment events trigger a notification.
 
-Status: `Deferred`
+Status: `Completed`
 
 Reason:
-- Nice operational refinement after core payment correctness.
+- Added finance operations settings for event-level payment notifications.
+- Implemented event toggles for `mpesa_received`, `mpesa_failed`, `stripe_received`, and `manual_payment_recorded`.
+- The shared finance notification path now respects those toggles across callback, live-status, reconciliation, and manual payment recording flows.
 
 ### Task #40
 Show payment failure reasons to students and parents in the portal.
@@ -455,4 +464,6 @@ The plan intentionally leaves no uncategorized issue:
 Current outcome:
 - all active `Do Now` tasks from this register are complete
 - DB-health serializer regression coverage is now complete for finance and HR
-- the remaining items are either deferred by priority or already merged into completed work
+- platform DB-health visibility is now complete on login and monitoring surfaces
+- finance ops reconciliation interval and payment-event notification controls are now complete
+- no tracked tasks from this register remain open
