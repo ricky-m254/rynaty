@@ -22,6 +22,7 @@ import json
 import csv
 import os
 import re
+import requests
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView as _BaseTokenView
 
@@ -9008,6 +9009,76 @@ class TenantSettingsView(APIView):
         from .role_scope import ADMIN_SCOPE_PROFILES, user_has_any_scope
         return user_has_any_scope(request.user, ADMIN_SCOPE_PROFILES)
 
+    def _mpesa_production_guard(self, request, entries):
+        from .models import TenantSettings
+
+        callback_path = "/api/finance/mpesa/callback/"
+        for entry in entries:
+            key = str(entry.get("key", "")).strip()
+            if key != "integrations.mpesa":
+                continue
+
+            value = entry.get("value")
+            if not isinstance(value, dict):
+                continue
+
+            target_environment = str(value.get("environment") or "sandbox").strip().lower()
+            if target_environment != "production":
+                continue
+
+            existing = TenantSettings.objects.filter(key=key).first()
+            existing_value = existing.value if existing and isinstance(existing.value, dict) else {}
+            current_environment = str(existing_value.get("environment") or "sandbox").strip().lower()
+            if current_environment == "production":
+                continue
+
+            if entry.get("production_acknowledged") is True:
+                continue
+
+            effective_base_url, source = FinanceService.resolve_public_base_url(request=request)
+            full_callback_url = f"{effective_base_url}{callback_path}" if effective_base_url else ""
+            uses_https = bool(full_callback_url.startswith("https://"))
+            shortcode = str(value.get("shortcode") or "").strip()
+
+            checklist = [
+                "Production mode sends live STK requests and can charge real customer wallets.",
+                "Confirm the shortcode / PartyB, passkey, and Daraja app keys all belong to the live production app.",
+            ]
+            if full_callback_url:
+                checklist.append(f"Confirm Safaricom can reach the live callback URL: {full_callback_url}")
+            else:
+                checklist.append("Confirm the live callback URL is resolved before going live.")
+            if not uses_https:
+                checklist.append("Production callbacks should be HTTPS before go-live.")
+            if source == "request_fallback":
+                checklist.append("Set a stable callback base URL instead of relying on the current request host.")
+
+            return Response(
+                {
+                    "error": (
+                        "Review the production go-live checklist before enabling live M-Pesa for this tenant."
+                    ),
+                    "requires_confirmation": True,
+                    "warning": {
+                        "title": "Production M-Pesa will charge real customer wallets",
+                        "message": (
+                            "This tenant is switching from sandbox to production. "
+                            "Confirm the live shortcode, passkey, and callback URL before saving."
+                        ),
+                        "environment": target_environment,
+                        "shortcode": shortcode,
+                        "party_b": shortcode,
+                        "callback_url": full_callback_url,
+                        "callback_source": source,
+                        "uses_https": uses_https,
+                        "checklist": checklist,
+                    },
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        return None
+
     def get(self, request):
         from .models import TenantSettings
         category = request.query_params.get('category', '')
@@ -9051,6 +9122,10 @@ class TenantSettingsView(APIView):
             entries = [{'key': k, 'value': v} for k, v in data.items() if k != 'key']
         else:
             return Response({'error': 'Expected a dict or list of {key, value} entries.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        production_guard = self._mpesa_production_guard(request, entries)
+        if production_guard is not None:
+            return production_guard
 
         upserted = []
         skipped = []
@@ -9506,6 +9581,50 @@ class MpesaCallbackUrlView(APIView):
         """
         return FinanceService.resolve_public_base_url(request=request)
 
+    def _probe_callback_url(self, base_url):
+        normalized = str(base_url or "").strip().rstrip("/")
+        probe_url = f"{normalized}{self.CALLBACK_PATH}" if normalized else ""
+        if not probe_url:
+            return {
+                "checked": False,
+                "reachable": False,
+                "probe_url": probe_url,
+                "status_code": None,
+                "message": "No callback URL was provided to validate.",
+            }
+
+        try:
+            response = requests.get(probe_url, timeout=5, allow_redirects=True)
+        except requests.RequestException as exc:
+            return {
+                "checked": True,
+                "reachable": False,
+                "probe_url": probe_url,
+                "status_code": None,
+                "message": (
+                    "Could not reach the callback URL. Confirm the public base URL is live and routable "
+                    f"before saving. Probe target: {probe_url}. Error: {exc}"
+                ),
+            }
+
+        reachable_statuses = {200, 204, 301, 302, 307, 308, 401, 403, 405}
+        reachable = response.status_code in reachable_statuses
+        if reachable:
+            message = f"Callback URL probe succeeded with HTTP {response.status_code}."
+        else:
+            message = (
+                "The callback URL responded unexpectedly. Confirm the public base URL points to this system and "
+                f"the callback route is exposed. Probe target: {probe_url}. HTTP {response.status_code}."
+            )
+
+        return {
+            "checked": True,
+            "reachable": reachable,
+            "probe_url": probe_url,
+            "status_code": response.status_code,
+            "message": message,
+        }
+
     def _get_override(self):
         from .models import TenantSettings
         setting = TenantSettings.objects.filter(key=self.SETTING_KEY).first()
@@ -9570,6 +9689,18 @@ class MpesaCallbackUrlView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        callback_probe = None
+        if raw:
+            callback_probe = self._probe_callback_url(raw)
+            if not callback_probe["reachable"]:
+                return Response(
+                    {
+                        "error": callback_probe["message"],
+                        "callback_probe": callback_probe,
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
         if raw:
             TenantSettings.objects.update_or_create(
                 key=self.SETTING_KEY,
@@ -9598,6 +9729,13 @@ class MpesaCallbackUrlView(APIView):
 
         response_payload = self._build_response_payload(request, raw)
         response_payload["message"] = message
+        response_payload["callback_probe"] = callback_probe or {
+            "checked": False,
+            "reachable": False,
+            "probe_url": "",
+            "status_code": None,
+            "message": "Callback URL probe skipped because no override was provided.",
+        }
         return Response(response_payload)
 
 

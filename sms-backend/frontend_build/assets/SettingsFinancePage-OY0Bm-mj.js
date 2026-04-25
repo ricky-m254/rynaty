@@ -163,6 +163,8 @@ function SettingsFinancePage() {
   const [testingStripe, setTestingStripe] = React.useState(false);
   const [hasMpesaConfig, setHasMpesaConfig] = React.useState(false);
   const [hasStripeConfig, setHasStripeConfig] = React.useState(false);
+  const [mpesaProductionWarning, setMpesaProductionWarning] = React.useState(null);
+  const [mpesaProductionConfirmed, setMpesaProductionConfirmed] = React.useState(false);
 
   const showNotice = React.useCallback((msg, ok = true) => {
     setNotice({ msg, ok });
@@ -237,6 +239,8 @@ function SettingsFinancePage() {
 
     setMpesa(mpesaConfig);
     setStripe(stripeConfig);
+    setMpesaProductionWarning(null);
+    setMpesaProductionConfirmed(false);
 
     const mpesaConfigured = !!(
       mpesaConfig.consumer_key ||
@@ -315,6 +319,9 @@ function SettingsFinancePage() {
     };
   }, [loadFinanceSettings, loadIntegrations, loadMpesaDiagnostics, showNotice]);
 
+  const mpesaProductionSwitchPending =
+    mpesa.environment === "production" && (mpesaDiagnostics.environment || "sandbox") !== "production";
+
   const saveFinance = async () => {
     setSavingFinance(true);
     try {
@@ -380,15 +387,25 @@ function SettingsFinancePage() {
         key: "integrations.mpesa",
         value: { ...mpesa },
         category: "integrations",
+        production_acknowledged: mpesaProductionSwitchPending && mpesaProductionConfirmed,
       });
       setHasMpesaConfig(true);
+      setMpesaProductionWarning(null);
+      setMpesaProductionConfirmed(false);
       showNotice("M-Pesa credentials saved.");
       if (mpesa.enabled !== false) {
         await testMpesaConnection(mpesa, true);
       }
       await loadMpesaDiagnostics();
-    } catch {
-      showNotice("Unable to save M-Pesa credentials.", false);
+    } catch (error) {
+      const responseData = error?.response?.data || {};
+      if (responseData?.requires_confirmation) {
+        setMpesaProductionWarning(responseData.warning || responseData);
+        setMpesaProductionConfirmed(false);
+        showNotice(responseData?.error || "Review the production checklist before saving.", false);
+      } else {
+        showNotice(responseData?.error || "Unable to save M-Pesa credentials.", false);
+      }
     } finally {
       setSavingMpesa(false);
     }
@@ -809,7 +826,14 @@ function SettingsFinancePage() {
                     children: jsxRuntime.jsxs("select", {
                       className: selectClass,
                       value: mpesa.environment,
-                      onChange: (event) => setMpesa((current) => ({ ...current, environment: event.target.value })),
+                      onChange: (event) => {
+                        const nextEnvironment = event.target.value;
+                        setMpesa((current) => ({ ...current, environment: nextEnvironment }));
+                        if (nextEnvironment !== "production") {
+                          setMpesaProductionWarning(null);
+                          setMpesaProductionConfirmed(false);
+                        }
+                      },
                       children: [
                         jsxRuntime.jsx("option", { value: "sandbox", children: "Sandbox (testing)" }),
                         jsxRuntime.jsx("option", { value: "production", children: "Production (live)" }),
@@ -818,6 +842,94 @@ function SettingsFinancePage() {
                   }),
                 ],
               }),
+              mpesaProductionSwitchPending
+                ? jsxRuntime.jsxs("div", {
+                    className: "space-y-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100",
+                    children: [
+                      jsxRuntime.jsxs("div", {
+                        className: "flex items-start gap-3",
+                        children: [
+                          jsxRuntime.jsx(CircleAlert, { className: "mt-0.5 h-4 w-4 text-amber-300" }),
+                          jsxRuntime.jsxs("div", {
+                            className: "space-y-1",
+                            children: [
+                              jsxRuntime.jsx("div", {
+                                className: "font-semibold text-amber-200",
+                                children: (mpesaProductionWarning == null ? void 0 : mpesaProductionWarning.title) || "Production M-Pesa will charge real customer wallets",
+                              }),
+                              jsxRuntime.jsx("p", {
+                                className: "text-xs text-amber-100/80",
+                                children:
+                                  (mpesaProductionWarning == null ? void 0 : mpesaProductionWarning.message) ||
+                                  "Review the live shortcode, passkey, and callback URL before saving. The first production save requires explicit confirmation.",
+                              }),
+                            ],
+                          }),
+                        ],
+                      }),
+                      jsxRuntime.jsxs("div", {
+                        className: "grid grid-cols-1 gap-3 md:grid-cols-3",
+                        children: [
+                          jsxRuntime.jsxs("div", {
+                            className: "rounded-lg border border-amber-400/20 bg-black/10 px-3 py-2",
+                            children: [
+                              jsxRuntime.jsx("div", { className: "text-[11px] uppercase tracking-wide text-amber-100/60", children: "Live Shortcode / PartyB" }),
+                              jsxRuntime.jsx("div", { className: "mt-1 font-medium text-amber-50", children: (mpesaProductionWarning == null ? void 0 : mpesaProductionWarning.party_b) || mpesaDiagnostics.party_b || mpesa.shortcode || "Not set" }),
+                            ],
+                          }),
+                          jsxRuntime.jsxs("div", {
+                            className: "rounded-lg border border-amber-400/20 bg-black/10 px-3 py-2",
+                            children: [
+                              jsxRuntime.jsx("div", { className: "text-[11px] uppercase tracking-wide text-amber-100/60", children: "Callback Security" }),
+                              jsxRuntime.jsx("div", {
+                                className: "mt-1 font-medium text-amber-50",
+                                children: ((mpesaProductionWarning == null ? void 0 : mpesaProductionWarning.uses_https) ?? mpesaDiagnostics.uses_https) ? "HTTPS ready" : "HTTP only",
+                              }),
+                            ],
+                          }),
+                          jsxRuntime.jsxs("div", {
+                            className: "rounded-lg border border-amber-400/20 bg-black/10 px-3 py-2",
+                            children: [
+                              jsxRuntime.jsx("div", { className: "text-[11px] uppercase tracking-wide text-amber-100/60", children: "Environment" }),
+                              jsxRuntime.jsx("div", { className: "mt-1 font-medium text-amber-50", children: "Production (live)" }),
+                            ],
+                          }),
+                        ],
+                      }),
+                      jsxRuntime.jsx("div", {
+                        className: "rounded-lg border border-amber-400/20 bg-black/10 px-3 py-2 text-xs text-amber-50/85",
+                        children:
+                          (mpesaProductionWarning == null ? void 0 : mpesaProductionWarning.callback_url) ||
+                          mpesaDiagnostics.full_callback_url ||
+                          "Callback URL not resolved yet.",
+                      }),
+                      jsxRuntime.jsx("ul", {
+                        className: "space-y-2 pl-5 text-xs text-amber-50/85",
+                        children: ((mpesaProductionWarning == null ? void 0 : mpesaProductionWarning.checklist) || [
+                          "Production mode sends live STK requests and can charge real customer wallets.",
+                          "Confirm the live shortcode, passkey, and Daraja app keys before saving.",
+                          "Confirm the callback URL shown below is reachable by Safaricom.",
+                        ]).map((item, index) =>
+                          jsxRuntime.jsx("li", { className: "list-disc", children: item }, `mpesa-production-check-${index}`)
+                        ),
+                      }),
+                      jsxRuntime.jsxs("label", {
+                        className: "flex items-start gap-2 rounded-lg border border-amber-400/20 bg-black/10 px-3 py-3 text-xs text-amber-50/90",
+                        children: [
+                          jsxRuntime.jsx("input", {
+                            type: "checkbox",
+                            checked: mpesaProductionConfirmed,
+                            onChange: (event) => setMpesaProductionConfirmed(event.target.checked),
+                          }),
+                          jsxRuntime.jsx("span", {
+                            children:
+                              "I have verified the live shortcode, passkey, Daraja app keys, and callback URL, and I understand this tenant will start sending real production STK requests.",
+                          }),
+                        ],
+                      }),
+                    ],
+                  })
+                : null,
               jsxRuntime.jsxs("div", {
                 className: "space-y-3 rounded-xl border border-white/10 bg-white/3 p-4",
                 children: [
@@ -948,12 +1060,12 @@ function SettingsFinancePage() {
                   jsxRuntime.jsxs("button", {
                     type: "button",
                     onClick: saveMpesa,
-                    disabled: savingMpesa,
+                    disabled: savingMpesa || (mpesaProductionSwitchPending && !mpesaProductionConfirmed),
                     className:
                       "flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-400 transition hover:bg-emerald-500/20 disabled:opacity-50",
                     children: [
                       jsxRuntime.jsx(Save, { className: "h-4 w-4" }),
-                      savingMpesa ? "Saving..." : "Save Credentials",
+                      savingMpesa ? "Saving..." : mpesaProductionSwitchPending ? "Confirm And Save Live Credentials" : "Save Credentials",
                     ],
                   }),
                 ],

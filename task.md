@@ -216,11 +216,12 @@ This section classifies every relevant task so nothing remains uncategorized.
 ### Task #22
 Warn admins before switching M-Pesa to Production mode.
 
-Status: `Deferred`
+Status: `Completed`
 
 Reason:
-- Important guardrail, but not the current top payment failure.
-- Better after core STK push reliability is fixed.
+- Added an API-level confirmation guard for the first sandbox-to-production M-Pesa switch.
+- The finance settings UI now renders a live-production checklist and requires explicit acknowledgement before saving that switch.
+- Focused verification passed: `school.test_finance_phase4.FinancePhase4WebhookAndReconciliationTests`
 
 ### Task #23
 Show friendlier error messages when an M-Pesa payment push fails.
@@ -298,7 +299,7 @@ Reason:
 ### Task #30
 Add M-Pesa callback URL field to the settings page UI.
 
-Status: `Do After #52`
+Status: `Merged Into #52`
 
 Reason:
 - Directly supports callback visibility and operator diagnosis.
@@ -306,10 +307,11 @@ Reason:
 ### Task #31
 Validate that the callback URL is reachable before saving it.
 
-Status: `Deferred`
+Status: `Completed`
 
 Reason:
-- Good hardening step after callback URL visibility and API tests are in place.
+- `PUT /api/finance/mpesa/callback-url/` now probes the exact callback path before persisting the override and rejects unreachable or wrong-path URLs.
+- Focused verification passed: `school.test_finance_phase4.FinancePhase4WebhookAndReconciliationTests`
 
 ### Task #32
 Write automated tests for the callback URL settings API.
