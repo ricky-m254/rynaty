@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import OperationalError
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from django_tenants.utils import schema_context
@@ -35,6 +36,7 @@ from school.views import (
     MpesaCallbackUrlView,
     MpesaStkPushView,
     MpesaStkStatusView,
+    PaymentViewSet,
     PaymentGatewayWebhookEventViewSet,
     StripeCheckoutSessionView,
     StripeTestConnectionView,
@@ -248,6 +250,25 @@ class FinancePhase4WebhookAndReconciliationTests(TenantTestBase):
         line.refresh_from_db()
         self.assertEqual(line.status, "MATCHED")
         self.assertEqual(line.matched_payment_id, payment.id)
+
+    @patch("school.serializers.PaymentSerializer.get_status", side_effect=OperationalError("db offline"))
+    def test_payment_retrieve_returns_503_when_serializer_hits_db_error(self, _mock_get_status):
+        payment = Payment.objects.create(
+            student=self.student,
+            amount="500.00",
+            payment_method="Cash",
+            reference_number="PAY-DB-503",
+            notes="serializer db health test",
+        )
+
+        request = self.factory.get(f"/api/finance/payments/{payment.id}/")
+        force_authenticate(request, user=self.user)
+        response = PaymentViewSet.as_view({"get": "retrieve"})(request, pk=payment.id)
+
+        self.assertEqual(response.status_code, 503)
+        self.assertFalse(response.data["success"])
+        self.assertEqual(response.data["error"]["code"], "SERVICE_UNAVAILABLE")
+        self.assertIn("temporarily unavailable", response.data["error"]["message"].lower())
 
     def test_bank_line_import_csv_creates_rows_and_supports_match_then_clear(self):
         payment = Payment.objects.create(

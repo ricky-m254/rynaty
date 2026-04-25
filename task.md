@@ -283,18 +283,24 @@ Reason:
 ### Task #28
 Add automated tests to confirm DB errors return 503, not auth errors.
 
-Status: `Deferred`
+Status: `Completed`
 
 Reason:
-- Important reliability guardrail, but not in the immediate bundle selected by `fix.txt`.
+- Added focused regression coverage for serializer-backed finance and HR endpoints.
+- The new tests prove database failures during response serialization return HTTP `503 SERVICE_UNAVAILABLE` instead of being misreported as auth or validation errors.
+- Focused verification passed:
+  - `school.test_finance_phase4.FinancePhase4WebhookAndReconciliationTests.test_payment_retrieve_returns_503_when_serializer_hits_db_error`
+  - `hr.test_session7_workforce_operations.HrSession7ShiftAndAlertTests.test_leave_request_retrieve_returns_503_when_serializer_hits_db_error`
 
 ### Task #29
 Extend DB-error protection to finance and HR serializers.
 
-Status: `Deferred`
+Status: `Completed`
 
 Reason:
-- High-value backend hardening, but still behind current payment and session issues.
+- The shared DRF exception handler already covered database infrastructure failures correctly.
+- Finance and HR serializer-backed retrieve endpoints are now explicitly regression-tested so serializer DB failures are proven to bubble through as `503 SERVICE_UNAVAILABLE`.
+- No extra serializer refactor was required after the tests confirmed the existing protection path was intact.
 
 ### Task #30
 Add M-Pesa callback URL field to the settings page UI.
@@ -448,4 +454,5 @@ The plan intentionally leaves no uncategorized issue:
 
 Current outcome:
 - all active `Do Now` tasks from this register are complete
+- DB-health serializer regression coverage is now complete for finance and HR
 - the remaining items are either deferred by priority or already merged into completed work

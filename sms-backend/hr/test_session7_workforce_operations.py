@@ -1,8 +1,10 @@
 from datetime import date, time
 
 from django.contrib.auth import get_user_model
+from django.db import OperationalError
 from django.test import TestCase
 from rest_framework.test import APIRequestFactory, force_authenticate
+from unittest.mock import patch
 
 from clients.models import Domain, Tenant
 from school.models import Module, Role, UserModuleAssignment, UserProfile
@@ -601,6 +603,29 @@ class HrSession7ShiftAndAlertTests(TenantTestBase):
         leave_request.refresh_from_db()
         self.assertEqual(leave_request.status, "Rejected")
         self.assertEqual(leave_request.rejection_reason, "Coverage unavailable")
+
+    @patch("hr.serializers.LeaveRequestSerializer.get_employee_name", side_effect=OperationalError("db offline"))
+    def test_leave_request_retrieve_returns_503_when_serializer_hits_db_error(self, _mock_get_employee_name):
+        leave_type = self._create_leave_type_policy()
+        leave_request = LeaveRequest.objects.create(
+            employee=self.employee,
+            leave_type=leave_type,
+            start_date=date(2026, 4, 6),
+            end_date=date(2026, 4, 12),
+            days_requested="7.00",
+            reason="Serializer db health test",
+            status="Pending",
+            is_active=True,
+        )
+
+        request = self.factory.get(f"/api/hr/leave-requests/{leave_request.id}/")
+        force_authenticate(request, user=self.hr_user)
+        response = LeaveRequestViewSet.as_view({"get": "retrieve"})(request, pk=leave_request.id)
+
+        self.assertEqual(response.status_code, 503)
+        self.assertFalse(response.data["success"])
+        self.assertEqual(response.data["error"]["code"], "SERVICE_UNAVAILABLE")
+        self.assertIn("temporarily unavailable", response.data["error"]["message"].lower())
 
     def test_return_to_work_completion_unblocks_leave_period(self):
         leave_request = self._create_approved_long_leave()
