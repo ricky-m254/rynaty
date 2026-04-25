@@ -563,6 +563,134 @@ class FinanceService:
         }
 
     @staticmethod
+    def refresh_pending_mpesa_transaction(tx, *, min_query_age_seconds=10):
+        from .mpesa import MpesaError, query_stk_status
+
+        if not tx or tx.provider != "mpesa" or tx.status != "PENDING" or not tx.external_id:
+            return {
+                "transaction": tx,
+                "queried": False,
+                "query_error": "",
+                "result": None,
+                "payment": None,
+                "payment_created": False,
+            }
+
+        if tx.updated_at and timezone.now() - tx.updated_at < timedelta(seconds=min_query_age_seconds):
+            return {
+                "transaction": tx,
+                "queried": False,
+                "query_error": "",
+                "result": None,
+                "payment": None,
+                "payment_created": False,
+            }
+
+        tx_payload = dict(tx.payload or {})
+        tx_payload["status_query_checked_at"] = timezone.now().isoformat()
+        tx_payload["status_query_source"] = "daraja"
+
+        try:
+            result = query_stk_status(tx.external_id)
+        except MpesaError as exc:
+            tx_payload["status_query_error"] = str(exc)
+            tx.payload = tx_payload
+            tx.save(update_fields=["payload", "updated_at"])
+            return {
+                "transaction": tx,
+                "queried": True,
+                "query_error": str(exc),
+                "result": None,
+                "payment": None,
+                "payment_created": False,
+            }
+
+        tx_payload.pop("status_query_error", None)
+        tx_payload.update(
+            {
+                "status_query_result_code": result.get("result_code"),
+                "status_query_result_desc": result.get("result_desc"),
+                "status_query_friendly_message": result.get("friendly_message", ""),
+            }
+        )
+
+        if result.get("success"):
+            receipt = str(result.get("mpesa_receipt") or "").strip()
+            if not receipt:
+                tx.payload = tx_payload
+                tx.save(update_fields=["payload", "updated_at"])
+                return {
+                    "transaction": tx,
+                    "queried": True,
+                    "query_error": "Successful M-Pesa status query did not include a receipt number.",
+                    "result": result,
+                    "payment": None,
+                    "payment_created": False,
+                }
+
+            try:
+                from school.fraud_detection import FraudDetectionEngine
+                from school.models import UserProfile
+
+                fraud_user = None
+                if tx.student and tx.student.admission_number:
+                    fraud_profile = UserProfile.objects.filter(
+                        admission_number=tx.student.admission_number
+                    ).select_related("user").first()
+                    if fraud_profile:
+                        fraud_user = fraud_profile.user
+                engine = FraudDetectionEngine(user=fraud_user)
+                if engine.check_duplicate_receipt(receipt, exclude_tx_id=tx.id):
+                    tx.status = "FAILED"
+                    tx.payload = {
+                        **tx_payload,
+                        "error": "duplicate_receipt",
+                        "mpesa_receipt": receipt,
+                    }
+                    tx.is_reconciled = False
+                    tx.save(update_fields=["status", "payload", "is_reconciled", "updated_at"])
+                    return {
+                        "transaction": tx,
+                        "queried": True,
+                        "query_error": f"Duplicate M-Pesa receipt blocked: {receipt}",
+                        "result": result,
+                        "payment": None,
+                        "payment_created": False,
+                    }
+            except Exception:
+                pass
+
+            finalized = FinanceService.finalize_gateway_success(
+                tx,
+                payment_method="M-Pesa",
+                reference_number=receipt,
+                amount=result.get("amount") or tx.amount,
+                notes=f"M-Pesa STK Push (live Daraja status) | checkout_id={tx.external_id}",
+                payload_updates={**tx_payload, "mpesa_receipt": receipt},
+            )
+            return {
+                "transaction": tx,
+                "queried": True,
+                "query_error": "",
+                "result": result,
+                "payment": finalized["payment"],
+                "payment_created": finalized["payment_created"],
+            }
+
+        tx.status = "FAILED"
+        tx.is_reconciled = True
+        tx.payload = tx_payload
+        tx.save(update_fields=["status", "is_reconciled", "payload", "updated_at"])
+        return {
+            "transaction": tx,
+            "queried": True,
+            "query_error": "",
+            "result": result,
+            "payment": None,
+            "payment_created": False,
+        }
+
+    @staticmethod
     def process_mpesa_callback_event(event):
         payload = dict(event.payload or {})
         normalized = payload.get("normalized")

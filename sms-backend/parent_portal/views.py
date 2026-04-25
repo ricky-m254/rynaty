@@ -835,16 +835,33 @@ class ParentMpesaStatusView(ParentPortalAccessMixin, APIView):
         if not tx:
             return Response({"error": "Transaction not found."}, status=status.HTTP_404_NOT_FOUND)
 
+        refresh_result = FinanceService.refresh_pending_mpesa_transaction(tx)
+        tx = refresh_result.get("transaction") or tx
+        tx_payload = dict(tx.payload or {})
+        friendly_message = (
+            tx_payload.get("callback_friendly_message")
+            or tx_payload.get("status_query_friendly_message")
+            or ""
+        )
+        if tx.status == "SUCCEEDED":
+            message = friendly_message or "Payment confirmed successfully."
+        elif tx.status == "FAILED":
+            message = friendly_message or "Payment failed. Please try again."
+        else:
+            message = "Waiting for M-Pesa confirmation..."
+
         return Response({
             "transaction_id": tx.id,
             "status": tx.status,
             "amount": str(tx.amount),
-            "mpesa_receipt": tx.payload.get("mpesa_receipt"),
-            "message": (
-                "Payment confirmed." if tx.status == "SUCCEEDED"
-                else "Payment failed. Please try again." if tx.status == "FAILED"
-                else "Waiting for M-Pesa confirmation..."
-            ),
+            "mpesa_receipt": tx_payload.get("mpesa_receipt"),
+            "friendly_message": friendly_message,
+            "message": message,
+            "payment_id": tx_payload.get("payment_id"),
+            "payment_reference": tx_payload.get("payment_reference"),
+            "payment_receipt_number": tx_payload.get("payment_receipt_number"),
+            "query_error": refresh_result.get("query_error", ""),
+            "live_status_checked_at": tx_payload.get("status_query_checked_at", ""),
             "updated_at": tx.updated_at,
         })
 

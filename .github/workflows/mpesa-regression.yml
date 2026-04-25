@@ -1,0 +1,67 @@
+name: M-Pesa Regression
+
+on:
+  push:
+    paths:
+      - ".github/workflows/mpesa-regression.yml"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "sms-backend/**"
+  pull_request:
+    paths:
+      - ".github/workflows/mpesa-regression.yml"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "sms-backend/**"
+
+permissions:
+  contents: read
+
+jobs:
+  mpesa-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: sms_school_db_ci
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d sms_school_db_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DJANGO_DEBUG: "true"
+      DJANGO_ALLOW_INSECURE_DEFAULTS: "true"
+      DJANGO_SECRET_KEY: ci-only-insecure-key
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/sms_school_db_ci
+      PYTHONPATH: ${{ github.workspace }}/sms-backend/artifacts/test_shims
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Run focused M-Pesa regression pack
+        working-directory: sms-backend
+        run: |
+          python manage.py test \
+            school.test_mpesa_errors \
+            school.test_finance_phase4.FinancePhase4WebhookAndReconciliationTests \
+            parent_portal.tests.ParentPortalTests \
+            school.test_mpesa_reconciliation_command

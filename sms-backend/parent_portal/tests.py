@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -6,9 +6,11 @@ from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.test import TestCase
 from django.urls import resolve
+from django.utils import timezone
 from rest_framework.test import APIRequestFactory, force_authenticate
 
 from clients.models import Domain, Tenant
+from school.mpesa import MpesaError
 from school.models import (
     AcademicYear,
     Guardian,
@@ -26,6 +28,7 @@ from .student_portal_views import (
     MyInvoicesView,
     MyPaymentsView,
     StudentFinancePayView,
+    StudentMpesaStatusView,
     StudentFinanceReceiptView,
     _student_from_request,
 )
@@ -33,6 +36,7 @@ from .views import (
     ParentChangePasswordView,
     ParentDashboardView,
     ParentFinancePayView,
+    ParentMpesaStatusView,
     ParentFinanceSummaryView,
     ParentProfileView,
     ParentTimetableView,
@@ -319,6 +323,74 @@ class ParentPortalTests(TenantTestBase):
             "https://parent-portal.localhost/api/finance/mpesa/callback/",
         )
 
+    @patch("school.mpesa.query_stk_status")
+    def test_parent_mpesa_status_queries_daraja_for_pending_transaction(self, mock_query_stk_status):
+        ParentStudentLink.objects.create(parent_user=self.parent, student=self.student, relationship="Parent", is_active=True)
+        tx = PaymentGatewayTransaction.objects.create(
+            provider="mpesa",
+            external_id="ws_CO_parent_status_001",
+            student=self.student,
+            amount="1200.00",
+            status="PENDING",
+            payload={"source": "parent_portal"},
+        )
+        PaymentGatewayTransaction.objects.filter(pk=tx.pk).update(
+            updated_at=timezone.now() - timedelta(seconds=20)
+        )
+        mock_query_stk_status.return_value = {
+            "success": True,
+            "result_code": 0,
+            "result_desc": "The service request is processed successfully.",
+            "friendly_message": "Payment confirmed successfully.",
+            "mpesa_receipt": "MPESA-PARENT-STATUS-001",
+            "amount": Decimal("1200.00"),
+            "checkout_request_id": "ws_CO_parent_status_001",
+        }
+
+        request = self.factory.get(
+            "/api/parent-portal/finance/mpesa-status/",
+            {"checkout_request_id": "ws_CO_parent_status_001"},
+        )
+        force_authenticate(request, user=self.parent)
+
+        response = ParentMpesaStatusView.as_view()(request)
+
+        self.assertEqual(response.status_code, 200)
+        tx.refresh_from_db()
+        self.assertEqual(tx.status, "SUCCEEDED")
+        payment = Payment.objects.get(reference_number="MPESA-PARENT-STATUS-001")
+        self.assertEqual(response.data["status"], "SUCCEEDED")
+        self.assertEqual(response.data["payment_id"], payment.id)
+        self.assertEqual(response.data["payment_reference"], payment.reference_number)
+        self.assertEqual(response.data["payment_receipt_number"], payment.receipt_number)
+        self.assertEqual(response.data["message"], "Payment confirmed successfully.")
+
+    @patch("school.mpesa.initiate_stk_push")
+    def test_parent_finance_pay_surfaces_mpesa_validation_error(self, mock_initiate_stk_push):
+        ParentStudentLink.objects.create(parent_user=self.parent, student=self.student, relationship="Parent", is_active=True)
+        invoice = self.create_invoice(total_amount="2400.00")
+        mock_initiate_stk_push.side_effect = MpesaError(
+            "Invalid phone number '12345'. Please enter a valid Kenyan number e.g. 0712345678."
+        )
+
+        request = self.factory.post(
+            "/api/parent-portal/finance/pay/",
+            {
+                "amount": "1200.00",
+                "payment_method": "mpesa",
+                "invoice_id": invoice.id,
+                "phone": "12345",
+            },
+            format="json",
+        )
+        force_authenticate(request, user=self.parent)
+
+        response = ParentFinancePayView.as_view()(request)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("valid Kenyan number", response.data["error"])
+        self.assertEqual(PaymentGatewayTransaction.objects.filter(provider="mpesa").count(), 0)
+
     @patch("school.stripe.create_checkout_session")
     def test_student_finance_pay_returns_stripe_checkout(self, mock_create_checkout_session):
         invoice = self.create_invoice(total_amount="1800.00")
@@ -432,6 +504,84 @@ class ParentPortalTests(TenantTestBase):
             mock_initiate_stk_push.call_args.kwargs["callback_url"],
             "https://parent-portal.localhost/api/finance/mpesa/callback/",
         )
+
+    @patch("school.mpesa.query_stk_status")
+    def test_student_mpesa_status_queries_daraja_for_pending_transaction(self, mock_query_stk_status):
+        student_user = User.objects.create_user(username="student_login_status", password="pass1234")
+        UserProfile.objects.create(
+            user=student_user,
+            role=self.student_role,
+            admission_number=self.student.admission_number,
+        )
+        tx = PaymentGatewayTransaction.objects.create(
+            provider="mpesa",
+            external_id="ws_CO_student_status_001",
+            student=self.student,
+            amount="900.00",
+            status="PENDING",
+            payload={"source": "student_portal"},
+        )
+        PaymentGatewayTransaction.objects.filter(pk=tx.pk).update(
+            updated_at=timezone.now() - timedelta(seconds=20)
+        )
+        mock_query_stk_status.return_value = {
+            "success": True,
+            "result_code": 0,
+            "result_desc": "The service request is processed successfully.",
+            "friendly_message": "Payment confirmed successfully.",
+            "mpesa_receipt": "MPESA-STUDENT-STATUS-001",
+            "amount": Decimal("900.00"),
+            "checkout_request_id": "ws_CO_student_status_001",
+        }
+
+        request = self.factory.get(
+            "/api/student-portal/finance/mpesa-status/",
+            {"checkout_request_id": "ws_CO_student_status_001"},
+        )
+        force_authenticate(request, user=student_user)
+
+        response = StudentMpesaStatusView.as_view()(request)
+
+        self.assertEqual(response.status_code, 200)
+        tx.refresh_from_db()
+        self.assertEqual(tx.status, "SUCCEEDED")
+        payment = Payment.objects.get(reference_number="MPESA-STUDENT-STATUS-001")
+        self.assertEqual(response.data["status"], "SUCCEEDED")
+        self.assertEqual(response.data["payment_id"], payment.id)
+        self.assertEqual(response.data["payment_reference"], payment.reference_number)
+        self.assertEqual(response.data["payment_receipt_number"], payment.receipt_number)
+        self.assertEqual(response.data["message"], "Payment confirmed successfully.")
+
+    @patch("school.mpesa.initiate_stk_push")
+    def test_student_finance_pay_surfaces_daraja_rejection_message(self, mock_initiate_stk_push):
+        invoice = self.create_invoice(total_amount="1800.00")
+        student_user = User.objects.create_user(username="student_login_error", password="pass1234", email="student@example.com")
+        UserProfile.objects.create(
+            user=student_user,
+            role=self.student_role,
+            admission_number=self.student.admission_number,
+        )
+        mock_initiate_stk_push.side_effect = MpesaError(
+            "The customer's M-Pesa account has insufficient funds. Please ask the customer to top up and try again."
+        )
+
+        request = self.factory.post(
+            "/api/student-portal/finance/pay/",
+            {
+                "invoice_id": invoice.id,
+                "amount": "900.00",
+                "payment_method": "mpesa",
+                "phone": "0712345678",
+            },
+            format="json",
+        )
+        force_authenticate(request, user=student_user)
+
+        response = StudentFinancePayView.as_view()(request)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("insufficient funds", response.data["error"].lower())
+        self.assertEqual(PaymentGatewayTransaction.objects.filter(provider="mpesa").count(), 0)
 
     def test_parent_finance_pay_rejects_non_positive_amount(self):
         ParentStudentLink.objects.create(parent_user=self.parent, student=self.student, relationship="Parent", is_active=True)

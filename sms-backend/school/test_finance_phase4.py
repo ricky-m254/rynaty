@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import json
 from datetime import timedelta
+from decimal import Decimal
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -31,6 +32,7 @@ from school.views import (
     FinanceGatewayWebhookView,
     MpesaStkCallbackView,
     MpesaCallbackUrlView,
+    MpesaStkPushView,
     MpesaStkStatusView,
     PaymentGatewayWebhookEventViewSet,
     StripeCheckoutSessionView,
@@ -426,6 +428,105 @@ class FinancePhase4WebhookAndReconciliationTests(TenantTestBase):
                 f"/api/finance/payments/{payment.id}/receipt/pdf/"
             )
         )
+
+    @patch("school.mpesa.query_stk_status")
+    def test_mpesa_status_queries_daraja_for_pending_transaction(self, mock_query_stk_status):
+        tx = PaymentGatewayTransaction.objects.create(
+            provider="mpesa",
+            external_id="ws_CO_LIVE_STATUS",
+            student=self.student,
+            amount="500.00",
+            status="PENDING",
+            payload={"reference": "FEES-LIVE-STATUS"},
+        )
+        PaymentGatewayTransaction.objects.filter(pk=tx.pk).update(
+            updated_at=timezone.now() - timedelta(seconds=20)
+        )
+        mock_query_stk_status.return_value = {
+            "success": True,
+            "result_code": 0,
+            "result_desc": "The service request is processed successfully.",
+            "friendly_message": "Payment confirmed successfully.",
+            "mpesa_receipt": "MPESA-LIVE-STATUS-001",
+            "amount": Decimal("500.00"),
+            "checkout_request_id": "ws_CO_LIVE_STATUS",
+        }
+
+        status_request = self.factory.get(
+            "/api/finance/mpesa/status/",
+            {"checkout_request_id": "ws_CO_LIVE_STATUS"},
+        )
+        force_authenticate(status_request, user=self.user)
+        status_response = MpesaStkStatusView.as_view()(status_request)
+
+        self.assertEqual(status_response.status_code, 200)
+        tx.refresh_from_db()
+        self.assertEqual(tx.status, "SUCCEEDED")
+        payment = Payment.objects.get(reference_number="MPESA-LIVE-STATUS-001")
+        self.assertEqual(status_response.data["status"], "SUCCEEDED")
+        self.assertEqual(status_response.data["mpesa_receipt"], "MPESA-LIVE-STATUS-001")
+        self.assertEqual(status_response.data["friendly_message"], "Payment confirmed successfully.")
+        self.assertEqual(status_response.data["payment_id"], payment.id)
+        self.assertEqual(status_response.data["payment_reference"], payment.reference_number)
+        self.assertEqual(status_response.data["payment_receipt_number"], payment.receipt_number)
+        self.assertTrue(
+            status_response.data["receipt_json_url"].endswith(
+                f"/api/finance/payments/{payment.id}/receipt/?format=json"
+            )
+        )
+
+    @patch("school.mpesa.initiate_stk_push")
+    def test_finance_mpesa_push_returns_validation_error_for_invalid_phone(self, mock_initiate_stk_push):
+        from school.mpesa import MpesaError
+
+        mock_initiate_stk_push.side_effect = MpesaError(
+            "Invalid phone number '12345'. Please enter a valid Kenyan number e.g. 0712345678."
+        )
+
+        request = self.factory.post(
+            "/api/finance/mpesa/push/",
+            {
+                "phone": "12345",
+                "amount": "500.00",
+                "student_id": self.student.id,
+                "description": "School Fees",
+            },
+            format="json",
+        )
+        force_authenticate(request, user=self.user)
+        response = MpesaStkPushView.as_view()(request)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("valid Kenyan number", response.data["error"])
+        self.assertEqual(
+            PaymentGatewayTransaction.objects.filter(provider="mpesa", external_id="12345").count(),
+            0,
+        )
+
+    @patch("school.mpesa.initiate_stk_push")
+    def test_finance_mpesa_push_surfaces_daraja_rejection_message(self, mock_initiate_stk_push):
+        from school.mpesa import MpesaError
+
+        mock_initiate_stk_push.side_effect = MpesaError(
+            "The customer's M-Pesa account has insufficient funds. Please ask the customer to top up and try again."
+        )
+
+        request = self.factory.post(
+            "/api/finance/mpesa/push/",
+            {
+                "phone": "0712345678",
+                "amount": "500.00",
+                "student_id": self.student.id,
+                "description": "School Fees",
+            },
+            format="json",
+        )
+        force_authenticate(request, user=self.user)
+        response = MpesaStkPushView.as_view()(request)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("insufficient funds", response.data["error"].lower())
+        self.assertEqual(PaymentGatewayTransaction.objects.filter(provider="mpesa").count(), 0)
 
     @patch("clients.billing_engine.BillingEngine.for_tenant")
     def test_mpesa_callback_records_billing_fee_using_active_tenant_context(self, mock_for_tenant):

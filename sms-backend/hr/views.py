@@ -1317,7 +1317,10 @@ class LeaveRequestViewSet(HrModuleAccessMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="reject")
     def reject(self, request, pk=None):
         leave_request = self.get_object()
-        serializer = LeaveRejectSerializer(data=request.data)
+        payload = request.data.copy()
+        if not payload.get("rejection_reason") and payload.get("reason"):
+            payload["rejection_reason"] = payload["reason"]
+        serializer = LeaveRejectSerializer(data=payload)
         serializer.is_valid(raise_exception=True)
         try:
             reject_leave(leave_request, reason=serializer.validated_data["rejection_reason"])

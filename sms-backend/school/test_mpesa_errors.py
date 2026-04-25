@@ -23,6 +23,7 @@ from school.mpesa import (
     PRODUCTION_BASE,
     _friendly_daraja_error,
     _get_access_token,
+    _normalise_phone,
     _sanitise_daraja_data,
 )
 
@@ -187,6 +188,22 @@ class TestDarajaPayloadSanitisation(unittest.TestCase):
         self.assertNotEqual(result["PhoneNumber"], payload["PhoneNumber"])
         self.assertNotEqual(result["PartyA"], payload["PartyA"])
         self.assertIn("*", result["consumer_key"])
+
+
+class TestNormalisePhone(unittest.TestCase):
+    def test_normalise_phone_accepts_local_kenyan_number(self):
+        self.assertEqual(_normalise_phone("0712345678"), "254712345678")
+
+    def test_normalise_phone_accepts_plus_254_format(self):
+        self.assertEqual(_normalise_phone("+254712345678"), "254712345678")
+
+    def test_normalise_phone_accepts_already_normalised_format(self):
+        self.assertEqual(_normalise_phone("254712345678"), "254712345678")
+
+    def test_normalise_phone_rejects_invalid_number(self):
+        with self.assertRaises(MpesaError) as ctx:
+            _normalise_phone("12345")
+        self.assertIn("valid Kenyan number", str(ctx.exception))
 
 
 # ===========================================================================

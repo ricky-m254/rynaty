@@ -571,6 +571,37 @@ class HrSession7ShiftAndAlertTests(TenantTestBase):
             "Only the assigned manager approver can approve this leave request.",
         )
 
+    def test_leave_reject_accepts_legacy_reason_payload_from_approvals_hub(self):
+        leave_type = self._create_leave_type_policy()
+        create_request = self.factory.post(
+            "/api/hr/leave-requests/",
+            {
+                "employee": self.employee.id,
+                "leave_type": leave_type.id,
+                "start_date": "2026-04-06",
+                "end_date": "2026-04-12",
+                "reason": "Department travel",
+            },
+            format="json",
+        )
+        force_authenticate(create_request, user=self.user)
+        create_response = LeaveRequestViewSet.as_view({"post": "create"})(create_request)
+        self.assertEqual(create_response.status_code, 201)
+
+        leave_request = LeaveRequest.objects.get(pk=create_response.data["id"])
+        reject_request = self.factory.post(
+            f"/api/hr/leave-requests/{leave_request.id}/reject/",
+            {"reason": "Coverage unavailable"},
+            format="json",
+        )
+        force_authenticate(reject_request, user=self.hr_user)
+        reject_response = LeaveRequestViewSet.as_view({"post": "reject"})(reject_request, pk=leave_request.id)
+
+        self.assertEqual(reject_response.status_code, 200)
+        leave_request.refresh_from_db()
+        self.assertEqual(leave_request.status, "Rejected")
+        self.assertEqual(leave_request.rejection_reason, "Coverage unavailable")
+
     def test_return_to_work_completion_unblocks_leave_period(self):
         leave_request = self._create_approved_long_leave()
         reconciliation = ReturnToWorkReconciliation.objects.get(leave_request=leave_request)

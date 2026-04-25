@@ -10317,6 +10317,8 @@ class MpesaStkStatusView(APIView):
         if not tx:
             return Response({"error": "Transaction not found."}, status=status.HTTP_404_NOT_FOUND)
 
+        refresh_result = FinanceService.refresh_pending_mpesa_transaction(tx)
+        tx = refresh_result.get("transaction") or tx
         tx_payload = dict(tx.payload or {})
         payment = None
         payment_id = tx_payload.get("payment_id")
@@ -10351,6 +10353,22 @@ class MpesaStkStatusView(APIView):
             if payment
             else str(tx_payload.get("payment_receipt_number") or "").strip()
         )
+        result_desc = (
+            tx_payload.get("callback_result_desc")
+            or tx_payload.get("status_query_result_desc")
+            or tx_payload.get("result_desc")
+        )
+        friendly_message = (
+            tx_payload.get("callback_friendly_message")
+            or tx_payload.get("status_query_friendly_message")
+            or ""
+        )
+        if tx.status == "SUCCEEDED":
+            message = friendly_message or "Payment confirmed successfully."
+        elif tx.status == "FAILED":
+            message = friendly_message or "Payment was not completed."
+        else:
+            message = "Waiting for M-Pesa confirmation..."
 
         return Response({
             "transaction_id": tx.id,
@@ -10358,13 +10376,16 @@ class MpesaStkStatusView(APIView):
             "amount": str(tx.amount),
             "reference": tx_payload.get("reference") or payment_reference or tx_payload.get("mpesa_receipt"),
             "mpesa_receipt": tx_payload.get("mpesa_receipt"),
-            "result_desc": tx_payload.get("callback_result_desc") or tx_payload.get("result_desc"),
-            "friendly_message": tx_payload.get("callback_friendly_message", ""),
+            "result_desc": result_desc,
+            "friendly_message": friendly_message,
+            "message": message,
             "payment_id": getattr(payment, "id", None) or tx_payload.get("payment_id"),
             "payment_reference": payment_reference,
             "payment_receipt_number": payment_receipt,
             "receipt_json_url": receipt_urls["receipt_json_url"],
             "receipt_pdf_url": receipt_urls["receipt_pdf_url"],
+            "query_error": refresh_result.get("query_error", ""),
+            "live_status_checked_at": tx_payload.get("status_query_checked_at", ""),
             "updated_at": tx.updated_at,
         })
 

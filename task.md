@@ -34,7 +34,7 @@ It is designed to leave no issue unclassified:
 - Parent and student payment polling still appear to fall back to generic failure text instead of prioritizing `friendly_message`.
 - M-Pesa reconciliation command exists.
 - Focused M-Pesa regression coverage now passes for the new error mapping and callback diagnostics surface.
-- No `.github/workflows` directory is present.
+- A focused GitHub Actions workflow now exists for the M-Pesa regression pack.
 
 ### Approvals Hub
 
@@ -139,7 +139,7 @@ Primary files:
 ### P2. Task #51
 Approvals Hub Rewire, narrowed to only still-broken paths.
 
-Status: `Do Now`
+Status: `Completed`
 
 Why this is third:
 - It is important, but `fix.txt` overstated how much is still broken.
@@ -157,21 +157,57 @@ Primary work items:
 - fix only real remaining mismatches
 - run end-to-end approval-tab verification
 
+Completion snapshot:
+- confirmed the current approvals hub scope is intentionally leave-only for HR; staff transfers are handled in the HR module and are not an approvals-hub tab anymore
+- verified the compiled hub already points acquisitions, admissions, maintenance, finance, and timetable actions at live backend routes
+- fixed the remaining real mismatch by making `POST /api/hr/leave-requests/{id}/reject/` accept the legacy approvals-hub payload field `reason` as an alias for `rejection_reason`
+- added a regression proving the approvals-hub-style leave reject payload succeeds for an HR user
+- focused verification passed: `hr.test_session7_workforce_operations`
+
 Primary files:
 - [ApprovalsHubPage-B_1PnNAs.js](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/frontend_build/assets/ApprovalsHubPage-B_1PnNAs.js:1)
-- [hr/views.py](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/hr/views.py:2835)
+- [hr/views.py](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/hr/views.py:1320)
 - [hr/urls.py](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/hr/urls.py:94)
 - [school/urls.py](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/school/urls.py:368)
+- [test_session7_workforce_operations.py](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/hr/test_session7_workforce_operations.py:574)
 
 ### P3. Post-#52 M-Pesa Hardening Bundle
 
 These are still valid and should follow after `#52`, because they either depend on it or are better implemented once the core STK failure path is fixed.
 
-1. `#41` Use live Daraja status when polling still-pending M-Pesa payments
-2. `#40` Show payment failure reasons to students and parents in the portal
-3. `#42` Add tests to catch phone number and STK push errors before they reach users
-4. `#33` Add automated tests for the M-Pesa reconciliation job
-5. `#43` Make M-Pesa error tests part of automated CI
+1. `#42` Add tests to catch phone number and STK push errors before they reach users - `Completed`
+2. `#33` Add automated tests for the M-Pesa reconciliation job - `Completed`
+3. `#43` Make M-Pesa error tests part of automated CI - `Completed`
+
+### P4. Task #41
+Use live Daraja status when polling still-pending M-Pesa payments.
+
+Status: `Completed`
+
+Why this mattered:
+- The portal and bursar polling endpoints were previously reading local `PENDING` rows only.
+- Live Daraja query logic existed, but only inside the reconciliation command.
+
+Acceptance criteria:
+- pending STK polls can trigger a live Daraja query instead of waiting only for callback or batch reconciliation
+- a successful live query finalizes the gateway transaction into a real `Payment`
+- finance status polling returns receipt metadata after live settlement
+- parent and student portal polling surfaces the live payment outcome
+
+Completion snapshot:
+- added shared pending-STK refresh logic in `FinanceService.refresh_pending_mpesa_transaction()`
+- finance, parent, and student M-Pesa status endpoints now use that helper for stale `PENDING` transactions
+- successful live Daraja status queries now finalize the payment, allocate it, and expose receipt metadata through the normal status responses
+- parent and student polling now receive the same live outcome through the existing `message` field they already render
+- focused regression pack passed: `school.test_finance_phase4.FinancePhase4WebhookAndReconciliationTests` and `parent_portal.tests.ParentPortalTests`
+
+Primary files:
+- [services.py](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/school/services.py:561)
+- [views.py](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/school/views.py:10301)
+- [parent_portal/views.py](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/parent_portal/views.py:819)
+- [student_portal_views.py](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/parent_portal/student_portal_views.py:840)
+- [test_finance_phase4.py](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/school/test_finance_phase4.py:432)
+- [tests.py](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/parent_portal/tests.py:243)
 
 ## Full Task Disposition Matrix
 
@@ -278,18 +314,19 @@ Reason:
 ### Task #32
 Write automated tests for the callback URL settings API.
 
-Status: `Do After #52`
+Status: `Merged Into #52`
 
 Reason:
-- Backend exists and needs coverage.
+- Covered during the STK diagnostics pass because callback URL visibility and exact Daraja diagnostics shipped together.
 
 ### Task #33
 Add automated tests for the M-Pesa reconciliation job.
 
-Status: `Do After #52`
+Status: `Completed`
 
 Reason:
-- Strong reliability coverage for payment settlement.
+- Added focused command coverage for successful reconciliation, failed reconciliation, and dry-run safety on `reconcile_mpesa_pending`.
+- Focused verification passed: `school.test_mpesa_reconciliation_command`
 
 ### Task #34
 Make the reconciliation interval configurable from the Settings page.
@@ -318,59 +355,63 @@ Reason:
 ### Task #40
 Show payment failure reasons to students and parents in the portal.
 
-Status: `Do After #52`
+Status: `Completed`
 
 Reason:
-- Depends on reliable backend status semantics.
+- The portal bundles already render backend `message`, `error`, and `detail` values.
+- `#52` fixed initiation-path Daraja error clarity, and `#41` now feeds live failure/success messages through the polling path.
 
 ### Task #41
 Use live Daraja status when polling still-pending M-Pesa payments.
 
-Status: `Do After #52`
+Status: `Completed`
 
 Reason:
-- Strong complement to the STK failure fix and likely next payment UX step.
+- Completed by moving live Daraja query/reconciliation into the finance, parent, and student status endpoints.
 
 ### Task #42
 Add tests to catch phone number and STK push errors before they reach users.
 
-Status: `Do After #52`
+Status: `Completed`
 
 Reason:
-- Best placed immediately after STK failure behavior is corrected.
+- Added focused initiation-path and validation-path coverage for bursar, parent, and student M-Pesa flows.
+- Focused verification passed: `school.test_mpesa_errors`, `school.test_finance_phase4.FinancePhase4WebhookAndReconciliationTests`, and `parent_portal.tests.ParentPortalTests`
 
 ### Task #43
 Make M-Pesa error tests part of automated CI.
 
-Status: `Do After #42`
+Status: `Completed`
 
 Reason:
-- Best once the test surface is complete enough to enforce.
+- Added a focused GitHub Actions workflow for the M-Pesa regression pack.
+- Workflow scope is intentionally narrow: `school.test_mpesa_errors`, `school.test_finance_phase4.FinancePhase4WebhookAndReconciliationTests`, `parent_portal.tests.ParentPortalTests`, and `school.test_mpesa_reconciliation_command`
+- Local CI rehearsal passed: `98 tests, OK`
 
 ### Task #51
 Approvals Hub - Full Endpoint Rewire.
 
-Status: `Do Now, narrowed`
+Status: `Completed, narrowed`
 
 Reason:
-- Still valid, but only for unresolved route mismatches and tab verification.
-- Not a full rewrite anymore.
+- Completed as a narrowed audit-and-repair pass.
+- The only real defect left was the leave reject payload alias; staff transfers were a stale report item, not an active approvals-hub tab defect.
 
 ### Task #52
 Fix M-Pesa STK Push Failure.
 
-Status: `Do Now`
+Status: `Completed`
 
 Reason:
-- Highest-value active payment issue.
+- Highest-value active payment issue, now closed.
 
 ### Task #53
 Fix Session Idle Timeout.
 
-Status: `Do Now`
+Status: `Completed`
 
 Reason:
-- Highest-value security/session issue.
+- Highest-value security/session issue, now closed.
 
 ## Already Corrected Items
 
@@ -395,10 +436,14 @@ The plan intentionally leaves no uncategorized issue:
 1. `#52` Fix M-Pesa STK Push Failure
 2. `#53` Fix Session Idle Timeout
 3. `#51` Narrowed approvals-hub audit and rewire
-4. `#41`
-5. `#40`
-6. `#42`
-7. `#32`
-8. `#30`
-9. `#33`
-10. `#43`
+4. `#41` Use live Daraja status when polling still-pending M-Pesa payments
+5. `#40` Show payment failure reasons to students and parents in the portal
+6. `#42` Add tests to catch phone number and STK push errors before they reach users
+7. `#32` Write automated tests for the callback URL settings API
+8. `#30` Add M-Pesa callback URL field to the settings page UI
+9. `#33` Add automated tests for the M-Pesa reconciliation job
+10. `#43` Make M-Pesa error tests part of automated CI
+
+Current outcome:
+- all active `Do Now` tasks from this register are complete
+- the remaining items are either deferred by priority or already merged into completed work
