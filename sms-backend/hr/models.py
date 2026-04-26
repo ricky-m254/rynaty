@@ -545,12 +545,14 @@ class LeaveRequest(models.Model):
     STATUS_CHOICES = [
         ("Pending", "Pending"),
         ("Approved", "Approved"),
+        ("Needs Info", "Clarification Requested"),
         ("Rejected", "Rejected"),
         ("Cancelled", "Cancelled"),
     ]
     APPROVAL_STAGE_CHOICES = [
         ("PENDING_MANAGER", "Pending Manager"),
         ("PENDING_HR", "Pending HR"),
+        ("NEEDS_INFO", "Clarification Requested"),
         ("APPROVED", "Approved"),
         ("REJECTED", "Rejected"),
         ("CANCELLED", "Cancelled"),
@@ -599,6 +601,7 @@ class LeaveRequest(models.Model):
     long_leave_threshold_days_snapshot = models.DecimalField(max_digits=7, decimal_places=2, default=0.00)
     return_reconciliation_required = models.BooleanField(default=False)
     approved_at = models.DateTimeField(null=True, blank=True)
+    review_notes = models.TextField(blank=True)
     rejection_reason = models.TextField(blank=True)
     submitted_at = models.DateTimeField(auto_now_add=True)
     is_active = models.BooleanField(default=True)

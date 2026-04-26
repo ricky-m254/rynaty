@@ -1747,6 +1747,20 @@ class FinanceService:
 
     @staticmethod
     @transaction.atomic
+    def request_adjustment_clarification(adjustment, reviewer, review_notes=""):
+        if adjustment.status != 'PENDING':
+            raise ValueError("Only pending adjustments can be sent back for clarification.")
+        if not str(review_notes or '').strip():
+            raise ValueError("review_notes is required.")
+        adjustment.status = 'NEEDS_INFO'
+        adjustment.reviewed_by = reviewer
+        adjustment.reviewed_at = timezone.now()
+        adjustment.review_notes = str(review_notes).strip()
+        adjustment.save(update_fields=['status', 'reviewed_by', 'reviewed_at', 'review_notes'])
+        return adjustment
+
+    @staticmethod
+    @transaction.atomic
     def create_writeoff_request(invoice, amount, reason, requested_by):
         amount = Decimal(str(amount))
         if amount <= 0:
@@ -1802,6 +1816,20 @@ class FinanceService:
 
     @staticmethod
     @transaction.atomic
+    def request_writeoff_clarification(writeoff, reviewer, review_notes=""):
+        if writeoff.status != 'PENDING':
+            raise ValueError("Only pending write-off requests can be sent back for clarification.")
+        if not str(review_notes or '').strip():
+            raise ValueError("review_notes is required.")
+        writeoff.status = 'NEEDS_INFO'
+        writeoff.reviewed_by = reviewer
+        writeoff.reviewed_at = timezone.now()
+        writeoff.review_notes = str(review_notes).strip()
+        writeoff.save(update_fields=['status', 'reviewed_by', 'reviewed_at', 'review_notes'])
+        return writeoff
+
+    @staticmethod
+    @transaction.atomic
     def request_payment_reversal(payment, reason, requested_by):
         if not payment.is_active:
             raise ValueError("Payment is already inactive/reversed.")
@@ -1838,6 +1866,7 @@ class FinanceService:
 
         for invoice in affected_invoices:
             FinanceService.sync_invoice_status(invoice)
+        return reversal_request
 
     @staticmethod
     @transaction.atomic
@@ -1849,6 +1878,21 @@ class FinanceService:
         reversal_request.reviewed_at = timezone.now()
         reversal_request.review_notes = review_notes
         reversal_request.save(update_fields=['status', 'reviewed_by', 'reviewed_at', 'review_notes'])
+        return reversal_request
+
+    @staticmethod
+    @transaction.atomic
+    def request_payment_reversal_clarification(reversal_request, reviewed_by, review_notes=""):
+        if reversal_request.status != 'PENDING':
+            raise ValueError("Only pending reversal requests can be sent back for clarification.")
+        if not str(review_notes or '').strip():
+            raise ValueError("review_notes is required.")
+        reversal_request.status = 'NEEDS_INFO'
+        reversal_request.reviewed_by = reviewed_by
+        reversal_request.reviewed_at = timezone.now()
+        reversal_request.review_notes = str(review_notes).strip()
+        reversal_request.save(update_fields=['status', 'reviewed_by', 'reviewed_at', 'review_notes'])
+        return reversal_request
 
     @staticmethod
     @transaction.atomic

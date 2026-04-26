@@ -332,6 +332,7 @@ class AcquisitionRequest(models.Model):
     STATUS_CHOICES = [
         ("Pending", "Pending"),
         ("Approved", "Approved"),
+        ("Needs Info", "Clarification Requested"),
         ("Rejected", "Rejected"),
         ("Ordered", "Ordered"),
         ("Received", "Received"),
@@ -351,6 +352,7 @@ class AcquisitionRequest(models.Model):
     justification = models.TextField(blank=True)
     estimated_cost = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="Pending")
+    review_notes = models.TextField(blank=True)
     approved_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,

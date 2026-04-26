@@ -637,6 +637,22 @@ class InvoiceAdjustmentViewSet(viewsets.ModelViewSet):
         except Exception as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
+    @action(detail=True, methods=["post"], url_path="clarify")
+    def clarify(self, request, pk=None):
+        if not request_has_approval_category(request, "adjustments"):
+            return _approval_forbidden("adjustments")
+        adjustment = self.get_object()
+        try:
+            review_notes = request.data.get("review_notes") or ""
+            adjustment = FinanceService.request_adjustment_clarification(
+                adjustment,
+                reviewer=request.user,
+                review_notes=review_notes,
+            )
+            return Response(self.get_serializer(adjustment).data, status=status.HTTP_200_OK)
+        except Exception as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
 
 class PaymentReversalRequestViewSet(viewsets.ModelViewSet):
     serializer_class = PaymentReversalRequestSerializer
@@ -687,6 +703,22 @@ class PaymentReversalRequestViewSet(viewsets.ModelViewSet):
         try:
             review_notes = request.data.get("review_notes") or ""
             reversal = FinanceService.reject_payment_reversal(
+                reversal_request=reversal,
+                reviewed_by=request.user,
+                review_notes=review_notes,
+            )
+            return Response(self.get_serializer(reversal).data, status=status.HTTP_200_OK)
+        except Exception as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=["post"], url_path="clarify")
+    def clarify(self, request, pk=None):
+        if not request_has_approval_category(request, "reversals"):
+            return _approval_forbidden("reversals")
+        reversal = self.get_object()
+        try:
+            review_notes = request.data.get("review_notes") or ""
+            reversal = FinanceService.request_payment_reversal_clarification(
                 reversal_request=reversal,
                 reviewed_by=request.user,
                 review_notes=review_notes,
@@ -746,6 +778,22 @@ class InvoiceWriteOffRequestViewSet(viewsets.ModelViewSet):
         try:
             review_notes = request.data.get("review_notes") or ""
             writeoff = FinanceService.reject_writeoff_request(
+                writeoff=writeoff,
+                reviewer=request.user,
+                review_notes=review_notes,
+            )
+            return Response(self.get_serializer(writeoff).data, status=status.HTTP_200_OK)
+        except Exception as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=["post"], url_path="clarify")
+    def clarify(self, request, pk=None):
+        if not request_has_approval_category(request, "writeoffs"):
+            return _approval_forbidden("writeoffs")
+        writeoff = self.get_object()
+        try:
+            review_notes = request.data.get("review_notes") or ""
+            writeoff = FinanceService.request_writeoff_clarification(
                 writeoff=writeoff,
                 reviewer=request.user,
                 review_notes=review_notes,

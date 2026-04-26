@@ -710,6 +710,7 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
             "hr_approved_by_name",
             "hr_approved_at",
             "approved_at",
+            "review_notes",
             "rejection_reason",
             "submitted_at",
             "is_active",
@@ -729,6 +730,7 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
             "manager_approved_at",
             "hr_approved_at",
             "approved_at",
+            "review_notes",
             "submitted_at",
         ]
 

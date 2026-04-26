@@ -987,6 +987,25 @@ class AcquisitionRequestViewSet(LibraryAccessMixin, viewsets.ModelViewSet):
         row.save(update_fields=["status", "approved_by", "updated_at"])
         return Response(self.get_serializer(row).data, status=status.HTTP_200_OK)
 
+    @action(detail=True, methods=["post"], url_path="clarify")
+    def clarify(self, request, pk=None):
+        if not request_has_approval_category(request, "acquisitions"):
+            return Response(
+                {"error": "You are not allowed to request clarification on acquisition requests."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        row = self.get_object()
+        if row.status == "Received":
+            return Response({"error": "Cannot request clarification for a received request."}, status=status.HTTP_400_BAD_REQUEST)
+        review_notes = str(request.data.get("review_notes") or request.data.get("notes") or "").strip()
+        if not review_notes:
+            return Response({"error": "review_notes is required."}, status=status.HTTP_400_BAD_REQUEST)
+        row.status = "Needs Info"
+        row.review_notes = review_notes
+        row.approved_by = request.user
+        row.save(update_fields=["status", "review_notes", "approved_by", "updated_at"])
+        return Response(self.get_serializer(row).data, status=status.HTTP_200_OK)
+
     @action(detail=True, methods=["post"], url_path="mark-ordered")
     def mark_ordered(self, request, pk=None):
         if not request_has_approval_category(request, "acquisitions"):

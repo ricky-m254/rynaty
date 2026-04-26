@@ -41,9 +41,9 @@
   --glass-top:    rgba(148,210,255,0.18);
 
   /* Text */
-  --text-primary:   #E2EEFF;
-  --text-secondary: #8BA3C4;
-  --text-muted:     rgba(139,163,196,0.55);
+  --text-primary:   #F2F7FF;
+  --text-secondary: #ABC1DD;
+  --text-muted:     rgba(171,193,221,0.78);
 
   /* Shadows */
   --shadow-deep:   0 24px 64px rgba(0,0,0,0.7), 0 4px 16px rgba(0,0,0,0.5);
@@ -61,8 +61,10 @@ html, body, #root {
   background-color: var(--void) !important;
   color: var(--text-primary) !important;
   font-feature-settings: "cv11","ss01","kern";
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  -webkit-font-smoothing: subpixel-antialiased;
+  -moz-osx-font-smoothing: auto;
+  text-rendering: optimizeLegibility;
+  font-synthesis-weight: none;
   min-height: 100vh;
 }
 
@@ -148,8 +150,8 @@ body::after {
       rgba(7,11,24,0.85) 100%
     ) !important;
   border: 1px solid var(--glass-border) !important;
-  backdrop-filter: blur(24px) saturate(1.6) brightness(1.08) !important;
-  -webkit-backdrop-filter: blur(24px) saturate(1.6) brightness(1.08) !important;
+  backdrop-filter: blur(14px) saturate(1.22) brightness(1.03) !important;
+  -webkit-backdrop-filter: blur(14px) saturate(1.22) brightness(1.03) !important;
   box-shadow: var(--shadow-card) !important;
   transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease !important;
   position: relative !important;
@@ -213,7 +215,7 @@ body::after {
 .glass-panel-hover {
   background: rgba(10,17,36,0.5) !important;
   border: 1px solid rgba(99,179,237,0.15) !important;
-  backdrop-filter: blur(20px) !important;
+  backdrop-filter: blur(12px) !important;
   transition: all 0.25s ease !important;
 }
 .glass-panel-hover:hover {
@@ -235,7 +237,7 @@ aside {
       rgba(7,11,24,0.85) 20%,
       rgba(5,8,16,0.90) 100%
     ) !important;
-  backdrop-filter: blur(28px) saturate(1.4) !important;
+  backdrop-filter: blur(16px) saturate(1.2) !important;
   border-right: 1px solid rgba(99,179,237,0.12) !important;
 }
 
@@ -689,12 +691,25 @@ div[style*="#070b12"] {
    ───────────────────────────────────────────── */
 
 .text-white    { color: #E2EEFF !important; }
-.text-slate-300{ color: rgba(210,225,248,0.9) !important; }
-.text-slate-400{ color: rgba(139,163,196,0.78) !important; }
-.text-slate-500{ color: rgba(110,130,170,0.65) !important; }
+.text-slate-300{ color: rgba(222,234,249,0.96) !important; }
+.text-slate-400{ color: rgba(187,206,232,0.9) !important; }
+.text-slate-500{ color: rgba(166,188,218,0.84) !important; }
+.text-slate-600{ color: rgba(190,209,233,0.82) !important; }
+.text-slate-700{ color: rgba(213,227,245,0.9) !important; }
+.text-slate-800{ color: rgba(228,238,250,0.94) !important; }
+.text-slate-900{ color: #EDF4FF !important; }
+.text-slate-950{ color: #F7FAFF !important; }
 .text-emerald-200 { color: #A7F3D0 !important; }
 .text-emerald-300 { color: #6EE7B7 !important; }
 .text-emerald-400 { color: #34D399 !important; }
+
+[style*="color:#334155"], [style*="color: #334155"] { color: #7f96b4 !important; }
+[style*="color:#475569"], [style*="color: #475569"] { color: #9db2cc !important; }
+[style*="color:#64748b"], [style*="color: #64748b"] { color: #b5c6dd !important; }
+[style*="color:#94a3b8"], [style*="color: #94a3b8"] { color: #d1dded !important; }
+
+.blur-\[100px\] { filter: blur(68px) !important; }
+.blur-\[80px\] { filter: blur(52px) !important; }
 
 td[class*="text-emerald"], td[class*="text-green"] { font-weight: 600 !important; font-variant-numeric: tabular-nums !important; }
 td[class*="text-rose"], td[class*="text-red"] { font-weight: 600 !important; }

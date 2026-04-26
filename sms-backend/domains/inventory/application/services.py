@@ -18,6 +18,7 @@ class InventoryNotFoundError(Exception):
 
 _ACTION_TO_STATUS = {
     "APPROVE": "APPROVED",
+    "CLARIFY": "NEEDS_INFO",
     "REJECT": "REJECTED",
     "FULFILL": "FULFILLED",
 }
@@ -59,7 +60,7 @@ def normalize_review_action(*, action: str | None = None, status_value: str | No
     if normalized_status in _STATUS_TO_ACTION:
         return _STATUS_TO_ACTION[normalized_status]
 
-    raise InventoryValidationError("action must be APPROVE, REJECT, or FULFILL.")
+    raise InventoryValidationError("action must be APPROVE, CLARIFY, REJECT, or FULFILL.")
 
 
 def extract_order_items_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -146,7 +147,7 @@ class StoreOrderWorkflowService:
             action=payload.get("action"),
             status_value=payload.get("status"),
         )
-        if action in {"APPROVE", "REJECT"} and order.status != "PENDING":
+        if action in {"APPROVE", "CLARIFY", "REJECT"} and order.status != "PENDING":
             raise InventoryValidationError("Only pending orders can be reviewed.")
         if action == "FULFILL" and order.status != "APPROVED":
             raise InventoryValidationError("Only approved orders can be fulfilled.")
@@ -188,6 +189,11 @@ class StoreOrderWorkflowService:
         if action == "APPROVE":
             order.receiving_state = "PENDING"
             order.approved_total = approved_total
+        elif action == "CLARIFY":
+            if not order.notes:
+                raise InventoryValidationError("notes is required when requesting clarification.")
+            order.approved_total = Decimal("0.00")
+            order.receiving_state = "PENDING"
         elif action == "REJECT":
             order.approved_total = Decimal("0.00")
             order.receiving_state = "PENDING"
@@ -226,8 +232,14 @@ class StoreOrderWorkflowService:
             ],
         )
 
+        message = {
+            "APPROVED": "Order approved.",
+            "NEEDS_INFO": "Clarification requested for order.",
+            "REJECTED": "Order rejected.",
+            "FULFILLED": "Order fulfilled.",
+        }.get(order.status, f"Order {order.status.lower()}.")
         return {
-            "detail": f"Order {order.status.lower()}.",
+            "detail": message,
             "status": order.status,
         }
 

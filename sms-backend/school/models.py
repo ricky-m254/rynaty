@@ -927,6 +927,7 @@ class AdmissionApplication(models.Model):
         ('Documents Received', 'Documents Received'),
         ('Interview Scheduled', 'Interview Scheduled'),
         ('Assessed', 'Assessed'),
+        ('Needs Clarification', 'Needs Clarification'),
         ('Admitted', 'Admitted'),
         ('Rejected', 'Rejected'),
         ('Enrolled', 'Enrolled'),
@@ -1393,6 +1394,7 @@ class InvoiceAdjustment(models.Model):
     STATUS_CHOICES = [
         ('PENDING', 'Pending'),
         ('APPROVED', 'Approved'),
+        ('NEEDS_INFO', 'Clarification Requested'),
         ('REJECTED', 'Rejected'),
     ]
     invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name='adjustments')
@@ -1420,6 +1422,7 @@ class PaymentReversalRequest(models.Model):
     STATUS_CHOICES = [
         ('PENDING', 'Pending'),
         ('APPROVED', 'Approved'),
+        ('NEEDS_INFO', 'Clarification Requested'),
         ('REJECTED', 'Rejected'),
     ]
 
@@ -1440,6 +1443,7 @@ class InvoiceWriteOffRequest(models.Model):
     STATUS_CHOICES = [
         ('PENDING', 'Pending'),
         ('APPROVED', 'Approved'),
+        ('NEEDS_INFO', 'Clarification Requested'),
         ('REJECTED', 'Rejected'),
     ]
 
@@ -1795,6 +1799,7 @@ class StoreOrderRequest(models.Model):
     STATUS_CHOICES = [
         ('PENDING', 'Pending'),
         ('APPROVED', 'Approved'),
+        ('NEEDS_INFO', 'Clarification Requested'),
         ('REJECTED', 'Rejected'),
         ('FULFILLED', 'Fulfilled'),
     ]

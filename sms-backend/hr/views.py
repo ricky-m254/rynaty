@@ -60,6 +60,7 @@ from .domain.leave_operations import (
     final_approve_leave,
     initialize_leave_request_state,
     manager_approve_leave,
+    request_leave_clarification,
     reject_leave,
     reopen_return_reconciliation,
 )
@@ -1327,6 +1328,23 @@ class LeaveRequestViewSet(HrModuleAccessMixin, viewsets.ModelViewSet):
         except ValueError as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response({"message": "Leave request rejected."}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="clarify")
+    def clarify(self, request, pk=None):
+        leave_request = self.get_object()
+        review_notes = str(request.data.get("review_notes") or request.data.get("reason") or "").strip()
+        try:
+            request_leave_clarification(leave_request, review_notes=review_notes)
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        leave_request.refresh_from_db()
+        return Response(
+            {
+                "message": "Leave request sent back for clarification.",
+                "leave_request": self.get_serializer(leave_request).data,
+            },
+            status=status.HTTP_200_OK,
+        )
 
     @action(detail=True, methods=["post"], url_path="cancel")
     def cancel(self, request, pk=None):

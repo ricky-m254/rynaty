@@ -13,6 +13,9 @@ The previous register is complete. This one tracks the next operational and prod
 - legacy issue register is closed
 - M-Pesa hardening, session timeout, approvals-hub repair, DB-health surfacing, and finance ops controls are complete
 - tenant secret storage and key rotation support are complete in code
+- dark-theme clarity tuning is applied at the shared theme layer to reduce blur and raise text contrast
+- the approvals hub now uses real `approve`, `clarify`, and `reject` actions across the supported approval domains
+- approval scope regression coverage passed against the local trust-auth Postgres instance on `127.0.0.1:55432`
 
 ## Do Now
 
@@ -94,9 +97,21 @@ Acceptance criteria:
 - a documented cleanup path exists for local runtime clutter
 - optional `.gitignore` or helper automation prevents repeat noise
 
+### P6. Approval Workflow Clarification States
+
+Status: `Complete`
+
+Outcome:
+- finance, store orders, library acquisitions, timetable, admissions, maintenance, and HR leave requests now have explicit clarification states and action endpoints
+- the approvals hub exposes a real `clarify` action instead of a dead-end placeholder
+- approval scope regression coverage was extended and passed for the backend clarification flows
+
+Follow-up:
+- if the product later needs multi-step requester resubmission loops after clarification, that should be tracked as a new workflow enhancement rather than reopening this task
+
 ## Deferred
 
-### P6. Settings API Contract Tightening
+### P7. Settings API Contract Tightening
 
 Status: `Deferred`
 
@@ -112,3 +127,4 @@ Reason:
 4. `P3` Mask Secret Values In Settings Reads
 5. `P4` Audit Secret Access Events
 6. `P5` Workspace Hygiene Automation
+7. `P6` Approval Workflow Clarification States

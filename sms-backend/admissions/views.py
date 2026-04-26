@@ -80,12 +80,12 @@ class AdmissionApplicationViewSet(SchoolAdmissionApplicationViewSet):
 
     def _approval_status_guard(self, request):
         target_status = str(request.data.get("status") or "").strip()
-        if target_status not in {"Admitted", "Rejected"}:
+        if target_status not in {"Admitted", "Needs Clarification", "Rejected"}:
             return None
         if request_has_approval_category(request, "admissions"):
             return None
         return Response(
-            {"error": "You are not allowed to admit or reject applications."},
+            {"error": "You are not allowed to review admission applications."},
             status=status.HTTP_403_FORBIDDEN,
         )
 
@@ -100,6 +100,24 @@ class AdmissionApplicationViewSet(SchoolAdmissionApplicationViewSet):
         if guarded_response is not None:
             return guarded_response
         return super().partial_update(request, *args, **kwargs)
+
+    @action(detail=True, methods=["post"], url_path="clarify")
+    def clarify(self, request, pk=None):
+        if not request_has_approval_category(request, "admissions"):
+            return Response(
+                {"error": "You are not allowed to request clarification for admission applications."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        application = self.get_object()
+        if application.status != "Submitted":
+            return Response({"error": "Only submitted applications can be sent back for clarification."}, status=status.HTTP_400_BAD_REQUEST)
+        review_notes = str(request.data.get("review_notes") or request.data.get("notes") or "").strip()
+        if not review_notes:
+            return Response({"error": "review_notes is required."}, status=status.HTTP_400_BAD_REQUEST)
+        application.status = "Needs Clarification"
+        application.decision_notes = review_notes
+        application.save(update_fields=["status", "decision_notes"])
+        return Response(self.get_serializer(application).data, status=status.HTTP_200_OK)
 
     @staticmethod
     def _build_enrollment_payload(application: AdmissionApplication, request_data=None):

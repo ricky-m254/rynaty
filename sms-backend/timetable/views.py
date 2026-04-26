@@ -116,6 +116,37 @@ class TimetableChangeRequestViewSet(TimetableModuleMixin, viewsets.ModelViewSet)
 
         return Response({'status': 'Rejected'})
 
+    @action(detail=True, methods=['post'])
+    def clarify(self, request, pk=None):
+        if not request_has_approval_category(request, "timetable"):
+            return Response(
+                {"error": "You are not allowed to request clarification for timetable change requests."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        instance = self.get_object()
+        review_notes = str(request.data.get('review_notes') or '').strip()
+        if not review_notes:
+            return Response({"error": "review_notes is required."}, status=status.HTTP_400_BAD_REQUEST)
+        if instance.status != 'Pending':
+            return Response({"error": "Only pending requests can be sent back for clarification."}, status=status.HTTP_400_BAD_REQUEST)
+        instance.status = 'Needs Info'
+        instance.reviewed_by = request.user
+        instance.reviewed_at = timezone.now()
+        instance.review_notes = review_notes
+        instance.save()
+
+        from communication.models import Notification
+        Notification.objects.create(
+            recipient=instance.requested_by,
+            notification_type='System',
+            title="Timetable Request Needs Clarification",
+            message="Your timetable change request needs clarification before it can be approved.",
+            priority='Important',
+            delivery_status='Sent',
+        )
+
+        return Response({'status': 'Needs Info'})
+
 class LessonCoverageViewSet(TimetableModuleMixin, viewsets.ModelViewSet):
     queryset = LessonCoverage.objects.all()
     serializer_class = LessonCoverageSerializer

@@ -18,6 +18,7 @@ class MaintenanceRequest(models.Model):
     STATUS_CHOICES = [
         ('Pending', 'Pending'),
         ('Approved', 'Approved'),
+        ('Needs Info', 'Clarification Requested'),
         ('In Progress', 'In Progress'),
         ('On Hold', 'On Hold'),
         ('Completed', 'Completed'),

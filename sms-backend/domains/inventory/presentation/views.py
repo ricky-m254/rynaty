@@ -157,9 +157,9 @@ class StoreOrderReviewView(InventoryRepositoryMixin, APIView):
         except InventoryValidationError as exc:
             return Response({"detail": str(exc)}, status=400)
 
-        if action in {"APPROVE", "REJECT"} and not request_has_approval_category(request, "store_orders"):
+        if action in {"APPROVE", "CLARIFY", "REJECT"} and not request_has_approval_category(request, "store_orders"):
             return Response(
-                {"error": "You are not allowed to approve or reject store orders."},
+                {"error": "You are not allowed to review store orders."},
                 status=403,
             )
         service = StoreOrderWorkflowService(self.get_repository())

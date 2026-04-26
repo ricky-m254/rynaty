@@ -10,6 +10,8 @@ from admissions.views import AdmissionApplicationViewSet
 from clients.models import Domain, Tenant
 from domains.inventory.presentation.views import StoreOrderReviewView
 from finance.presentation.viewsets import PaymentReversalRequestViewSet
+from hr.models import Employee, LeaveBalance, LeaveRequest, LeaveType
+from hr.views import LeaveRequestViewSet
 from library.models import AcquisitionRequest
 from library.views import AcquisitionRequestViewSet
 from maintenance.models import MaintenanceCategory, MaintenanceRequest
@@ -58,7 +60,7 @@ class ApprovalScopePhase1Tests(TenantTestBase):
     def setUp(self):
         super().setUp()
         self.factory = APIRequestFactory()
-        for module_key in ("FINANCE", "ADMISSIONS", "LIBRARY", "MAINTENANCE", "STORE", "TIMETABLE"):
+        for module_key in ("FINANCE", "ADMISSIONS", "HR", "LIBRARY", "MAINTENANCE", "STORE", "TIMETABLE"):
             Module.objects.get_or_create(key=module_key, defaults={"name": module_key.title()})
 
     def _user(self, username: str, role_name: str, modules: list[str] | None = None):
@@ -69,6 +71,15 @@ class ApprovalScopePhase1Tests(TenantTestBase):
             module = Module.objects.get(key=module_key)
             UserModuleAssignment.objects.create(user=user, module=module, is_active=True)
         return user
+
+    def _employee_for_user(self, user, employee_id: str, first_name: str, last_name: str):
+        return Employee.objects.create(
+            user=user,
+            employee_id=employee_id,
+            first_name=first_name,
+            last_name=last_name,
+            personal_email=f"{employee_id.lower()}@example.com",
+        )
 
     def test_accountant_can_approve_payment_reversal_request(self):
         requester = self._user("approval_fin_requester", "ACCOUNTANT", ["FINANCE"])
@@ -110,6 +121,46 @@ class ApprovalScopePhase1Tests(TenantTestBase):
         )
         self.assertEqual(approve_response.status_code, 200)
 
+    def test_accountant_can_request_clarification_on_payment_reversal(self):
+        requester = self._user("clarify_fin_requester", "ACCOUNTANT", ["FINANCE"])
+        reviewer = self._user("clarify_fin_reviewer", "ACCOUNTANT", ["FINANCE"])
+        student = Student.objects.create(
+            admission_number="APR-002",
+            first_name="Lina",
+            last_name="Achieng",
+            date_of_birth=date(2012, 2, 2),
+            gender="F",
+            is_active=True,
+        )
+        payment = Payment.objects.create(
+            student=student,
+            amount=Decimal("450.00"),
+            payment_method="Cash",
+            reference_number="APR-REV-CLARIFY",
+            notes="clarification scope test",
+        )
+        create_request = self.factory.post(
+            "/api/finance/payment-reversals/",
+            {"payment": payment.id, "reason": "Narration mismatch"},
+            format="json",
+        )
+        force_authenticate(create_request, user=requester)
+        create_response = PaymentReversalRequestViewSet.as_view({"post": "create"})(create_request)
+        self.assertEqual(create_response.status_code, 201)
+
+        clarify_request = self.factory.post(
+            f"/api/finance/payment-reversals/{create_response.data['id']}/clarify/",
+            {"review_notes": "Please attach the signed bursar confirmation."},
+            format="json",
+        )
+        force_authenticate(clarify_request, user=reviewer)
+        clarify_response = PaymentReversalRequestViewSet.as_view({"post": "clarify"})(
+            clarify_request,
+            pk=create_response.data["id"],
+        )
+        self.assertEqual(clarify_response.status_code, 200)
+        self.assertEqual(clarify_response.data["status"], "NEEDS_INFO")
+
     def test_accountant_can_review_store_order_with_finance_scope(self):
         requester = self._user("approval_store_requester", "STORE_CLERK", ["STORE"])
         reviewer = self._user("approval_store_finance", "ACCOUNTANT", ["FINANCE"])
@@ -141,6 +192,27 @@ class ApprovalScopePhase1Tests(TenantTestBase):
         order.refresh_from_db()
         self.assertEqual(order.status, "APPROVED")
 
+    def test_accountant_can_request_clarification_on_store_order(self):
+        requester = self._user("clarify_store_requester", "STORE_CLERK", ["STORE"])
+        reviewer = self._user("clarify_store_finance", "ACCOUNTANT", ["FINANCE"])
+        order = StoreOrderRequest.objects.create(
+            title="Lab Reagents",
+            description="Chemistry department request",
+            requested_by=requester,
+            send_to="FINANCE",
+        )
+
+        clarify_request = self.factory.patch(
+            f"/api/store/orders/{order.id}/review/",
+            {"action": "CLARIFY", "notes": "Please split this into itemized lines."},
+            format="json",
+        )
+        force_authenticate(clarify_request, user=reviewer)
+        clarify_response = StoreOrderReviewView.as_view()(clarify_request, pk=order.id)
+        self.assertEqual(clarify_response.status_code, 200)
+        order.refresh_from_db()
+        self.assertEqual(order.status, "NEEDS_INFO")
+
     def test_librarian_can_approve_acquisition_request(self):
         requester = self._user("approval_lib_requester", "TEACHER", ["LIBRARY"])
         reviewer = self._user("approval_lib_reviewer", "LIBRARIAN", ["LIBRARY"])
@@ -164,6 +236,31 @@ class ApprovalScopePhase1Tests(TenantTestBase):
         self.assertEqual(approve_response.status_code, 200)
         acquisition.refresh_from_db()
         self.assertEqual(acquisition.status, "Approved")
+
+    def test_librarian_can_request_clarification_on_acquisition_request(self):
+        requester = self._user("clarify_lib_requester", "TEACHER", ["LIBRARY"])
+        reviewer = self._user("clarify_lib_reviewer", "LIBRARIAN", ["LIBRARY"])
+        acquisition = AcquisitionRequest.objects.create(
+            requested_by=requester,
+            title="Advanced Physics",
+            author="P. K.",
+            isbn="9781111111111",
+            quantity=1,
+            justification="Need a newer edition",
+            estimated_cost=Decimal("2000.00"),
+        )
+
+        clarify_request = self.factory.post(
+            f"/api/library/acquisition/requests/{acquisition.id}/clarify/",
+            {"review_notes": "Please include the vendor quotation."},
+            format="json",
+        )
+        force_authenticate(clarify_request, user=reviewer)
+        clarify_response = AcquisitionRequestViewSet.as_view({"post": "clarify"})(clarify_request, pk=acquisition.id)
+        self.assertEqual(clarify_response.status_code, 200)
+        acquisition.refresh_from_db()
+        self.assertEqual(acquisition.status, "Needs Info")
+        self.assertEqual(acquisition.review_notes, "Please include the vendor quotation.")
 
     def test_teacher_cannot_approve_timetable_change_request(self):
         requester = self._user("approval_tt_requester", "TEACHER", ["TIMETABLE"])
@@ -206,6 +303,29 @@ class ApprovalScopePhase1Tests(TenantTestBase):
             pk=change_request.id,
         )
         self.assertEqual(approve_response.status_code, 200)
+
+    def test_hod_can_request_clarification_on_timetable_change_request(self):
+        requester = self._user("clarify_tt_requester", "TEACHER", ["TIMETABLE"])
+        reviewer = self._user("clarify_tt_hod", "HOD", [])
+        change_request = TimetableChangeRequest.objects.create(
+            request_type="CHANGE_TIME",
+            requested_by=requester,
+            reason="Need assembly-day shift",
+        )
+
+        clarify_request = self.factory.post(
+            f"/api/timetable/change-requests/{change_request.id}/clarify/",
+            {"review_notes": "Please add the exact replacement time window."},
+            format="json",
+        )
+        force_authenticate(clarify_request, user=reviewer)
+        clarify_response = TimetableChangeRequestViewSet.as_view({"post": "clarify"})(
+            clarify_request,
+            pk=change_request.id,
+        )
+        self.assertEqual(clarify_response.status_code, 200)
+        change_request.refresh_from_db()
+        self.assertEqual(change_request.status, "Needs Info")
 
     def test_teacher_with_module_access_cannot_admit_application(self):
         reviewer = self._user("approval_adm_teacher", "TEACHER", ["ADMISSIONS"])
@@ -254,6 +374,32 @@ class ApprovalScopePhase1Tests(TenantTestBase):
         self.assertEqual(patch_response.status_code, 200)
         application.refresh_from_db()
         self.assertEqual(application.status, "Admitted")
+
+    def test_registrar_can_request_clarification_on_application(self):
+        reviewer = self._user("clarify_adm_registrar", "REGISTRAR", [])
+        application = AdmissionApplication.objects.create(
+            student_first_name="Nuru",
+            student_last_name="Aloo",
+            student_dob=date(2014, 7, 3),
+            student_gender="Female",
+            application_date=date.today(),
+            status="Submitted",
+        )
+
+        clarify_request = self.factory.post(
+            f"/api/admissions/applications/{application.id}/clarify/",
+            {"review_notes": "Please upload the missing birth certificate."},
+            format="json",
+        )
+        force_authenticate(clarify_request, user=reviewer)
+        clarify_response = AdmissionApplicationViewSet.as_view({"post": "clarify"})(
+            clarify_request,
+            pk=application.id,
+        )
+        self.assertEqual(clarify_response.status_code, 200)
+        application.refresh_from_db()
+        self.assertEqual(application.status, "Needs Clarification")
+        self.assertEqual(application.decision_notes, "Please upload the missing birth certificate.")
 
     def test_module_access_without_approval_scope_cannot_approve_maintenance_request(self):
         reporter = self._user("approval_maint_reporter", "ADMIN", [])
@@ -304,3 +450,75 @@ class ApprovalScopePhase1Tests(TenantTestBase):
         self.assertEqual(patch_response.status_code, 200)
         request_row.refresh_from_db()
         self.assertEqual(request_row.status, "Approved")
+
+    def test_admin_can_request_clarification_on_maintenance_request(self):
+        reporter = self._user("clarify_maint_reporter", "ADMIN", [])
+        reviewer = self._user("clarify_maint_admin", "ADMIN", [])
+        category = MaintenanceCategory.objects.create(name="Carpentry")
+        request_row = MaintenanceRequest.objects.create(
+            title="Repair dormitory lockers",
+            category=category,
+            description="Several locker hinges are broken",
+            priority="Medium",
+            reported_by=reporter,
+        )
+
+        clarify_request = self.factory.post(
+            f"/api/maintenance/requests/{request_row.id}/clarify/",
+            {"review_notes": "Please specify the exact dormitory block and room."},
+            format="json",
+        )
+        force_authenticate(clarify_request, user=reviewer)
+        clarify_response = MaintenanceRequestViewSet.as_view({"post": "clarify"})(
+            clarify_request,
+            pk=request_row.id,
+        )
+        self.assertEqual(clarify_response.status_code, 200)
+        request_row.refresh_from_db()
+        self.assertEqual(request_row.status, "Needs Info")
+        self.assertEqual(request_row.notes, "Please specify the exact dormitory block and room.")
+
+    def test_hr_can_request_clarification_on_leave_request(self):
+        requester_user = self._user("clarify_leave_requester", "TEACHER", [])
+        reviewer_user = self._user("clarify_leave_reviewer", "HR_OFFICER", ["HR"])
+        requester_employee = self._employee_for_user(requester_user, "EMP-LEAVE-001", "Amina", "Sudi")
+        reviewer_employee = self._employee_for_user(reviewer_user, "EMP-LEAVE-002", "Grace", "Naliaka")
+        leave_type = LeaveType.objects.create(name="Annual Leave", code="AL")
+        LeaveBalance.objects.create(
+            employee=requester_employee,
+            leave_type=leave_type,
+            year=date.today().year,
+            opening_balance=Decimal("20.00"),
+            accrued=Decimal("0.00"),
+            used=Decimal("0.00"),
+            pending=Decimal("3.00"),
+            available=Decimal("17.00"),
+        )
+        leave_request = LeaveRequest.objects.create(
+            employee=requester_employee,
+            leave_type=leave_type,
+            start_date=date.today(),
+            end_date=date.today(),
+            days_requested=Decimal("3.00"),
+            reason="Family travel",
+            status="Pending",
+            approval_stage="PENDING_HR",
+            requires_dual_approval=False,
+        )
+
+        clarify_request = self.factory.post(
+            f"/api/hr/leave-requests/{leave_request.id}/clarify/",
+            {"review_notes": "Please attach the approved duty handover note."},
+            format="json",
+        )
+        force_authenticate(clarify_request, user=reviewer_user)
+        clarify_response = LeaveRequestViewSet.as_view({"post": "clarify"})(
+            clarify_request,
+            pk=leave_request.id,
+        )
+        self.assertEqual(clarify_response.status_code, 200)
+        leave_request.refresh_from_db()
+        reviewer_employee.refresh_from_db()
+        self.assertEqual(leave_request.status, "Needs Info")
+        self.assertEqual(leave_request.approval_stage, "NEEDS_INFO")
+        self.assertEqual(leave_request.review_notes, "Please attach the approved duty handover note.")

@@ -206,6 +206,30 @@ def reject_leave(leave_request: LeaveRequest, *, reason: str) -> LeaveRequest:
 
 
 @transaction.atomic
+def request_leave_clarification(leave_request: LeaveRequest, *, review_notes: str) -> LeaveRequest:
+    if leave_request.status != "Pending":
+        raise ValueError("Only pending requests can be sent back for clarification.")
+    if not review_notes.strip():
+        raise ValueError("review_notes is required.")
+
+    leave_request.status = "Needs Info"
+    leave_request.approval_stage = "NEEDS_INFO"
+    leave_request.current_approver = None
+    leave_request.review_notes = review_notes.strip()
+    leave_request.rejection_reason = ""
+    leave_request.save(
+        update_fields=[
+            "status",
+            "approval_stage",
+            "current_approver",
+            "review_notes",
+            "rejection_reason",
+        ]
+    )
+    return leave_request
+
+
+@transaction.atomic
 def cancel_leave(leave_request: LeaveRequest) -> LeaveRequest:
     if leave_request.status != "Pending":
         raise ValueError("Only pending requests can be cancelled.")

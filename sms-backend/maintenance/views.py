@@ -1,4 +1,5 @@
 from rest_framework import viewsets, permissions, status
+from rest_framework.decorators import action
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from school.permissions import HasModuleAccess, request_has_approval_category
@@ -23,12 +24,12 @@ class MaintenanceRequestViewSet(viewsets.ModelViewSet):
 
     def _approval_status_guard(self, request):
         target_status = str(request.data.get("status") or "").strip()
-        if target_status not in {"Approved", "Rejected"}:
+        if target_status not in {"Approved", "Needs Info", "Rejected"}:
             return None
         if request_has_approval_category(request, "maintenance"):
             return None
         return Response(
-            {"error": "You are not allowed to approve or reject maintenance requests."},
+            {"error": "You are not allowed to review maintenance requests."},
             status=status.HTTP_403_FORBIDDEN,
         )
 
@@ -43,6 +44,24 @@ class MaintenanceRequestViewSet(viewsets.ModelViewSet):
         if guarded_response is not None:
             return guarded_response
         return super().partial_update(request, *args, **kwargs)
+
+    @action(detail=True, methods=["post"], url_path="clarify")
+    def clarify(self, request, pk=None):
+        if not request_has_approval_category(request, "maintenance"):
+            return Response(
+                {"error": "You are not allowed to request clarification for maintenance requests."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        row = self.get_object()
+        if row.status != "Pending":
+            return Response({"error": "Only pending maintenance requests can be sent back for clarification."}, status=status.HTTP_400_BAD_REQUEST)
+        review_notes = str(request.data.get("review_notes") or request.data.get("notes") or "").strip()
+        if not review_notes:
+            return Response({"error": "review_notes is required."}, status=status.HTTP_400_BAD_REQUEST)
+        row.status = "Needs Info"
+        row.notes = review_notes
+        row.save(update_fields=["status", "notes"])
+        return Response(self.get_serializer(row).data, status=status.HTTP_200_OK)
 
 class MaintenanceChecklistViewSet(viewsets.ModelViewSet):
     queryset = MaintenanceChecklist.objects.all().order_by('id')
