@@ -92,14 +92,16 @@ Verification:
 
 ### P5. Workspace Hygiene Automation
 
-Status: `Do After`
+Status: `Complete`
 
-Reason:
-- browser-run and artifact clutter keeps accumulating outside git
+Outcome:
+- root runtime artifact patterns are now ignored in git
+- a scoped cleanup helper exists at [cleanup_local_artifacts.ps1](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/tools/cleanup_local_artifacts.ps1:1)
+- cleanup behavior is documented in [WORKSPACE_HYGIENE.md](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/WORKSPACE_HYGIENE.md:1)
 
-Acceptance criteria:
-- a documented cleanup path exists for local runtime clutter
-- optional `.gitignore` or helper automation prevents repeat noise
+Verification:
+- helper logic is path-scoped to the repo-root `artifacts/` directory
+- ignore rules do not overlap with tracked files under `sms-backend/artifacts/`
 
 ### P6. Approval Workflow Clarification States
 
@@ -128,5 +130,4 @@ Reason:
 1. `P0` Production Secret Rotation Rollout
 2. `P1` Live Payment Validation
 3. `P2` Launch Evidence Refresh
-4. `P5` Workspace Hygiene Automation
-5. `P7` Settings API Contract Tightening
+4. `P7` Settings API Contract Tightening

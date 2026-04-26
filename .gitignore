@@ -80,3 +80,8 @@ sms-backend/reproduce_*.py
 
 # Local verification artifacts
 artifacts/temp_pg_mpesa_ui*/
+artifacts/temp_pg_*/
+artifacts/cdp-*/
+artifacts/chrome-*/
+artifacts/*.log
+artifacts/*.zip
