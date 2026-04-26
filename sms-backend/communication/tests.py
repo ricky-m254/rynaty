@@ -2,6 +2,7 @@ from datetime import timedelta
 import hashlib
 import hmac
 import json
+from unittest.mock import patch
 from django.core.files.uploadedfile import SimpleUploadedFile
 
 from django.contrib.auth import get_user_model
@@ -12,11 +13,13 @@ from django_tenants.utils import schema_context
 from rest_framework.test import APIRequestFactory, force_authenticate
 
 from clients.models import Domain, Tenant
-from school.models import Module, Role, UserProfile
+from school.models import Module, Role, SchoolProfile, TenantSettings, UserProfile
 from school.models import UserModuleAssignment
+from school.tenant_secrets import set_tenant_secret, store_school_profile_secrets, tenant_setting_secret_key
 
 from .views import (
     CommunicationAnalyticsSummaryView,
+    CommunicationAnalyticsEngagementView,
     CommunicationMessageViewSet,
     ConversationViewSet,
     EmailCampaignViewSet,
@@ -27,7 +30,7 @@ from .views import (
     SmsWebhookView,
     SmsSendView,
 )
-from .models import CommunicationMessage, Conversation, EmailRecipient
+from .models import CommunicationMessage, Conversation, EmailCampaign, EmailRecipient
 
 User = get_user_model()
 
@@ -187,6 +190,218 @@ class CommunicationModuleTests(TenantTestBase):
             response.data.get("error", {}).get("details", {}).get("content"),
             "Message content or at least one attachment is required.",
         )
+
+    def test_admin_can_bulk_create_and_audit_notifications(self):
+        user3, _ = User.objects.get_or_create(
+            username="parent_ops",
+            defaults={"email": "parent.ops@school.local"},
+        )
+        user3.set_password("pass1234")
+        user3.save(update_fields=["password"])
+        role, _ = Role.objects.get_or_create(name="PARENT", defaults={"description": "Parent"})
+        UserProfile.objects.get_or_create(user=user3, defaults={"role": role})
+
+        create_notification = self.factory.post(
+            "/api/communication/notifications/",
+            {
+                "recipient_ids": [self.user2.id, user3.id],
+                "notification_type": "System",
+                "title": "Bulk Alert",
+                "message": "Test broadcast",
+            },
+            format="json",
+        )
+        force_authenticate(create_notification, user=self.user)
+        response = NotificationViewSet.as_view({"post": "create"})(create_notification)
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["created"], 2)
+
+        list_request = self.factory.get("/api/communication/notifications/", {"scope": "true"})
+        force_authenticate(list_request, user=self.user)
+        list_response = NotificationViewSet.as_view({"get": "list"})(list_request)
+        self.assertEqual(list_response.status_code, 200)
+        self.assertGreaterEqual(len(as_rows(list_response.data)), 2)
+
+        recipient_request = self.factory.get("/api/communication/notifications/recipients/", {"q": "teach"})
+        force_authenticate(recipient_request, user=self.user)
+        recipient_response = NotificationViewSet.as_view({"get": "recipients"})(recipient_request)
+        self.assertEqual(recipient_response.status_code, 200)
+        self.assertTrue(any(row["username"] == "teacher1" for row in recipient_response.data["results"]))
+
+    def test_scheduled_campaign_is_queued_then_dispatched_when_due(self):
+        scheduled_at = timezone.now() + timedelta(hours=2)
+        create_campaign = self.factory.post(
+            "/api/communication/email-campaigns/",
+            {
+                "title": "Scheduled notice",
+                "subject": "Later subject",
+                "body_text": "Later body",
+                "scheduled_at": scheduled_at.isoformat(),
+            },
+            format="json",
+        )
+        force_authenticate(create_campaign, user=self.user)
+        campaign_response = EmailCampaignViewSet.as_view({"post": "create"})(create_campaign)
+        self.assertEqual(campaign_response.status_code, 201)
+        self.assertEqual(campaign_response.data["status"], "Scheduled")
+        campaign_id = campaign_response.data["id"]
+
+        queue_request = self.factory.post(
+            f"/api/communication/email-campaigns/{campaign_id}/send/",
+            {"emails": ["guardian1@school.local", "guardian2@school.local"]},
+            format="json",
+        )
+        force_authenticate(queue_request, user=self.user)
+        queue_response = EmailCampaignViewSet.as_view({"post": "send"})(queue_request, pk=campaign_id)
+        self.assertEqual(queue_response.status_code, 202)
+        self.assertEqual(queue_response.data["status"], "Scheduled")
+        self.assertEqual(queue_response.data["queued"], 2)
+        self.assertEqual(EmailRecipient.objects.filter(campaign_id=campaign_id, status="Queued").count(), 2)
+
+        EmailCampaign.objects.filter(id=campaign_id).update(scheduled_at=timezone.now() - timedelta(minutes=1))
+        dispatch_request = self.factory.post("/api/communication/email-campaigns/dispatch-due/", {}, format="json")
+        force_authenticate(dispatch_request, user=self.user)
+        dispatch_response = EmailCampaignViewSet.as_view({"post": "dispatch_due"})(dispatch_request)
+        self.assertEqual(dispatch_response.status_code, 200)
+        self.assertEqual(dispatch_response.data["dispatched"], 1)
+        self.assertEqual(EmailRecipient.objects.filter(campaign_id=campaign_id, status="Sent").count(), 2)
+
+    def test_engagement_analytics_reports_actual_reply_lag(self):
+        conversation = Conversation.objects.create(
+            conversation_type="Direct",
+            title="Reply timing",
+            created_by=self.user,
+        )
+        conversation.participants.create(user=self.user, role="Admin", is_active=True)
+        conversation.participants.create(user=self.user2, role="Member", is_active=True)
+
+        base_message = CommunicationMessage.objects.create(
+            conversation=conversation,
+            sender=self.user,
+            content="Original message",
+            delivery_status="Delivered",
+        )
+        CommunicationMessage.objects.filter(pk=base_message.pk).update(sent_at=timezone.now() - timedelta(minutes=12))
+        base_message.refresh_from_db()
+        CommunicationMessage.objects.create(
+            conversation=conversation,
+            sender=self.user2,
+            content="Reply message",
+            reply_to=base_message,
+            delivery_status="Sent",
+        )
+
+        analytics_request = self.factory.get("/api/communication/analytics/engagement/")
+        force_authenticate(analytics_request, user=self.user)
+        analytics_response = CommunicationAnalyticsEngagementView.as_view()(analytics_request)
+        self.assertEqual(analytics_response.status_code, 200)
+        self.assertGreater(analytics_response.data["average_response_time_minutes"], 0)
+        self.assertEqual(
+            analytics_response.data["average_response_time_label"],
+            "Actual average reply lag between a message and its reply.",
+        )
+
+    @patch("communication.services.requests.post")
+    def test_sms_send_uses_tenant_secret_backed_provider_dispatch(self, mock_post):
+        profile = SchoolProfile.objects.create(
+            school_name="Communication School",
+            phone="+254700000001",
+            sms_provider="africastalking",
+            sms_username="sandbox",
+            sms_sender_id="SCHOOL",
+            is_active=True,
+        )
+        store_school_profile_secrets(profile, {"sms_api_key": "sms-secret-123"}, updated_by=self.user)
+        mock_post.return_value.status_code = 201
+        mock_post.return_value.json.return_value = {
+            "SMSMessageData": {
+                "Recipients": [
+                    {
+                        "status": "Success",
+                        "messageId": "ATPid-live-001",
+                        "cost": "KES 0.8000",
+                    }
+                ]
+            }
+        }
+
+        send_sms = self.factory.post(
+            "/api/communication/sms/send/",
+            {"phones": ["+1555010999"], "message": "Live transport", "channel": "SMS"},
+            format="json",
+        )
+        force_authenticate(send_sms, user=self.user)
+        response = SmsSendView.as_view()(send_sms)
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data[0]["status"], "Sent")
+        self.assertEqual(response.data[0]["provider_id"], "ATPid-live-001")
+
+    @patch("communication.services.requests.post")
+    def test_whatsapp_send_uses_tenant_secret_backed_provider_dispatch(self, mock_post):
+        profile = SchoolProfile.objects.create(
+            school_name="Communication School",
+            phone="+254700000001",
+            whatsapp_phone_id="1234567890",
+            is_active=True,
+        )
+        store_school_profile_secrets(profile, {"whatsapp_api_key": "wa-secret-123"}, updated_by=self.user)
+        mock_post.return_value.status_code = 200
+        mock_post.return_value.json.return_value = {"messages": [{"id": "wamid.HBgLMDEyMzQ1"}]}
+
+        send_sms = self.factory.post(
+            "/api/communication/sms/send/",
+            {"phones": ["+1555010888"], "message": "WhatsApp hello", "channel": "WhatsApp"},
+            format="json",
+        )
+        force_authenticate(send_sms, user=self.user)
+        response = SmsSendView.as_view()(send_sms)
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data[0]["status"], "Sent")
+        self.assertEqual(response.data[0]["provider_id"], "wamid.HBgLMDEyMzQ1")
+
+    @patch("communication.services.requests.post")
+    def test_push_send_uses_tenant_setting_secret_store(self, mock_post):
+        TenantSettings.objects.create(
+            key="integrations.push",
+            value={"enabled": True},
+            category="integrations",
+        )
+        set_tenant_secret(
+            tenant_setting_secret_key("integrations.push", "server_key"),
+            "push-secret-123",
+            updated_by=self.user,
+            description="integrations.push.server_key",
+        )
+        register_device = self.factory.post(
+            "/api/communication/push/devices/",
+            {"token": "token-push-123", "platform": "Web"},
+            format="json",
+        )
+        force_authenticate(register_device, user=self.user2)
+        register_response = PushDeviceViewSet.as_view({"post": "create"})(register_device)
+        self.assertEqual(register_response.status_code, 201)
+
+        mock_post.return_value.status_code = 200
+        mock_post.return_value.json.return_value = {
+            "success": 1,
+            "failure": 0,
+            "results": [{"message_id": "fcm-msg-001"}],
+        }
+
+        push_send = self.factory.post(
+            "/api/communication/push/send/",
+            {"users": [self.user2.id], "title": "Push", "body": "Hello"},
+            format="json",
+        )
+        force_authenticate(push_send, user=self.user)
+        response = PushSendView.as_view()(push_send)
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data[0]["status"], "Sent")
+        self.assertEqual(response.data[0]["provider_id"], "fcm-msg-001")
 
     @override_settings(COMMUNICATION_WEBHOOK_TOKEN="test-webhook-token")
     def test_communication_core_flow(self):

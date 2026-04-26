@@ -18,6 +18,8 @@ The previous register is complete. This one tracks the next operational and prod
 - dark-theme clarity tuning is applied at the shared theme layer to reduce blur and raise text contrast
 - the approvals hub now uses real `approve`, `clarify`, and `reject` actions across the supported approval domains
 - approval scope regression coverage passed against the local trust-auth Postgres instance on `127.0.0.1:55432`
+- communication transport realism and parent-portal contract repair are complete in code
+- the main remaining communications gaps are now operator workflow completion and product honesty around scheduling/analytics
 
 ## Do Now
 
@@ -114,6 +116,73 @@ Outcome:
 
 Follow-up:
 - if the product later needs multi-step requester resubmission loops after clarification, that should be tracked as a new workflow enhancement rather than reopening this task
+
+### P8. Parent Portal Communications Contract Repair
+
+Status: `Complete`
+
+Outcome:
+- parent messages, announcements, notifications, and conversation rows now expose a normalized compatibility contract through shared portal adapters
+- parent communication payloads now carry stable aliases like `created_at` and `content/body` so the portal UI no longer depends on brittle field guessing
+- parent announcements now respect publish windows and audience targeting instead of exposing every active record
+- student dashboard announcements now use the same publish-window and audience-targeting rules
+- legacy parent message dependencies remain in place for now, but are explicitly retained behind a tested compatibility adapter in [communication_contracts.py](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/parent_portal/communication_contracts.py:1)
+
+Verification:
+- `py_compile` passed for the changed parent portal modules
+- `parent_portal.tests.ParentPortalTests`: `27 tests, OK` against the local trust-auth Postgres instance on `127.0.0.1:55432`
+
+Primary references:
+- [communication_contracts.py](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/parent_portal/communication_contracts.py:1)
+- [views.py](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/parent_portal/views.py:972)
+- [student_portal_views.py](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/parent_portal/student_portal_views.py:192)
+- [tests.py](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/parent_portal/tests.py:1)
+
+### P9. Real Communication Transport Integration
+
+Status: `Complete`
+
+Outcome:
+- SMS dispatch now uses tenant-secret-backed provider configuration from the active school profile instead of global `COMMUNICATION_SMS_API_KEY` fallbacks
+- supported SMS providers now dispatch through real HTTP integrations for Africa's Talking, Twilio, Infobip, and Vonage
+- WhatsApp dispatch now uses tenant-secret-backed Meta Cloud credentials from the active school profile
+- push notifications now use tenant-secret-backed `integrations.push` / `integrations.fcm` server keys instead of global push settings
+- communication test endpoints now fail honestly when transport credentials are missing instead of pretending delivery succeeded
+- library reminders, finance payment SMS notifications, school communication tests, and communication admin sends all inherit the same hardened transport path through the shared service layer
+
+Verification:
+- `py_compile` passed for the changed communication, school, and parent-portal modules
+- focused Django pack passed on the local trust-auth Postgres instance at `127.0.0.1:55432`
+- `parent_portal.tests.ParentPortalTests`, `communication.tests.CommunicationModuleTests`, and `school.test_settings_communication_endpoints`: `40 tests, OK`
+
+Primary references:
+- [communication/services.py](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/communication/services.py:29)
+- [school/views.py](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/school/views.py:3199)
+- [SettingsCommunicationPage-CFoSf_AU.js](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/frontend_build/assets/SettingsCommunicationPage-CFoSf_AU.js:1)
+
+### P10. Communications Operator Workflow Completion
+
+Status: `Complete`
+
+Outcome:
+- email campaigns now support real scheduled queueing, explicit due-dispatch, and honest `Scheduled` / `Sent` workflow states instead of a misleading static label
+- notification compose now supports admin recipient browsing, multi-recipient targeting, and bulk creation through `recipient_ids`
+- admins can audit notification history beyond their own inbox using scoped notification listing and recipient filtering
+- the communication dashboard now reports actual reply-lag analytics instead of a fake proxy metric, and the dashboard cards are wired to live data endpoints
+- the notifications, email, and dashboard bundles now reflect the real backend workflow instead of placeholder operator affordances
+
+Verification:
+- `py_compile` passed for the changed communication, school, and parent-portal modules
+- `node --check` passed for `CommunicationNotificationsPage-DW-k8B60.js`, `CommunicationEmailPage-IVp1q3cA.js`, and `CommunicationDashboardPage-Vh9v6l8X.js`
+- focused Django pack passed on the local trust-auth Postgres instance at `127.0.0.1:55432`
+- `parent_portal.tests.ParentPortalTests`, `communication.tests.CommunicationModuleTests`, and `school.test_settings_communication_endpoints`: `43 tests, OK`
+
+Primary references:
+- [communication/views.py](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/communication/views.py:294)
+- [communication/views.py](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/communication/views.py:383)
+- [communication/views.py](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/communication/views.py:723)
+- [CommunicationNotificationsPage-DW-k8B60.js](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/frontend_build/assets/CommunicationNotificationsPage-DW-k8B60.js:1)
+- [CommunicationEmailPage-IVp1q3cA.js](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/frontend_build/assets/CommunicationEmailPage-IVp1q3cA.js:1)
 
 ## Deferred
 

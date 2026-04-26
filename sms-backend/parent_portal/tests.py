@@ -10,11 +10,13 @@ from django.utils import timezone
 from rest_framework.test import APIRequestFactory, force_authenticate
 
 from clients.models import Domain, Tenant
+from communication.models import Announcement, Notification
 from school.mpesa import MpesaError
 from school.models import (
     AcademicYear,
     Guardian,
     Invoice,
+    Message,
     Payment,
     PaymentGatewayTransaction,
     Role,
@@ -27,17 +29,22 @@ from .models import ParentStudentLink
 from .student_portal_views import (
     MyInvoicesView,
     MyPaymentsView,
+    StudentDashboardView,
     StudentFinancePayView,
     StudentMpesaStatusView,
     StudentFinanceReceiptView,
     _student_from_request,
 )
 from .views import (
+    ParentAnnouncementsView,
     ParentChangePasswordView,
+    ParentConversationsView,
     ParentDashboardView,
     ParentFinancePayView,
     ParentMpesaStatusView,
     ParentFinanceSummaryView,
+    ParentMessagesView,
+    ParentNotificationsView,
     ParentProfileView,
     ParentTimetableView,
     _children_for_parent,
@@ -213,6 +220,185 @@ class ParentPortalTests(TenantTestBase):
 
         self.assertIsNotNone(resolved)
         self.assertEqual(resolved.id, self.student.id)
+
+    def test_parent_messages_contract_includes_alias_fields(self):
+        Message.objects.create(
+            recipient_type="STAFF",
+            recipient_id=0,
+            subject="Bursar Update",
+            body="Fee office will open at 7:30 AM.",
+            status="SENT",
+        )
+
+        request = self.factory.get("/api/parent-portal/messages/")
+        force_authenticate(request, user=self.parent)
+        response = ParentMessagesView.as_view()(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+        row = response.data[0]
+        self.assertEqual(row["subject"], "Bursar Update")
+        self.assertEqual(row["body"], "Fee office will open at 7:30 AM.")
+        self.assertEqual(row["content"], row["body"])
+        self.assertEqual(row["created_at"], row["sent_at"])
+
+    def test_parent_announcements_contract_filters_audience_and_time_window(self):
+        now = timezone.now()
+        Announcement.objects.create(
+            title="All Notice",
+            body="Visible to everyone.",
+            audience_type="All",
+            priority="Normal",
+            publish_at=now - timedelta(minutes=10),
+            is_active=True,
+        )
+        Announcement.objects.create(
+            title="Parent Notice",
+            body="Visible to parents.",
+            audience_type="Parents",
+            priority="Important",
+            publish_at=now - timedelta(minutes=5),
+            is_active=True,
+        )
+        Announcement.objects.create(
+            title="Student Notice",
+            body="Students only.",
+            audience_type="Students",
+            priority="Normal",
+            publish_at=now - timedelta(minutes=5),
+            is_active=True,
+        )
+        Announcement.objects.create(
+            title="Future Notice",
+            body="Should not show yet.",
+            audience_type="All",
+            priority="Normal",
+            publish_at=now + timedelta(hours=3),
+            is_active=True,
+        )
+        Announcement.objects.create(
+            title="Expired Notice",
+            body="Should not show anymore.",
+            audience_type="All",
+            priority="Normal",
+            publish_at=now - timedelta(days=2),
+            expires_at=now - timedelta(hours=1),
+            is_active=True,
+        )
+
+        request = self.factory.get("/api/parent-portal/announcements/")
+        force_authenticate(request, user=self.parent)
+        response = ParentAnnouncementsView.as_view()(request)
+
+        self.assertEqual(response.status_code, 200)
+        titles = {row["title"] for row in response.data}
+        self.assertEqual(titles, {"All Notice", "Parent Notice"})
+        parent_row = next(row for row in response.data if row["title"] == "Parent Notice")
+        self.assertEqual(parent_row["content"], parent_row["body"])
+        self.assertEqual(parent_row["created_at"], parent_row["publish_at"])
+
+    def test_parent_notifications_contract_includes_body_alias(self):
+        Notification.objects.create(
+            recipient=self.parent,
+            notification_type="Fee",
+            title="Receipt ready",
+            message="Your fee receipt is available for download.",
+            is_active=True,
+        )
+
+        request = self.factory.get("/api/parent-portal/notifications/")
+        force_authenticate(request, user=self.parent)
+        response = ParentNotificationsView.as_view()(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+        row = response.data[0]
+        self.assertEqual(row["title"], "Receipt ready")
+        self.assertEqual(row["body"], row["message"])
+        self.assertEqual(row["created_at"], row["sent_at"])
+
+    def test_parent_conversations_use_legacy_adapter_contract(self):
+        Message.objects.create(
+            recipient_type="PARENT",
+            recipient_id=self.parent.id,
+            subject="Direct Thread",
+            body="Message for this parent only.",
+            status="SENT",
+        )
+        Message.objects.create(
+            recipient_type="STAFF",
+            recipient_id=0,
+            subject="Broadcast Thread",
+            body="Visible to all parents.",
+            status="SENT",
+        )
+
+        request = self.factory.get("/api/parent-portal/messages/conversations/")
+        force_authenticate(request, user=self.parent)
+        response = ParentConversationsView.as_view()(request)
+
+        self.assertEqual(response.status_code, 200)
+        titles = {row["subject"] for row in response.data}
+        self.assertEqual(titles, {"Direct Thread", "Broadcast Thread"})
+        self.assertTrue(all(row["created_at"] == row["sent_at"] for row in response.data))
+
+    def test_student_dashboard_announcements_respect_audience_and_time_window(self):
+        student_user = User.objects.create_user(username="student_login", password="pass1234")
+        UserProfile.objects.create(
+            user=student_user,
+            role=self.student_role,
+            admission_number=self.student.admission_number,
+        )
+        now = timezone.now()
+        Announcement.objects.create(
+            title="All Notice",
+            body="Visible to everyone.",
+            audience_type="All",
+            priority="Normal",
+            publish_at=now - timedelta(minutes=10),
+            is_active=True,
+        )
+        Announcement.objects.create(
+            title="Student Notice",
+            body="Visible to students.",
+            audience_type="Students",
+            priority="Important",
+            publish_at=now - timedelta(minutes=5),
+            is_active=True,
+        )
+        Announcement.objects.create(
+            title="Parent Notice",
+            body="Visible to parents only.",
+            audience_type="Parents",
+            priority="Normal",
+            publish_at=now - timedelta(minutes=5),
+            is_active=True,
+        )
+        Announcement.objects.create(
+            title="Future Notice",
+            body="Should not show yet.",
+            audience_type="All",
+            priority="Normal",
+            publish_at=now + timedelta(hours=2),
+            is_active=True,
+        )
+        Announcement.objects.create(
+            title="Expired Notice",
+            body="Should not show anymore.",
+            audience_type="All",
+            priority="Normal",
+            publish_at=now - timedelta(days=2),
+            expires_at=now - timedelta(hours=1),
+            is_active=True,
+        )
+
+        request = self.factory.get("/api/student-portal/dashboard/")
+        force_authenticate(request, user=student_user)
+        response = StudentDashboardView.as_view()(request)
+
+        self.assertEqual(response.status_code, 200)
+        titles = {row["title"] for row in response.data["announcements"]}
+        self.assertEqual(titles, {"All Notice", "Student Notice"})
 
     def test_parent_finance_pay_creates_manual_initiation_for_offline_method(self):
         ParentStudentLink.objects.create(parent_user=self.parent, student=self.student, relationship="Parent", is_active=True)

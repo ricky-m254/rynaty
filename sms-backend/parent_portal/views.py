@@ -35,6 +35,13 @@ from school.permissions import IsSchoolAdmin
 from school.services import FinanceService
 
 from .models import ParentStudentLink
+from .communication_contracts import (
+    active_announcements_queryset,
+    announcement_visible_for_parent,
+    serialize_parent_announcement,
+    serialize_parent_legacy_message,
+    serialize_parent_notification,
+)
 from .serializers import ParentProfileSerializer, ParentStudentLinkSerializer
 
 
@@ -972,7 +979,7 @@ class ParentFeeStatementDownloadView(ParentPortalAccessMixin, APIView):
 class ParentMessagesView(ParentPortalAccessMixin, APIView):
     def get(self, request):
         rows = Message.objects.filter(recipient_type="STAFF").order_by("-sent_at")[:100]
-        return Response([{"id": r.id, "subject": r.subject, "body": r.body, "sent_at": r.sent_at, "status": r.status} for r in rows])
+        return Response([serialize_parent_legacy_message(r) for r in rows])
 
     def post(self, request):
         subject = (request.data.get("subject") or "").strip()
@@ -980,20 +987,40 @@ class ParentMessagesView(ParentPortalAccessMixin, APIView):
         if not subject or not body:
             return Response({"error": "subject and body are required"}, status=status.HTTP_400_BAD_REQUEST)
         row = Message.objects.create(recipient_type="STAFF", recipient_id=0, subject=subject, body=body, status="SENT")
-        return Response({"id": row.id, "subject": row.subject, "body": row.body, "sent_at": row.sent_at, "status": row.status}, status=status.HTTP_201_CREATED)
+        return Response(serialize_parent_legacy_message(row), status=status.HTTP_201_CREATED)
 
 
 class ParentAnnouncementsView(ParentPortalAccessMixin, APIView):
     def get(self, request):
-        now = timezone.now()
-        rows = Announcement.objects.filter(is_active=True, publish_at__lte=now).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now)).order_by("-publish_at")[:200]
-        return Response([{"id": r.id, "title": r.title, "body": r.body, "priority": r.priority, "publish_at": r.publish_at} for r in rows])
+        children = list(_children_for_parent(request.user)[:50])
+        enrollments = [enrollment for enrollment in (_active_enrollment(child) for child in children) if enrollment]
+        student_ids = {child.id for child in children if child.id}
+        admission_numbers = {str(child.admission_number).strip().casefold() for child in children if child.admission_number}
+        class_ids = {enrollment.school_class_id for enrollment in enrollments if getattr(enrollment, "school_class_id", None)}
+        class_names = {
+            str(enrollment.school_class.name).strip().casefold()
+            for enrollment in enrollments
+            if getattr(getattr(enrollment, "school_class", None), "name", None)
+        }
+        rows = [
+            row
+            for row in active_announcements_queryset()[:200]
+            if announcement_visible_for_parent(
+                row,
+                user_id=request.user.id,
+                student_ids=student_ids,
+                admission_numbers=admission_numbers,
+                class_ids=class_ids,
+                class_names=class_names,
+            )
+        ]
+        return Response([serialize_parent_announcement(r) for r in rows])
 
 
 class ParentNotificationsView(ParentPortalAccessMixin, APIView):
     def get(self, request):
         rows = Notification.objects.filter(recipient=request.user, is_active=True).order_by("-sent_at")[:200]
-        return Response([{"id": r.id, "notification_type": r.notification_type, "title": r.title, "message": r.message, "is_read": r.is_read, "sent_at": r.sent_at} for r in rows])
+        return Response([serialize_parent_notification(r) for r in rows])
 
 
 class ParentNotificationReadView(ParentPortalAccessMixin, APIView):
@@ -1427,16 +1454,7 @@ class ParentConversationsView(ParentPortalAccessMixin, APIView):
             Q(recipient_id=request.user.id, recipient_type="PARENT")
             | Q(recipient_type="STAFF")
         ).order_by("-sent_at")[:50]
-        return Response([
-            {
-                "id": r.id,
-                "subject": r.subject,
-                "body": r.body,
-                "sent_at": r.sent_at,
-                "status": r.status,
-            }
-            for r in rows
-        ])
+        return Response([serialize_parent_legacy_message(r) for r in rows])
 
     def post(self, request):
         subject = (request.data.get("subject") or "").strip()
@@ -1450,10 +1468,7 @@ class ParentConversationsView(ParentPortalAccessMixin, APIView):
             body=body,
             status="SENT",
         )
-        return Response(
-            {"id": row.id, "subject": row.subject, "body": row.body, "sent_at": row.sent_at, "status": row.status},
-            status=status.HTTP_201_CREATED,
-        )
+        return Response(serialize_parent_legacy_message(row), status=status.HTTP_201_CREATED)
 
 
 class ParentProfileSettingsView(ParentPortalAccessMixin, APIView):

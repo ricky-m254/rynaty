@@ -12,6 +12,7 @@ Rotate tenant-scoped encrypted secrets onto a new primary key version without br
 - communication settings that depend on stored credentials
 
 Use this together with [TENANT_SECRET_STORE.md](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/docs/TENANT_SECRET_STORE.md:1).
+For a line-by-line operator flow, also use [PRODUCTION_SECRET_ROTATION_RUN_SEQUENCE.md](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/docs/PRODUCTION_SECRET_ROTATION_RUN_SEQUENCE.md:1).
 
 ## Preconditions
 

@@ -33,6 +33,8 @@ from school.payment_receipts import build_payment_receipt_payload
 from school.permissions import HasModuleAccess
 from school.services import FinanceService
 
+from .communication_contracts import active_announcements_queryset, announcement_visible_for_student
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -189,13 +191,33 @@ class StudentDashboardView(StudentPortalAccessMixin, APIView):
                     "due_date": str(a.due_date) if a.due_date else None,
                 })
 
+        student_ids = {student.id} if getattr(student, "id", None) else set()
+        admission_numbers = {str(student.admission_number).strip().casefold()} if student.admission_number else set()
+        class_ids = {enrollment.school_class_id} if enrollment and getattr(enrollment, "school_class_id", None) else set()
+        class_names = (
+            {str(enrollment.school_class.name).strip().casefold()}
+            if enrollment and getattr(getattr(enrollment, "school_class", None), "name", None)
+            else set()
+        )
+
         announcements = []
-        for ann in Announcement.objects.filter(is_active=True).order_by("-created_at")[:5]:
+        for ann in active_announcements_queryset()[:25]:
+            if not announcement_visible_for_student(
+                ann,
+                user_id=request.user.id,
+                student_ids=student_ids,
+                admission_numbers=admission_numbers,
+                class_ids=class_ids,
+                class_names=class_names,
+            ):
+                continue
             announcements.append({
                 "title": ann.title,
                 "content": getattr(ann, "body", getattr(ann, "content", "")),
-                "created_at": ann.created_at,
+                "created_at": ann.publish_at,
             })
+            if len(announcements) >= 5:
+                break
 
         class_section_name = None
         if enrollment:

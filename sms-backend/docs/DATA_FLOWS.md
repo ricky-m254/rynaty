@@ -85,35 +85,45 @@ Every new external integration **must** be registered here and reviewed against 
 
 ---
 
-## 2  Placeholder / Stub Flows (not yet dispatching PII)
+## 2  Tenant-Configured Messaging Flows
 
-These integrations are registered in the platform catalog but their dispatch functions are **stubs** that do not make real HTTP calls. No personal data currently leaves the system via these channels. A real SDK must be wired in before any data flows.
+These channels now perform real outbound delivery when a tenant has configured the required credentials in the encrypted tenant secret store. If credentials are missing, the send paths fail honestly and no outbound call is made.
 
 ### 2.1  SMS Provider (Africa's Talking / Twilio / other)
 
 | Attribute | Detail |
 |-----------|--------|
 | **Purpose** | SMS notifications to parents and staff |
-| **Current status** | **Stub only.** `send_sms_placeholder()` returns a simulated success response without making any outbound HTTP call, even when `COMMUNICATION_SMS_API_KEY` is set. |
-| **Data that WILL flow when activated** | Recipient phone number, message body (may contain student name, fee balance, attendance status, or other personal data) |
-| **Pre-activation requirements** | (a) Execute a DPA with the chosen SMS provider; (b) Update the school's Privacy Notice to disclose SMS messaging to parents/guardians; (c) Replace the stub with the real SDK; (d) Register the activated flow in this document. |
+| **Current status** | **Active when configured.** `send_sms_placeholder()` is a legacy-named helper that now performs real tenant-scoped HTTP dispatch for Africa's Talking, Twilio, Infobip, and Vonage. |
+| **Data sent** | Recipient phone number, message body, sender ID / originator, provider account identifier |
+| **Credential source** | `SchoolProfile.sms_provider`, `SchoolProfile.sms_username`, `SchoolProfile.sms_sender_id`, and encrypted tenant secret `school_profile:sms_api_key` |
+| **Pre-activation requirements** | (a) Execute a DPA with the chosen SMS provider; (b) Update the school's Privacy Notice to disclose SMS messaging to parents/guardians; (c) Validate the provider-specific sender/originator values in staging before live use. |
 | **Code location** | `communication/services.py` — `send_sms_placeholder()` |
-| **Config key** | `COMMUNICATION_SMS_API_KEY` |
+| **Failure mode** | Missing/unsupported tenant configuration returns a local `Failed` dispatch result and no outbound HTTP call is attempted. |
 
 ### 2.2  WhatsApp Provider
 
-Same requirements as SMS (§ 2.1). Controlled by `COMMUNICATION_WHATSAPP_API_KEY`.
+| Attribute | Detail |
+|-----------|--------|
+| **Purpose** | WhatsApp notifications to parents and staff |
+| **Current status** | **Active when configured.** Tenant-scoped dispatch uses the Meta WhatsApp Cloud API. |
+| **Data sent** | Recipient phone number, message body, WhatsApp phone-number ID |
+| **Credential source** | `SchoolProfile.whatsapp_phone_id` and encrypted tenant secret `school_profile:whatsapp_api_key` |
+| **Pre-activation requirements** | Same governance and privacy requirements as SMS, plus Meta WhatsApp Cloud API approval for the tenant's sender identity. |
+| **Code location** | `communication/services.py` — `send_sms_placeholder(channel="WhatsApp")` |
+| **Failure mode** | Missing tenant credentials returns a local `Failed` dispatch result and no outbound HTTP call is attempted. |
 
 ### 2.3  Push Notification Provider
 
 | Attribute | Detail |
 |-----------|--------|
 | **Purpose** | In-app push notifications |
-| **Current status** | **Stub only.** `send_push_placeholder()` does not make outbound HTTP calls. |
-| **Data that WILL flow when activated** | Device push token, notification title, notification body |
-| **Pre-activation requirements** | DPA with the push provider (e.g. Firebase Cloud Messaging, APNs); privacy notice update; stub replacement. |
+| **Current status** | **Active when configured.** Push dispatch uses the tenant-scoped FCM legacy HTTP integration. |
+| **Data sent** | Device push token, notification title, notification body |
+| **Credential source** | Encrypted tenant secret `tenant_setting:integrations.push:server_key` or `tenant_setting:integrations.fcm:server_key` |
+| **Pre-activation requirements** | DPA / terms review for the chosen push provider and privacy notice update for device-token handling. |
 | **Code location** | `communication/services.py` — `send_push_placeholder()` |
-| **Config key** | `COMMUNICATION_PUSH_SERVER_KEY` |
+| **Failure mode** | Missing tenant configuration returns a local `Failed` dispatch result and no outbound HTTP call is attempted. |
 
 ### 2.4  Google Workspace
 
@@ -145,13 +155,12 @@ The following categories of external data sharing were audited and **confirmed n
 ### Development
 - [ ] Any new `requests.post / requests.get / httpx.*` call in a non-test file must be reviewed and registered here before merging.
 - [ ] Any new entry in the integrations catalog (`AVAILABLE_INTEGRATIONS` in `clients/platform_views.py`) must have a corresponding section in this document.
-- [ ] Stub dispatch functions (`send_sms_placeholder`, etc.) must log a `WARNING` when a provider key is present but real dispatch is not implemented.
+- [ ] Communication transports must resolve tenant-scoped encrypted credentials first; no new global `COMMUNICATION_*` transport secrets should be introduced.
 
 ### Runtime
 - [ ] `RESEND_API_KEY` — sign Resend DPA before setting in production.
-- [ ] `COMMUNICATION_SMS_API_KEY` — do not set until the SMS stub is replaced with a real SDK **and** this document is updated.
-- [ ] `COMMUNICATION_WHATSAPP_API_KEY` — same as above.
-- [ ] `COMMUNICATION_PUSH_SERVER_KEY` — same as above.
+- [ ] Tenant SMS / WhatsApp / push credentials must be stored through the tenant secret store rather than plain env vars.
+- [ ] Each live tenant must validate one end-to-end SMS send, one WhatsApp send if enabled, and one push send if enabled after rotating tenant secret keys.
 - [ ] `DEPLOYMENT_TRIGGER_HOOK_URL` / `DEPLOYMENT_ROLLBACK_HOOK_URL` — must point to an endpoint controlled by the same organisation.
 - [ ] SmartPSS integration — only enable `SMARTPSS_PASSWORD` on servers that have network access to the school LAN; never expose SmartPSS Lite to the public internet without a VPN.
 
@@ -162,3 +171,4 @@ The following categories of external data sharing were audited and **confirmed n
 | Date | Author | Change |
 |------|--------|--------|
 | 2026-04-16 | Privacy audit | Initial register created from codebase analysis |
+| 2026-04-26 | Platform engineering | Activated tenant-scoped SMS, WhatsApp, and push dispatch flows; removed stub-only status for those channels |

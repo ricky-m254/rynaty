@@ -3,9 +3,11 @@ from django.core import mail
 from django.test import TestCase
 from django_tenants.utils import schema_context
 from rest_framework.test import APIRequestFactory, force_authenticate
+from unittest.mock import patch
 
 from clients.models import Domain, Tenant
 from school.models import Module, Role, SchoolProfile, UserModuleAssignment, UserProfile
+from school.tenant_secrets import store_school_profile_secrets
 from school.views import SchoolTestEmailView, SchoolTestSmsView
 
 
@@ -66,11 +68,34 @@ class SchoolSettingsCommunicationTests(TenantTestBase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, [self.profile.smtp_user])
 
-    def test_school_test_sms_view_uses_school_phone(self):
+    def test_school_test_sms_view_fails_honestly_without_provider_secret(self):
+        request = self.factory.post("/api/school/test-sms/", {}, format="json")
+        force_authenticate(request, user=self.user)
+        response = SchoolTestSmsView.as_view()(request)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("not configured", response.data["error"].lower())
+
+    @patch("communication.services.requests.post")
+    def test_school_test_sms_view_uses_school_phone_when_tenant_secret_is_configured(self, mock_post):
+        store_school_profile_secrets(self.profile, {"sms_api_key": "sms-secret-456"}, updated_by=self.user)
+        mock_post.return_value.status_code = 201
+        mock_post.return_value.json.return_value = {
+            "SMSMessageData": {
+                "Recipients": [
+                    {
+                        "status": "Success",
+                        "messageId": "ATPid-demo-123",
+                        "cost": "KES 0.8000",
+                    }
+                ]
+            }
+        }
+
         request = self.factory.post("/api/school/test-sms/", {}, format="json")
         force_authenticate(request, user=self.user)
         response = SchoolTestSmsView.as_view()(request)
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["message"], f"Test SMS sent to {self.profile.phone}.")
-        self.assertIn("provider_id", response.data)
+        self.assertEqual(response.data["provider_id"], "ATPid-demo-123")

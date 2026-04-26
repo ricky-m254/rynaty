@@ -89,6 +89,7 @@ Management command:
 
 - [rotate_tenant_secrets.py](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/school/management/commands/rotate_tenant_secrets.py:1)
 - production runbook: [PRODUCTION_SECRET_ROTATION_CHECKLIST.md](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/docs/PRODUCTION_SECRET_ROTATION_CHECKLIST.md:1)
+- exact operator sequence: [PRODUCTION_SECRET_ROTATION_RUN_SEQUENCE.md](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/docs/PRODUCTION_SECRET_ROTATION_RUN_SEQUENCE.md:1)
 
 Examples:
 

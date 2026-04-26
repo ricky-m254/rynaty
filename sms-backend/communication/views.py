@@ -92,6 +92,107 @@ def _is_admin(user):
     return hasattr(user, "userprofile") and user.userprofile.role.name in ["ADMIN", "TENANT_SUPER_ADMIN"]
 
 
+def _parse_bool(value):
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _normalize_email_list(raw_values):
+    normalized = []
+    for value in raw_values or []:
+        email = str(value or "").strip()
+        if email:
+            normalized.append(email)
+    return list(dict.fromkeys(normalized))
+
+
+def _notification_recipient_options(query: str = "", limit: int = 200):
+    rows = User.objects.filter(is_active=True).select_related("userprofile__role").order_by("username")
+    query_text = str(query or "").strip()
+    if query_text:
+        rows = rows.filter(
+            Q(username__icontains=query_text)
+            | Q(email__icontains=query_text)
+            | Q(first_name__icontains=query_text)
+            | Q(last_name__icontains=query_text)
+        )
+    payload = []
+    for user in rows[:limit]:
+        role_name = getattr(getattr(getattr(user, "userprofile", None), "role", None), "name", "")
+        payload.append(
+            {
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "full_name": user.get_full_name().strip(),
+                "role_name": role_name,
+                "label": " • ".join(part for part in [user.get_full_name().strip() or user.username, role_name, user.email] if part),
+            }
+        )
+    return payload
+
+
+def _queue_campaign_recipients(campaign, emails: list[str]):
+    existing = set(campaign.recipients.values_list("email", flat=True))
+    queued = 0
+    failed = 0
+    for email in emails:
+        if email in existing:
+            continue
+        if "@" not in email:
+            EmailRecipient.objects.create(
+                campaign=campaign,
+                email=email,
+                status="Failed",
+                bounce_reason="Invalid email format.",
+            )
+            failed += 1
+            existing.add(email)
+            continue
+        EmailRecipient.objects.create(
+            campaign=campaign,
+            email=email,
+            status="Queued",
+        )
+        queued += 1
+        existing.add(email)
+    return {"queued": queued, "failed": failed}
+
+
+def _dispatch_email_recipient(campaign, row):
+    result = send_email_placeholder(
+        subject=campaign.subject,
+        body=campaign.body_text or campaign.body_html,
+        recipients=[row.email],
+        from_email=campaign.sender_email or None,
+    )
+    row.provider_id = result.provider_id
+    row.status = "Sent" if result.status == "Sent" else "Failed"
+    row.sent_at = now_ts() if result.status == "Sent" else None
+    row.bounce_reason = result.failure_reason
+    row.save(update_fields=["provider_id", "status", "sent_at", "bounce_reason"])
+    return result
+
+
+def _dispatch_campaign(campaign):
+    queued_rows = list(campaign.recipients.filter(status="Queued").order_by("id"))
+    sent = 0
+    failed = 0
+    campaign.status = "Sending"
+    campaign.save(update_fields=["status"])
+    for row in queued_rows:
+        result = _dispatch_email_recipient(campaign, row)
+        if result.status == "Sent":
+            sent += 1
+        else:
+            failed += 1
+    campaign.status = "Sent" if sent else "Failed"
+    campaign.sent_at = now_ts()
+    campaign.save(update_fields=["status", "sent_at"])
+    return {"sent": sent, "failed": failed, "processed": len(queued_rows)}
+
+
 def _uploaded_message_files(request):
     uploads = []
     for field_name in ("attachments", "files"):
@@ -296,13 +397,80 @@ class NotificationViewSet(CommunicationAccessMixin, viewsets.ModelViewSet):
     queryset = Notification.objects.filter(is_active=True).order_by("-sent_at")
 
     def get_queryset(self):
-        return super().get_queryset().filter(recipient=self.request.user)
+        queryset = super().get_queryset()
+        if _is_admin(self.request.user) and _parse_bool(self.request.query_params.get("scope")):
+            recipient_id = self.request.query_params.get("recipient_id")
+            if recipient_id:
+                queryset = queryset.filter(recipient_id=recipient_id)
+        else:
+            queryset = queryset.filter(recipient=self.request.user)
+        notification_type = (self.request.query_params.get("notification_type") or "").strip()
+        if notification_type:
+            queryset = queryset.filter(notification_type=notification_type)
+        is_read = self.request.query_params.get("is_read")
+        if is_read is not None and str(is_read).strip() != "":
+            queryset = queryset.filter(is_read=_parse_bool(is_read))
+        return queryset
+
+    def create(self, request, *args, **kwargs):
+        serializer_data = request.data.copy()
+        if not serializer_data.get("recipient"):
+            serializer_data["recipient"] = request.user.id
+        serializer = self.get_serializer(data=serializer_data)
+        serializer.is_valid(raise_exception=True)
+        recipient_ids = request.data.get("recipient_ids") or request.data.get("recipients") or []
+        if hasattr(request.data, "getlist") and not recipient_ids:
+            recipient_ids = request.data.getlist("recipient_ids") or request.data.getlist("recipients")
+        if isinstance(recipient_ids, str):
+            recipient_ids = [recipient_ids]
+        if not recipient_ids:
+            single_recipient = serializer.validated_data.get("recipient") or request.user
+            recipient_ids = [single_recipient.id]
+        try:
+            recipient_ids = [int(value) for value in recipient_ids]
+        except (TypeError, ValueError):
+            raise ValidationError({"recipient_ids": "Recipient IDs must be integers."})
+
+        if not _is_admin(request.user) and any(recipient_id != request.user.id for recipient_id in recipient_ids):
+            raise PermissionDenied("Only admins can create notifications for other users.")
+
+        recipients = list(User.objects.filter(id__in=recipient_ids, is_active=True))
+        if len(recipients) != len(set(recipient_ids)):
+            raise ValidationError({"recipient_ids": "One or more recipients were not found."})
+
+        created = []
+        for recipient in recipients:
+            created.append(
+                Notification.objects.create(
+                    recipient=recipient,
+                    notification_type=serializer.validated_data.get("notification_type", "System"),
+                    title=serializer.validated_data["title"],
+                    message=serializer.validated_data["message"],
+                    priority=serializer.validated_data.get("priority", "Informational"),
+                    action_url=serializer.validated_data.get("action_url", ""),
+                    created_by=request.user,
+                )
+            )
+
+        payload = {
+            "created": len(created),
+            "results": self.get_serializer(created, many=True).data,
+        }
+        status_code = status.HTTP_201_CREATED
+        return Response(payload, status=status_code)
 
     def perform_create(self, serializer):
         recipient = serializer.validated_data.get("recipient") or self.request.user
         if recipient != self.request.user and not _is_admin(self.request.user):
             raise PermissionDenied("Only admins can create notifications for other users.")
         serializer.save(created_by=self.request.user, recipient=recipient)
+
+    @action(detail=False, methods=["get"], url_path="recipients")
+    def recipients(self, request):
+        if not _is_admin(request.user):
+            raise PermissionDenied("Only admins can browse notification recipients.")
+        query = request.query_params.get("q", "")
+        return Response({"results": _notification_recipient_options(query)}, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["patch"], url_path="read")
     def read(self, request, pk=None):
@@ -368,7 +536,9 @@ class EmailCampaignViewSet(CommunicationAccessMixin, viewsets.ModelViewSet):
     queryset = EmailCampaign.objects.filter(is_active=True).order_by("-created_at")
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+        scheduled_at = serializer.validated_data.get("scheduled_at")
+        status_value = "Scheduled" if scheduled_at and scheduled_at > now_ts() else serializer.validated_data.get("status", "Draft")
+        serializer.save(created_by=self.request.user, status=status_value)
 
     @action(detail=True, methods=["post"], url_path="test")
     def test(self, request, pk=None):
@@ -382,38 +552,60 @@ class EmailCampaignViewSet(CommunicationAccessMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="send")
     def send(self, request, pk=None):
         campaign = self.get_object()
-        recipients = request.data.get("emails") or []
-        recipients = [email.strip() for email in recipients if isinstance(email, str) and email.strip()]
-        recipients = list(dict.fromkeys(recipients))
-        if not recipients:
+        recipients = _normalize_email_list(request.data.get("emails") or [])
+        if recipients:
+            queue_result = _queue_campaign_recipients(campaign, recipients)
+        else:
+            queue_result = {"queued": 0, "failed": 0}
+
+        if not campaign.recipients.filter(status="Queued").exists() and not queue_result["failed"]:
             return Response({"error": "emails list is required"}, status=status.HTTP_400_BAD_REQUEST)
-        campaign.status = "Sending"
-        campaign.save(update_fields=["status"])
-        queued = 0
-        for email in recipients:
-            if "@" not in email:
-                EmailRecipient.objects.create(
-                    campaign=campaign,
-                    email=email,
-                    status="Failed",
-                    bounce_reason="Invalid email format.",
-                )
-                queued += 1
-                continue
-            result = send_email_placeholder(subject=campaign.subject, body=campaign.body_text or campaign.body_html, recipients=[email], from_email=campaign.sender_email or None)
-            EmailRecipient.objects.create(
-                campaign=campaign,
-                email=email,
-                provider_id=result.provider_id,
-                status="Sent" if result.status == "Sent" else "Failed",
-                sent_at=now_ts() if result.status == "Sent" else None,
-                bounce_reason=result.failure_reason,
+
+        force_send = _parse_bool(request.data.get("force_send"))
+        if campaign.scheduled_at and campaign.scheduled_at > now_ts() and not force_send:
+            campaign.status = "Scheduled"
+            campaign.save(update_fields=["status"])
+            return Response(
+                {
+                    "queued": queue_result["queued"],
+                    "failed": queue_result["failed"],
+                    "status": campaign.status,
+                    "scheduled_at": campaign.scheduled_at,
+                },
+                status=status.HTTP_202_ACCEPTED,
             )
-            queued += 1
-        campaign.status = "Sent"
-        campaign.sent_at = now_ts()
-        campaign.save(update_fields=["status", "sent_at"])
-        return Response({"queued": queued, "status": campaign.status}, status=status.HTTP_200_OK)
+
+        dispatch_result = _dispatch_campaign(campaign)
+        return Response(
+            {
+                "queued": queue_result["queued"],
+                "failed": dispatch_result["failed"] + queue_result["failed"],
+                "sent": dispatch_result["sent"],
+                "processed": dispatch_result["processed"],
+                "status": campaign.status,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=False, methods=["post"], url_path="dispatch-due")
+    def dispatch_due(self, request):
+        due_campaigns = list(
+            self.get_queryset().filter(status="Scheduled", scheduled_at__isnull=False, scheduled_at__lte=now_ts())
+        )
+        results = []
+        for campaign in due_campaigns:
+            result = _dispatch_campaign(campaign)
+            results.append(
+                {
+                    "campaign_id": campaign.id,
+                    "title": campaign.title,
+                    "status": campaign.status,
+                    "sent": result["sent"],
+                    "failed": result["failed"],
+                    "processed": result["processed"],
+                }
+            )
+        return Response({"dispatched": len(results), "results": results}, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["get"], url_path="stats")
     def stats(self, request, pk=None):
@@ -422,6 +614,7 @@ class EmailCampaignViewSet(CommunicationAccessMixin, viewsets.ModelViewSet):
         payload = {
             "campaign_id": campaign.id,
             "total": recipients.count(),
+            "queued": recipients.filter(status="Queued").count(),
             "sent": recipients.filter(status="Sent").count(),
             "delivered": recipients.filter(status="Delivered").count(),
             "opened": recipients.filter(status="Opened").count(),
@@ -721,15 +914,22 @@ class CommunicationAnalyticsEngagementView(CommunicationAccessMixin, APIView):
             .annotate(count=Count("id"))
             .order_by("-count")[:10]
         )
-        avg_response = (
-            CommunicationMessage.objects.filter(is_active=True)
-            .exclude(reply_to__isnull=True)
-            .aggregate(avg=Avg("id"))
+        reply_rows = (
+            CommunicationMessage.objects.filter(is_active=True, reply_to__isnull=False)
+            .select_related("reply_to")
+            .only("sent_at", "reply_to__sent_at")
         )
+        deltas = []
+        for row in reply_rows:
+            if row.sent_at and getattr(row.reply_to, "sent_at", None) and row.sent_at >= row.reply_to.sent_at:
+                deltas.append((row.sent_at - row.reply_to.sent_at).total_seconds())
+        average_seconds = sum(deltas) / len(deltas) if deltas else 0
         return Response(
             {
                 "top_users": list(top_users),
-                "average_response_time_proxy": avg_response["avg"] or 0,
+                "average_response_time_minutes": round(average_seconds / 60, 2) if average_seconds else 0,
+                "average_response_time_label": "Actual average reply lag between a message and its reply.",
+                "sample_size": len(deltas),
             },
             status=status.HTTP_200_OK,
         )
