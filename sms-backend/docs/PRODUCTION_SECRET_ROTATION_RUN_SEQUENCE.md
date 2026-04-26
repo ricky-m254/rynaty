@@ -7,6 +7,10 @@ Use this together with:
 - [PRODUCTION_SECRET_ROTATION_CHECKLIST.md](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/docs/PRODUCTION_SECRET_ROTATION_CHECKLIST.md:1)
 - [TENANT_SECRET_STORE.md](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/docs/TENANT_SECRET_STORE.md:1)
 
+Operator helper:
+
+- [run_secret_rotation_sequence.ps1](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/tools/run_secret_rotation_sequence.ps1:1)
+
 This is the exact operator flow for `P0`.
 
 ## Placeholders To Replace

@@ -9,6 +9,7 @@ Primary references:
 - [payments_launch_runbook.md](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/docs/payments_launch_runbook.md:1)
 - [PAYMENT_SYSTEMS_LAUNCH_EVIDENCE.md](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/PAYMENT_SYSTEMS_LAUNCH_EVIDENCE.md:1)
 - [PAYMENT_SYSTEMS_TASK_PLAN.md](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/PAYMENT_SYSTEMS_TASK_PLAN.md:1)
+- [LIVE_PAYMENT_VALIDATION_EVIDENCE_TEMPLATE.md](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/docs/LIVE_PAYMENT_VALIDATION_EVIDENCE_TEMPLATE.md:1)
 
 ## Scope Note
 
