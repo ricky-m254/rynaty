@@ -80,6 +80,7 @@ const DEFAULT_FINANCE_OPS = {
     manual_payment_recorded: false,
   },
 };
+const SECRET_META_KEY = "__secret_meta__";
 const FINANCE_NOTIFICATION_LABELS = {
   mpesa_received: {
     title: "M-Pesa payment received",
@@ -171,6 +172,27 @@ function resolveIntegration(settings, grouped, key) {
   return {};
 }
 
+function getSecretMeta(payload) {
+  const meta = payload?.[SECRET_META_KEY];
+  return meta && typeof meta === "object" ? meta : {};
+}
+
+function stripSecretMeta(payload) {
+  if (!payload || typeof payload !== "object") return {};
+  const { [SECRET_META_KEY]: _ignored, ...rest } = payload;
+  return rest;
+}
+
+function hasConfiguredSecret(meta, fieldName) {
+  return !!meta?.[fieldName]?.configured;
+}
+
+function secretFieldPlaceholder(meta, fieldName, fallback = "Leave blank to keep existing") {
+  return hasConfiguredSecret(meta, fieldName)
+    ? `${meta[fieldName].masked_label || "Configured (hidden)"} - leave blank to keep existing`
+    : fallback;
+}
+
 function SettingsFinancePage() {
   const [finance, setFinance] = React.useState(DEFAULT_FINANCE);
   const [lateRule, setLateRule] = React.useState(DEFAULT_LATE_RULE);
@@ -191,6 +213,8 @@ function SettingsFinancePage() {
   const [testingStripe, setTestingStripe] = React.useState(false);
   const [hasMpesaConfig, setHasMpesaConfig] = React.useState(false);
   const [hasStripeConfig, setHasStripeConfig] = React.useState(false);
+  const [mpesaSecretMeta, setMpesaSecretMeta] = React.useState({});
+  const [stripeSecretMeta, setStripeSecretMeta] = React.useState({});
   const [mpesaProductionWarning, setMpesaProductionWarning] = React.useState(null);
   const [mpesaProductionConfirmed, setMpesaProductionConfirmed] = React.useState(false);
   const [financeOps, setFinanceOps] = React.useState(DEFAULT_FINANCE_OPS);
@@ -263,8 +287,10 @@ function SettingsFinancePage() {
     const settings = response.data?.settings || {};
     const grouped = response.data?.grouped || {};
 
-    const mpesaConfig = { ...DEFAULT_MPESA, ...resolveIntegration(settings, grouped, "integrations.mpesa") };
-    const stripeConfig = { ...DEFAULT_STRIPE, ...resolveIntegration(settings, grouped, "integrations.stripe") };
+    const mpesaResolved = resolveIntegration(settings, grouped, "integrations.mpesa");
+    const stripeResolved = resolveIntegration(settings, grouped, "integrations.stripe");
+    const mpesaConfig = { ...DEFAULT_MPESA, ...stripSecretMeta(mpesaResolved) };
+    const stripeConfig = { ...DEFAULT_STRIPE, ...stripSecretMeta(stripeResolved) };
     const opsConfigRaw = resolveIntegration(settings, grouped, "finance.operations");
     const opsConfig = {
       ...DEFAULT_FINANCE_OPS,
@@ -277,20 +303,22 @@ function SettingsFinancePage() {
 
     setMpesa(mpesaConfig);
     setStripe(stripeConfig);
+    setMpesaSecretMeta(getSecretMeta(mpesaResolved));
+    setStripeSecretMeta(getSecretMeta(stripeResolved));
     setFinanceOps(opsConfig);
     setMpesaProductionWarning(null);
     setMpesaProductionConfirmed(false);
 
     const mpesaConfigured = !!(
-      mpesaConfig.consumer_key ||
-      mpesaConfig.consumer_secret ||
       mpesaConfig.shortcode ||
-      mpesaConfig.passkey
+      hasConfiguredSecret(getSecretMeta(mpesaResolved), "consumer_key") ||
+      hasConfiguredSecret(getSecretMeta(mpesaResolved), "consumer_secret") ||
+      hasConfiguredSecret(getSecretMeta(mpesaResolved), "passkey")
     );
     const stripeConfigured = !!(
       stripeConfig.publishable_key ||
-      stripeConfig.secret_key ||
-      stripeConfig.webhook_secret
+      hasConfiguredSecret(getSecretMeta(stripeResolved), "secret_key") ||
+      hasConfiguredSecret(getSecretMeta(stripeResolved), "webhook_secret")
     );
 
     setHasMpesaConfig(mpesaConfigured);
@@ -302,7 +330,7 @@ function SettingsFinancePage() {
       setMpesaReachability(null);
     }
 
-    if (stripeConfigured && stripeConfig.enabled !== false && stripeConfig.secret_key) {
+    if (stripeConfigured && stripeConfig.enabled !== false) {
       testStripeConnection(stripeConfig, true);
     } else {
       setStripeReachability(null);
@@ -460,7 +488,7 @@ function SettingsFinancePage() {
       });
       setHasStripeConfig(true);
       showNotice("Stripe credentials saved.");
-      if (stripe.enabled !== false && stripe.secret_key) {
+      if (stripe.enabled !== false && (stripe.secret_key || hasConfiguredSecret(stripeSecretMeta, "secret_key"))) {
         await testStripeConnection(stripe, true);
       }
     } catch {
@@ -847,7 +875,7 @@ function SettingsFinancePage() {
                       type: "password",
                       value: mpesa.consumer_key,
                       onChange: (event) => setMpesa((current) => ({ ...current, consumer_key: event.target.value })),
-                      placeholder: "Your Daraja consumer key",
+                      placeholder: secretFieldPlaceholder(mpesaSecretMeta, "consumer_key", "Your Daraja consumer key"),
                     }),
                   }),
                   jsxRuntime.jsx(Field, {
@@ -857,7 +885,11 @@ function SettingsFinancePage() {
                       type: "password",
                       value: mpesa.consumer_secret,
                       onChange: (event) => setMpesa((current) => ({ ...current, consumer_secret: event.target.value })),
-                      placeholder: "Your Daraja consumer secret",
+                      placeholder: secretFieldPlaceholder(
+                        mpesaSecretMeta,
+                        "consumer_secret",
+                        "Your Daraja consumer secret",
+                      ),
                     }),
                   }),
                   jsxRuntime.jsx(Field, {
@@ -876,7 +908,7 @@ function SettingsFinancePage() {
                       type: "password",
                       value: mpesa.passkey,
                       onChange: (event) => setMpesa((current) => ({ ...current, passkey: event.target.value })),
-                      placeholder: "Your Daraja passkey",
+                      placeholder: secretFieldPlaceholder(mpesaSecretMeta, "passkey", "Your Daraja passkey"),
                     }),
                   }),
                   jsxRuntime.jsx(Field, {
@@ -1172,7 +1204,7 @@ function SettingsFinancePage() {
                       type: "password",
                       value: stripe.secret_key,
                       onChange: (event) => setStripe((current) => ({ ...current, secret_key: event.target.value })),
-                      placeholder: "sk_test_...",
+                      placeholder: secretFieldPlaceholder(stripeSecretMeta, "secret_key", "sk_test_..."),
                     }),
                   }),
                   jsxRuntime.jsx(Field, {
@@ -1183,7 +1215,7 @@ function SettingsFinancePage() {
                       type: "password",
                       value: stripe.webhook_secret,
                       onChange: (event) => setStripe((current) => ({ ...current, webhook_secret: event.target.value })),
-                      placeholder: "whsec_...",
+                      placeholder: secretFieldPlaceholder(stripeSecretMeta, "webhook_secret", "whsec_..."),
                     }),
                   }),
                 ],
@@ -1209,7 +1241,7 @@ function SettingsFinancePage() {
                   jsxRuntime.jsxs("button", {
                     type: "button",
                     onClick: () => testStripeConnection(),
-                    disabled: testingStripe || !stripe.secret_key,
+                    disabled: testingStripe || !(stripe.secret_key || hasConfiguredSecret(stripeSecretMeta, "secret_key")),
                     className:
                       "flex items-center gap-2 rounded-lg border border-sky-500/20 bg-sky-500/10 px-4 py-2 text-sm text-sky-400 transition hover:bg-sky-500/20 disabled:opacity-50",
                     children: [

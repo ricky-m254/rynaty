@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import logging
 from functools import lru_cache
 
 from cryptography.fernet import Fernet, InvalidToken
 from django.conf import settings
+
+logger = logging.getLogger(__name__)
 
 
 SCHOOL_PROFILE_SECRET_FIELDS = {
@@ -43,6 +46,7 @@ GENERIC_SECRET_FIELD_NAMES = {
     "whatsapp_api_key",
 }
 NON_SECRET_FIELD_EXCEPTIONS = {"publishable_key"}
+SECRET_META_KEY = "__secret_meta__"
 
 
 def _derive_fernet_key(source: str) -> bytes:
@@ -101,8 +105,36 @@ def _secret_row_model():
     return TenantSecret
 
 
+def log_tenant_secret_audit(*, action: str, object_id: str, details: str, user=None, model_name: str = "TenantSecret") -> bool:
+    from .models import AuditLog
+
+    try:
+        AuditLog.objects.create(
+            user=user if getattr(user, "is_authenticated", False) else None,
+            action=str(action or "")[:50],
+            model_name=str(model_name or "TenantSecret")[:100],
+            object_id=str(object_id or "unknown")[:50],
+            details=str(details or ""),
+        )
+        return True
+    except Exception as exc:
+        logger.warning("Non-fatal tenant secret audit log failure: %s", exc)
+        return False
+
+
 def _stringify_secret(value) -> str:
     return str(value or "").strip()
+
+
+def _masked_secret_preview(raw_value) -> str:
+    text = _stringify_secret(raw_value)
+    if not text:
+        return ""
+    if len(text) <= 4:
+        return "•" * len(text)
+    if len(text) <= 8:
+        return f"{text[:1]}{'•' * max(len(text) - 2, 1)}{text[-1:]}"
+    return f"{text[:2]}{'•' * max(len(text) - 4, 4)}{text[-2:]}"
 
 
 def encrypt_secret(raw_value: str) -> tuple[str, str]:
@@ -217,25 +249,62 @@ def merge_tenant_setting_secrets(setting_key: str, value):
     return merged
 
 
+def mask_tenant_setting_value_for_response(setting_key: str, value):
+    if not isinstance(value, dict):
+        return value
+
+    masked = dict(value)
+    secret_meta = {}
+    for field_name in tenant_setting_secret_fields(setting_key, masked):
+        secret_value = get_tenant_secret(tenant_setting_secret_key(setting_key, field_name), default=None)
+        if secret_value in (None, ""):
+            secret_value = masked.get(field_name)
+        if secret_value in (None, ""):
+            masked.pop(field_name, None)
+            continue
+
+        masked.pop(field_name, None)
+        secret_meta[field_name] = {
+            "configured": True,
+            "masked_label": "Configured (hidden)",
+            "preview": _masked_secret_preview(secret_value),
+        }
+
+    if secret_meta:
+        masked[SECRET_META_KEY] = secret_meta
+    return masked
+
+
 def sanitize_tenant_setting_value_for_storage(setting_key: str, value, *, updated_by=None):
     if not isinstance(value, dict):
         return value
 
-    sanitized = dict(value)
+    sanitized = {
+        field_name: field_value
+        for field_name, field_value in dict(value).items()
+        if not str(field_name or "").startswith("__")
+    }
     explicit_fields = set(TENANT_SETTING_SECRET_FIELDS.get(setting_key, set()))
     discovered_fields = _detected_secret_fields(sanitized)
 
     if explicit_fields:
         for field_name in explicit_fields:
-            secret_key = tenant_setting_secret_key(setting_key, field_name)
-            if field_name in sanitized:
-                raw_value = sanitized.pop(field_name)
-                set_tenant_secret(secret_key, raw_value, updated_by=updated_by, description=f"{setting_key}.{field_name}")
-            else:
-                delete_tenant_secret(secret_key)
+            if field_name not in sanitized:
+                continue
+            raw_value = sanitized.pop(field_name)
+            if not _stringify_secret(raw_value):
+                continue
+            set_tenant_secret(
+                tenant_setting_secret_key(setting_key, field_name),
+                raw_value,
+                updated_by=updated_by,
+                description=f"{setting_key}.{field_name}",
+            )
 
     for field_name in discovered_fields - explicit_fields:
         raw_value = sanitized.pop(field_name)
+        if not _stringify_secret(raw_value):
+            continue
         set_tenant_secret(
             tenant_setting_secret_key(setting_key, field_name),
             raw_value,

@@ -6,7 +6,7 @@ from django.test import TestCase, override_settings
 from django_tenants.utils import schema_context
 
 from clients.models import Domain, Tenant
-from school.models import TenantSecret
+from school.models import AuditLog, TenantSecret
 from school.tenant_secrets import (
     current_secret_key_version,
     get_tenant_secret,
@@ -64,13 +64,16 @@ class TenantSecretRotationCommandTests(TenantTestBase):
         with override_settings(DJANGO_TENANT_SECRET_KEYS=["new-primary-secret", "legacy-secret-key"]):
             reset_secret_keyring_cache()
             stdout = io.StringIO()
-            call_command("rotate_tenant_secrets", stdout=stdout)
+            call_command("rotate_tenant_secrets", "--actor-username", self.user.username, stdout=stdout)
 
             secret = TenantSecret.objects.get(key=secret_key)
             self.assertNotEqual(secret.key_version, old_version)
             self.assertEqual(secret.key_version, current_secret_key_version())
             self.assertEqual(get_tenant_secret(secret_key), "ck_legacy_demo")
             self.assertIn("rotated=1", stdout.getvalue())
+            audit = AuditLog.objects.filter(action="SECRET_ROTATE", object_id="all").latest("timestamp")
+            self.assertEqual(audit.user_id, self.user.id)
+            self.assertIn("rotated=1", audit.details)
 
     def test_rotate_tenant_secrets_dry_run_reports_without_rewriting(self):
         secret_key = "school_profile:smtp_password"
@@ -86,3 +89,5 @@ class TenantSecretRotationCommandTests(TenantTestBase):
             self.assertEqual(get_tenant_secret(secret_key), "smtp-legacy-password")
             self.assertIn("would rotate", stdout.getvalue())
             self.assertIn("rotated=1", stdout.getvalue())
+            audit = AuditLog.objects.filter(action="SECRET_ROTATE_PREVIEW", object_id="all").latest("timestamp")
+            self.assertIn("dry_run", audit.details)

@@ -3,7 +3,7 @@ Round-trip persistence test for M-Pesa credentials stored via TenantSettingsView
 
 Covers:
   - POST /settings/  saves integrations.mpesa correctly
-  - GET  /settings/  returns saved credentials in the flat `settings` dict
+  - GET  /settings/  returns saved non-secret fields while masking saved secrets
   - GET  /settings/?category=integrations  filters correctly after save
   - An empty (un-configured) response when no entry has been saved
   - Partial responses (missing consumer_key / shortcode) are handled gracefully
@@ -15,7 +15,8 @@ from django_tenants.utils import schema_context
 from rest_framework.test import APIRequestFactory, force_authenticate
 
 from clients.models import Domain, Tenant
-from school.models import Role, TenantSecret, TenantSettings, UserProfile
+from school.models import AuditLog, Role, TenantSecret, TenantSettings, UserProfile
+from school.tenant_secrets import SECRET_META_KEY, get_tenant_secret
 from school.views import TenantSettingsView
 
 User = get_user_model()
@@ -81,7 +82,7 @@ class MpesaSettingsRoundTripTests(TenantTestBase):
         return TenantSettingsView.as_view()(request)
 
     def test_save_and_reload_full_credentials(self):
-        """POST then GET returns all credential fields unchanged."""
+        """POST then GET preserves non-secret values while masking saved credentials."""
         post_resp = self._post_settings(
             {"key": "integrations.mpesa", "value": MPESA_CREDS, "category": "integrations"}
         )
@@ -95,11 +96,15 @@ class MpesaSettingsRoundTripTests(TenantTestBase):
         self.assertIn("integrations.mpesa", settings_flat)
 
         saved = settings_flat["integrations.mpesa"]
-        self.assertEqual(saved["consumer_key"], MPESA_CREDS["consumer_key"])
-        self.assertEqual(saved["consumer_secret"], MPESA_CREDS["consumer_secret"])
         self.assertEqual(saved["shortcode"], MPESA_CREDS["shortcode"])
-        self.assertEqual(saved["passkey"], MPESA_CREDS["passkey"])
         self.assertEqual(saved["environment"], MPESA_CREDS["environment"])
+        self.assertNotIn("consumer_key", saved)
+        self.assertNotIn("consumer_secret", saved)
+        self.assertNotIn("passkey", saved)
+        self.assertIn(SECRET_META_KEY, saved)
+        self.assertTrue(saved[SECRET_META_KEY]["consumer_key"]["configured"])
+        self.assertTrue(saved[SECRET_META_KEY]["consumer_secret"]["configured"])
+        self.assertTrue(saved[SECRET_META_KEY]["passkey"]["configured"])
 
         stored = TenantSettings.objects.get(key="integrations.mpesa")
         self.assertNotIn("consumer_key", stored.value)
@@ -108,6 +113,10 @@ class MpesaSettingsRoundTripTests(TenantTestBase):
         self.assertTrue(TenantSecret.objects.filter(key="tenant_setting:integrations.mpesa:consumer_key").exists())
         self.assertTrue(TenantSecret.objects.filter(key="tenant_setting:integrations.mpesa:consumer_secret").exists())
         self.assertTrue(TenantSecret.objects.filter(key="tenant_setting:integrations.mpesa:passkey").exists())
+        self.assertEqual(
+            get_tenant_secret("tenant_setting:integrations.mpesa:consumer_secret"),
+            MPESA_CREDS["consumer_secret"],
+        )
 
     def test_category_filter_returns_entry_after_save(self):
         """GET ?category=integrations exposes the saved key after POST."""
@@ -126,7 +135,7 @@ class MpesaSettingsRoundTripTests(TenantTestBase):
         self.assertNotIn("integrations.mpesa", settings_flat)
 
     def test_overwrite_preserves_updated_values(self):
-        """A second POST with different credentials replaces the previous ones."""
+        """A second POST with different credentials replaces values without exposing secrets on read."""
         self._post_settings(
             {"key": "integrations.mpesa", "value": MPESA_CREDS, "category": "integrations"}
         )
@@ -145,7 +154,35 @@ class MpesaSettingsRoundTripTests(TenantTestBase):
         saved = get_resp.data["settings"]["integrations.mpesa"]
         self.assertEqual(saved["shortcode"], "999888")
         self.assertEqual(saved["environment"], "production")
-        self.assertEqual(saved["consumer_key"], MPESA_CREDS["consumer_key"])
+        self.assertIn(SECRET_META_KEY, saved)
+        self.assertTrue(saved[SECRET_META_KEY]["consumer_key"]["configured"])
+
+    def test_partial_update_keeps_existing_secrets_when_secret_fields_are_omitted(self):
+        """Posting only non-secret fields must preserve the stored secret rows."""
+        self._post_settings(
+            {"key": "integrations.mpesa", "value": MPESA_CREDS, "category": "integrations"}
+        )
+
+        update_response = self._post_settings(
+            {
+                "key": "integrations.mpesa",
+                "value": {"shortcode": "700001", "environment": "production"},
+                "category": "integrations",
+                "production_acknowledged": True,
+            }
+        )
+        self.assertEqual(update_response.status_code, 200)
+
+        get_resp = self._get_settings()
+        saved = get_resp.data["settings"]["integrations.mpesa"]
+        self.assertEqual(saved["shortcode"], "700001")
+        self.assertEqual(saved["environment"], "production")
+        self.assertIn(SECRET_META_KEY, saved)
+        self.assertTrue(saved[SECRET_META_KEY]["consumer_key"]["configured"])
+        self.assertEqual(
+            get_tenant_secret("tenant_setting:integrations.mpesa:consumer_key"),
+            MPESA_CREDS["consumer_key"],
+        )
 
     def test_partial_credentials_are_stored_and_retrieved(self):
         """Partial credentials (shortcode only) are stored and readable."""
@@ -156,6 +193,7 @@ class MpesaSettingsRoundTripTests(TenantTestBase):
         saved = get_resp.data["settings"].get("integrations.mpesa", {})
         self.assertEqual(saved.get("shortcode"), "174379")
         self.assertIsNone(saved.get("consumer_key"))
+        self.assertNotIn(SECRET_META_KEY, saved)
 
     def test_grouped_structure_also_contains_entry(self):
         """The grouped response structure exposes the entry under its category."""
@@ -170,3 +208,21 @@ class MpesaSettingsRoundTripTests(TenantTestBase):
             grouped["integrations"]["integrations.mpesa"]["value"]["shortcode"],
             MPESA_CREDS["shortcode"],
         )
+        self.assertIn(
+            SECRET_META_KEY,
+            grouped["integrations"]["integrations.mpesa"]["value"],
+        )
+
+    def test_masked_secret_settings_read_emits_audit_log(self):
+        """Reading masked secret-backed settings must create an audit trail entry."""
+        self._post_settings(
+            {"key": "integrations.mpesa", "value": MPESA_CREDS, "category": "integrations"}
+        )
+
+        get_resp = self._get_settings(category="integrations")
+
+        self.assertEqual(get_resp.status_code, 200)
+        audit = AuditLog.objects.filter(action="SECRET_READ", object_id="settings").latest("timestamp")
+        self.assertEqual(audit.user_id, self.user.id)
+        self.assertEqual(audit.model_name, "TenantSettings")
+        self.assertIn("integrations.mpesa", audit.details)

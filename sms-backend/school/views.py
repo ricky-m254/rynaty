@@ -9091,7 +9091,11 @@ class TenantSettingsView(APIView):
 
     def get(self, request):
         from .models import TenantSettings
-        from .tenant_secrets import merge_tenant_setting_secrets
+        from .tenant_secrets import (
+            SECRET_META_KEY,
+            log_tenant_secret_audit,
+            mask_tenant_setting_value_for_response,
+        )
         category = request.query_params.get('category', '')
         qs = TenantSettings.objects.all()
         if category:
@@ -9104,14 +9108,33 @@ class TenantSettingsView(APIView):
         # Return as flat dict AND grouped structure
         flat = {}
         grouped = {}
+        secret_backed_keys = []
         for s in qs:
-            resolved_value = merge_tenant_setting_secrets(s.key, s.value) if isinstance(s.value, dict) else s.value
-            flat[s.key] = resolved_value
+            response_value = (
+                mask_tenant_setting_value_for_response(s.key, s.value)
+                if isinstance(s.value, dict)
+                else s.value
+            )
+            if isinstance(response_value, dict) and response_value.get(SECRET_META_KEY):
+                secret_backed_keys.append(s.key)
+            flat[s.key] = response_value
             grouped.setdefault(s.category, {})[s.key] = {
-                'value': resolved_value,
+                'value': response_value,
                 'description': s.description,
                 'updated_at': s.updated_at,
             }
+
+        if secret_backed_keys:
+            log_tenant_secret_audit(
+                action="SECRET_READ",
+                model_name="TenantSettings",
+                object_id="settings",
+                user=request.user,
+                details=(
+                    f"Read masked tenant secret settings keys={','.join(secret_backed_keys[:20])} "
+                    f"category={category or 'all'} count={len(secret_backed_keys)}"
+                ),
+            )
 
         return Response({
             'settings': flat,
@@ -9327,6 +9350,7 @@ class StripeTestConnectionView(APIView):
 
     def post(self, request):
         from .stripe import StripeError, test_connection
+        from .tenant_secrets import log_tenant_secret_audit
 
         secret_key = str(request.data.get("secret_key") or "").strip()
         schema = getattr(request, "tenant", None)
@@ -9336,6 +9360,16 @@ class StripeTestConnectionView(APIView):
 
         cached = cache.get(cache_key)
         if cached is not None:
+            log_tenant_secret_audit(
+                action="SECRET_TEST",
+                model_name="TenantSettings",
+                object_id="integrations.stripe",
+                user=request.user,
+                details=(
+                    f"Stripe connection test success={bool(cached.get('success'))} "
+                    f"cached=True source={'request_payload' if secret_key else 'stored_secret'}"
+                ),
+            )
             if cached["success"]:
                 return Response({**cached, "cached": True})
             return Response({**cached, "cached": True}, status=status.HTTP_400_BAD_REQUEST)
@@ -9345,6 +9379,16 @@ class StripeTestConnectionView(APIView):
         except StripeError as exc:
             error_payload = {"success": False, "error": str(exc)}
             cache.set(cache_key, error_payload, self._CACHE_TTL)
+            log_tenant_secret_audit(
+                action="SECRET_TEST",
+                model_name="TenantSettings",
+                object_id="integrations.stripe",
+                user=request.user,
+                details=(
+                    f"Stripe connection test success=False cached=False "
+                    f"source={'request_payload' if secret_key else 'stored_secret'} error={str(exc)}"
+                ),
+            )
             return Response(error_payload, status=status.HTTP_400_BAD_REQUEST)
 
         message = (
@@ -9360,6 +9404,17 @@ class StripeTestConnectionView(APIView):
             "livemode": result["livemode"],
         }
         cache.set(cache_key, success_payload, self._CACHE_TTL)
+        log_tenant_secret_audit(
+            action="SECRET_TEST",
+            model_name="TenantSettings",
+            object_id="integrations.stripe",
+            user=request.user,
+            details=(
+                f"Stripe connection test success=True cached=False "
+                f"source={'request_payload' if secret_key else 'stored_secret'} "
+                f"mode={result['mode']} livemode={bool(result['livemode'])}"
+            ),
+        )
         return Response(success_payload)
 
 
@@ -9489,6 +9544,7 @@ class MpesaTestConnectionView(APIView):
         import hashlib
         from django.core.cache import cache
         from .mpesa import _get_access_token, MpesaError, SANDBOX_BASE, PRODUCTION_BASE
+        from .tenant_secrets import log_tenant_secret_audit
 
         body = request.data
         consumer_key = (body.get("consumer_key") or "").strip()
@@ -9496,8 +9552,9 @@ class MpesaTestConnectionView(APIView):
         shortcode = str(body.get("shortcode") or "").strip()
         passkey = (body.get("passkey") or "").strip()
         environment = str(body.get("environment") or "sandbox").lower()
+        inline_credentials = all([consumer_key, consumer_secret, shortcode, passkey])
 
-        if all([consumer_key, consumer_secret, shortcode, passkey]):
+        if inline_credentials:
             base_url = PRODUCTION_BASE if environment == "production" else SANDBOX_BASE
             creds = {
                 "consumer_key": consumer_key,
@@ -9527,6 +9584,17 @@ class MpesaTestConnectionView(APIView):
 
         cached = cache.get(cache_key)
         if cached is not None:
+            log_tenant_secret_audit(
+                action="SECRET_TEST",
+                model_name="TenantSettings",
+                object_id="integrations.mpesa",
+                user=request.user,
+                details=(
+                    f"M-Pesa connection test success={bool(cached.get('success'))} "
+                    f"cached=True source={'request_payload' if inline_credentials else 'stored_secret'} "
+                    f"environment={creds['environment']}"
+                ),
+            )
             if cached["success"]:
                 return Response({
                     "success": True,
@@ -9544,6 +9612,17 @@ class MpesaTestConnectionView(APIView):
         except MpesaError as exc:
             error_msg = str(exc)
             cache.set(cache_key, {"success": False, "error": error_msg}, self._CACHE_TTL)
+            log_tenant_secret_audit(
+                action="SECRET_TEST",
+                model_name="TenantSettings",
+                object_id="integrations.mpesa",
+                user=request.user,
+                details=(
+                    f"M-Pesa connection test success=False cached=False "
+                    f"source={'request_payload' if inline_credentials else 'stored_secret'} "
+                    f"environment={creds['environment']} error={error_msg}"
+                ),
+            )
             return Response(
                 {
                     "success": False,
@@ -9558,6 +9637,17 @@ class MpesaTestConnectionView(APIView):
             "OAuth token obtained successfully."
         )
         cache.set(cache_key, {"success": True, "message": success_msg}, self._CACHE_TTL)
+        log_tenant_secret_audit(
+            action="SECRET_TEST",
+            model_name="TenantSettings",
+            object_id="integrations.mpesa",
+            user=request.user,
+            details=(
+                f"M-Pesa connection test success=True cached=False "
+                f"source={'request_payload' if inline_credentials else 'stored_secret'} "
+                f"environment={creds['environment']}"
+            ),
+        )
         return Response({
             "success": True,
             "message": success_msg,

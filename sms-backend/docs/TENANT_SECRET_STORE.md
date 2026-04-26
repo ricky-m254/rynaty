@@ -38,6 +38,34 @@ Behavior:
 - runtime readers merge decrypted secret values back into the in-memory config when needed
 - deleting a tenant setting also deletes its related secret rows
 
+## Settings API Behavior
+
+Sensitive settings reads no longer return decrypted secret material to the client.
+
+Current behavior:
+
+- secret-backed settings payloads return only non-secret fields plus `__secret_meta__`
+- each secret field is represented with configured-state metadata and a masked preview
+- blank or omitted secret fields on save preserve the existing encrypted secret unless a non-empty replacement is supplied
+
+Example secret metadata:
+
+```json
+{
+  "integrations.mpesa": {
+    "shortcode": "174379",
+    "environment": "sandbox",
+    "__secret_meta__": {
+      "consumer_key": {
+        "configured": true,
+        "masked_label": "Configured (hidden)",
+        "preview": "ck••••23"
+      }
+    }
+  }
+}
+```
+
 ## Key Source
 
 Encryption keys are derived from:
@@ -76,6 +104,20 @@ What it does:
 - re-encrypts it with the current primary key version
 - supports dry-run reporting before making changes
 - supports prefix scoping for targeted rotations
+- supports `--actor-username` so the rotation audit trail can be attributed to a named operator
+
+## Audit Trail
+
+Secret inspection and handling actions now emit `AuditLog` entries in the tenant schema.
+
+Current audit actions:
+
+- `SECRET_READ` for masked settings reads that expose secret-backed configuration state
+- `SECRET_TEST` for M-Pesa and Stripe connection-test actions
+- `SECRET_ROTATE_PREVIEW` for dry-run rotation previews
+- `SECRET_ROTATE` for live secret rotation runs
+
+The audit trail records the acting user when one is available and never stores raw secret values in the log details.
 
 ## Verification
 
@@ -84,14 +126,17 @@ Focused regression coverage:
 - [test_tenant_secret_store.py](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/school/test_tenant_secret_store.py:1)
 - [test_tenant_secret_rotation.py](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/school/test_tenant_secret_rotation.py:1)
 - [test_mpesa_settings_roundtrip.py](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/school/test_mpesa_settings_roundtrip.py:1)
+- [test_finance_phase4.py](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/school/test_finance_phase4.py:1)
 
 Verified behaviors:
 
 - profile secret writes clear plaintext model columns
-- M-Pesa settings round-trip still works for authorized callers
+- M-Pesa settings round-trip still works for authorized callers with masked reads
 - Stripe and M-Pesa runtime readers use decrypted secrets
+- sensitive settings reads and connection-test actions create audit trail entries
 - dry-run rotation reports correctly
 - live rotation updates ciphertext to the current primary key version without losing plaintext meaning
+- rotation runs can be attributed to a named operator
 
 ## Close-Out State
 

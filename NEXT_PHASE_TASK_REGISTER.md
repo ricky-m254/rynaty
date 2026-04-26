@@ -13,6 +13,8 @@ The previous register is complete. This one tracks the next operational and prod
 - legacy issue register is closed
 - M-Pesa hardening, session timeout, approvals-hub repair, DB-health surfacing, and finance ops controls are complete
 - tenant secret storage and key rotation support are complete in code
+- tenant secret settings now return masked reads instead of decrypted API payloads
+- tenant secret inspection, connection-test, and rotation actions now emit audit trail entries
 - dark-theme clarity tuning is applied at the shared theme layer to reduce blur and raise text contrast
 - the approvals hub now uses real `approve`, `clarify`, and `reject` actions across the supported approval domains
 - approval scope regression coverage passed against the local trust-auth Postgres instance on `127.0.0.1:55432`
@@ -64,27 +66,29 @@ Acceptance criteria:
 
 ### P3. Mask Secret Values In Settings Reads
 
-Status: `Do After`
+Status: `Complete`
 
-Reason:
-- current compatibility behavior still returns decrypted secret values to authorized callers
-- this is acceptable for transition, but long-term UI/API behavior should prefer masked reads plus explicit replacement writes
+Outcome:
+- settings APIs now return masked secret metadata instead of decrypted integration secrets
+- settings save flows preserve existing stored secrets when blank or omitted secret fields are submitted
+- the finance settings UI still detects configured M-Pesa and Stripe secrets without exposing raw values
 
-Acceptance criteria:
-- settings APIs return masked secret placeholders instead of raw secret values
-- save flows preserve existing secrets unless the caller explicitly replaces them
-- UI continues to show configured state without exposing raw secret material
+Verification:
+- focused tenant-secret and M-Pesa settings regression pack passed on the local trust-auth Postgres instance
+- compiled finance settings bundle passed syntax verification
 
 ### P4. Audit Secret Access Events
 
-Status: `Do After`
+Status: `Complete`
 
-Reason:
-- writes are attributable today, but secret reads are not centrally audited
+Outcome:
+- masked tenant settings reads now emit `SECRET_READ` audit events
+- Stripe and M-Pesa test-connection actions now emit `SECRET_TEST` audit events
+- secret rotation command runs now emit `SECRET_ROTATE` or `SECRET_ROTATE_PREVIEW` audit events
+- rotation can be attributed to a named operator with `--actor-username`
 
-Acceptance criteria:
-- sensitive settings reads and test-connection actions emit auditable security events
-- finance/platform operators can trace who inspected or rotated tenant secrets
+Verification:
+- focused settings, rotation, and finance audit regressions passed locally
 
 ### P5. Workspace Hygiene Automation
 
@@ -124,7 +128,5 @@ Reason:
 1. `P0` Production Secret Rotation Rollout
 2. `P1` Live Payment Validation
 3. `P2` Launch Evidence Refresh
-4. `P3` Mask Secret Values In Settings Reads
-5. `P4` Audit Secret Access Events
-6. `P5` Workspace Hygiene Automation
-7. `P6` Approval Workflow Clarification States
+4. `P5` Workspace Hygiene Automation
+5. `P7` Settings API Contract Tightening

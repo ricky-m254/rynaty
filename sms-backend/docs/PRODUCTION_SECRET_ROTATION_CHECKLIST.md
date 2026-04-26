@@ -49,7 +49,7 @@ The newest key must be first so new writes and re-encrypted rows use it.
 Run:
 
 ```powershell
-python manage.py rotate_tenant_secrets --dry-run
+python manage.py rotate_tenant_secrets --dry-run --actor-username <admin_username>
 ```
 
 Expected result:
@@ -69,14 +69,14 @@ If failures are non-zero:
 Run:
 
 ```powershell
-python manage.py rotate_tenant_secrets
+python manage.py rotate_tenant_secrets --actor-username <admin_username>
 ```
 
 Optional scoped rotation:
 
 ```powershell
-python manage.py rotate_tenant_secrets --key-prefix tenant_setting:integrations.mpesa:
-python manage.py rotate_tenant_secrets --key-prefix tenant_setting:integrations.stripe:
+python manage.py rotate_tenant_secrets --actor-username <admin_username> --key-prefix tenant_setting:integrations.mpesa:
+python manage.py rotate_tenant_secrets --actor-username <admin_username> --key-prefix tenant_setting:integrations.stripe:
 ```
 
 Expected result:
@@ -84,6 +84,7 @@ Expected result:
 - command completes successfully
 - rows are reported as `rotated`
 - failures count is `0`
+- tenant audit log records `SECRET_ROTATE_PREVIEW` or `SECRET_ROTATE` with the named operator
 
 ## Immediate Verification
 

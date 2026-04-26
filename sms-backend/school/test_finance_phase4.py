@@ -18,6 +18,7 @@ from clients.models import Tenant, Domain
 from clients.models import RevenueLog
 from communication.models import Notification
 from school.models import (
+    AuditLog,
     Role,
     UserProfile,
     Module,
@@ -35,6 +36,7 @@ from school.views import (
     FinanceGatewayWebhookView,
     MpesaStkCallbackView,
     MpesaCallbackUrlView,
+    MpesaTestConnectionView,
     MpesaStkPushView,
     MpesaStkStatusView,
     PaymentViewSet,
@@ -870,6 +872,34 @@ class FinancePhase4WebhookAndReconciliationTests(TenantTestBase):
         self.assertTrue(response.data["success"])
         self.assertEqual(response.data["account_id"], "acct_test_123")
         self.assertIn("Fast Track School", response.data["message"])
+        audit = AuditLog.objects.filter(action="SECRET_TEST", object_id="integrations.stripe").latest("timestamp")
+        self.assertEqual(audit.user_id, self.user.id)
+        self.assertIn("success=True", audit.details)
+        self.assertIn("source=request_payload", audit.details)
+
+    @patch("school.mpesa._get_access_token")
+    def test_mpesa_test_connection_emits_secret_audit_log(self, mock_get_access_token):
+        mock_get_access_token.return_value = "token_demo"
+        request = self.factory.post(
+            "/api/finance/mpesa/test-connection/",
+            {
+                "consumer_key": "ck_test_demo",
+                "consumer_secret": "cs_test_demo",
+                "shortcode": "174379",
+                "passkey": "pk_test_demo",
+                "environment": "sandbox",
+            },
+            format="json",
+        )
+        force_authenticate(request, user=self.user)
+        response = MpesaTestConnectionView.as_view()(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["success"])
+        audit = AuditLog.objects.filter(action="SECRET_TEST", object_id="integrations.mpesa").latest("timestamp")
+        self.assertEqual(audit.user_id, self.user.id)
+        self.assertIn("success=True", audit.details)
+        self.assertIn("environment=sandbox", audit.details)
 
     def test_finance_launch_readiness_flags_missing_configuration(self):
         request = self.factory.get("/api/finance/launch-readiness/")

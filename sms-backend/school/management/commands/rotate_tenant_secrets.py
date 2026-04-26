@@ -18,13 +18,31 @@ class Command(BaseCommand):
             default="",
             help="Optionally rotate only secret rows whose key starts with this prefix.",
         )
+        parser.add_argument(
+            "--actor-username",
+            default="",
+            help="Optional Django username to attribute the rotation audit event to.",
+        )
 
     def handle(self, *args, **options):
+        from django.contrib.auth import get_user_model
+
         from school.models import TenantSecret
-        from school.tenant_secrets import current_secret_key_version, rotate_tenant_secret
+        from school.tenant_secrets import (
+            current_secret_key_version,
+            log_tenant_secret_audit,
+            rotate_tenant_secret,
+        )
 
         dry_run = bool(options["dry_run"])
         key_prefix = str(options.get("key_prefix") or "").strip()
+        actor_username = str(options.get("actor_username") or "").strip()
+        actor = None
+
+        if actor_username:
+            actor = get_user_model().objects.filter(username=actor_username).first()
+            if actor is None:
+                raise CommandError(f"Unknown actor username: {actor_username}")
 
         queryset = TenantSecret.objects.all().order_by("key")
         if key_prefix:
@@ -68,6 +86,21 @@ class Command(BaseCommand):
             self.style.SUCCESS(
                 f"[tenant-secrets] complete rotated={rotated} skipped={skipped} failures={len(failures)}"
             )
+        )
+
+        audit_action = "SECRET_ROTATE_PREVIEW" if dry_run else "SECRET_ROTATE"
+        details = (
+            f"tenant secret rotation dry_run={dry_run} scope={key_prefix or 'all'} target_version={target_version} "
+            f"rotated={rotated} skipped={skipped} failures={len(failures)} "
+            f"actor={actor_username or 'system'}"
+        )
+        if failures:
+            details = f"{details} failed_keys={','.join(key for key, _ in failures[:10])}"
+        log_tenant_secret_audit(
+            action=audit_action,
+            object_id=key_prefix or "all",
+            details=details,
+            user=actor,
         )
 
         if failures:
