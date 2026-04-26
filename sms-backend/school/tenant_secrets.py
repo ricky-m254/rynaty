@@ -83,8 +83,16 @@ def _keyring():
     return tuple(ring)
 
 
+def reset_secret_keyring_cache():
+    _keyring.cache_clear()
+
+
 def _primary_key():
     return _keyring()[0]
+
+
+def current_secret_key_version() -> str:
+    return _primary_key()["version"]
 
 
 def _secret_row_model():
@@ -164,6 +172,19 @@ def delete_tenant_secret(secret_key: str):
 def delete_tenant_setting_secrets(setting_key: str):
     TenantSecret = _secret_row_model()
     TenantSecret.objects.filter(key__startswith=f"tenant_setting:{setting_key}:").delete()
+
+
+def rotate_tenant_secret(secret):
+    target_version = current_secret_key_version()
+    if secret.key_version == target_version:
+        return False
+
+    plaintext = decrypt_secret(secret.ciphertext, secret.key_version)
+    ciphertext, key_version = encrypt_secret(plaintext)
+    secret.ciphertext = ciphertext
+    secret.key_version = key_version
+    secret.save(update_fields=["ciphertext", "key_version", "updated_at"])
+    return True
 
 
 def _detected_secret_fields(payload: dict) -> set[str]:

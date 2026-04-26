@@ -1,6 +1,6 @@
 # Task Execution Register
 
-Date: 2026-04-25
+Date: 2026-04-26
 
 ## Purpose
 
@@ -31,19 +31,19 @@ It is designed to leave no issue unclassified:
 - Masked DEBUG logging now exists for OAuth, STK push, and STK query request/response diagnostics.
 - Callback URL settings API now returns exact callback URL, source, HTTPS state, warning text, shortcode, and read-only `PartyB`.
 - Finance settings UI now exposes the callback URL override field, exact callback URL, callback source, HTTPS state, and read-only `PartyB`.
-- Parent and student payment polling still appear to fall back to generic failure text instead of prioritizing `friendly_message`.
+- Parent and student payment polling now surface live success and failure outcomes through the shared backend message contract.
 - M-Pesa reconciliation command exists.
 - Focused M-Pesa regression coverage now passes for the new error mapping and callback diagnostics surface.
 - A focused GitHub Actions workflow now exists for the M-Pesa regression pack.
 
 ### Approvals Hub
 
-- The compiled approvals hub already appears corrected for some items mentioned in `fix.txt`:
+- The compiled approvals hub is verified corrected for the items mentioned in `fix.txt`:
   - library acquisitions uses `/library/acquisition/requests/`
   - admissions uses `status=Submitted`
   - admissions actions use `PATCH /admissions/applications/{id}/`
   - maintenance actions use `PATCH /maintenance/requests/{id}/`
-- Therefore, `fix.txt` Task `#51` is only partially still open.
+- `fix.txt` Task `#51` is now fully closed after the remaining leave-reject payload alias fix.
 
 ### Session Timeout
 
@@ -467,3 +467,36 @@ Current outcome:
 - platform DB-health visibility is now complete on login and monitoring surfaces
 - finance ops reconciliation interval and payment-event notification controls are now complete
 - no tracked tasks from this register remain open
+
+## Post-Register Hardening
+
+These are follow-on hardening items after the original register is complete.
+
+### Encrypted Secret Rotation
+
+Status: `Completed`
+
+Goal:
+- add an operational command to re-encrypt tenant secrets onto a new primary key version
+- verify dry-run and live rotation behavior with automated tests
+
+Reason:
+- the tenant secret store is now in place, but robust production use also needs a safe key-rotation path
+
+Completion snapshot:
+- added `rotate_tenant_secrets` management command with `--dry-run` and `--key-prefix`
+- added keyring cache reset and key-version helpers in `tenant_secrets.py`
+- added rotation regression coverage for live re-encryption and dry-run reporting
+
+## Closure Audit
+
+Audit date: `2026-04-26`
+
+Closure result:
+- all tracked tasks from `Task #22.txt` are closed, merged, or explicitly recorded as already corrected
+- all follow-on hardening items tracked in this register are complete
+- no tracked implementation issues remain open in this register
+
+Operational close-out:
+- the execution register is now a completed historical record
+- any new work should start from a fresh task register or a new issue list, not by reopening this one implicitly
