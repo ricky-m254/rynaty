@@ -18,8 +18,8 @@ The previous register is complete. This one tracks the next operational and prod
 - dark-theme clarity tuning is applied at the shared theme layer to reduce blur and raise text contrast
 - the approvals hub now uses real `approve`, `clarify`, and `reject` actions across the supported approval domains
 - approval scope regression coverage passed against the local trust-auth Postgres instance on `127.0.0.1:55432`
-- communication transport realism and parent-portal contract repair are complete in code
-- the main remaining communications gaps are now operator workflow completion and product honesty around scheduling/analytics
+- communication transport realism, parent-portal contract repair, and operator workflow completion are complete in code
+- the main remaining next-phase work is now operational rollout: secret rotation, live payment validation, and evidence refresh
 
 ## Do Now
 
@@ -50,8 +50,13 @@ Goal:
 Acceptance criteria:
 - one bursar STK payment completes end to end
 - one portal M-Pesa payment completes end to end
-- one Stripe checkout/webhook flow completes end to end
 - downloadable receipts are confirmed on the resulting records
+- if Stripe is enabled in the target environment or returns to launch scope, one Stripe checkout/webhook flow completes end to end
+- if Stripe remains out of the current Kenya launch scope, an explicit waiver note is captured with owner and date
+
+Primary references:
+- [LIVE_PAYMENT_VALIDATION_RUN_SEQUENCE.md](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/docs/LIVE_PAYMENT_VALIDATION_RUN_SEQUENCE.md:1)
+- [payments_launch_runbook.md](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/docs/payments_launch_runbook.md:1)
 
 ### P2. Launch Evidence Refresh
 
@@ -63,6 +68,10 @@ Goal:
 Acceptance criteria:
 - payment launch evidence reflects the current tenant list, callback URL state, and live smoke results
 - any remaining external blockers are named explicitly with owner and date
+
+Primary references:
+- [LAUNCH_EVIDENCE_REFRESH_SEQUENCE.md](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/docs/LAUNCH_EVIDENCE_REFRESH_SEQUENCE.md:1)
+- [PAYMENT_SYSTEMS_LAUNCH_EVIDENCE.md](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/PAYMENT_SYSTEMS_LAUNCH_EVIDENCE.md:1)
 
 ## Do After
 

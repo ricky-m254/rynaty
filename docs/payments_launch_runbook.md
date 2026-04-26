@@ -10,6 +10,14 @@ This runbook covers the fast-track launch work for school fee collection and ten
 
 It is intended for finance admins, bursars, platform admins, and support staff working with the payment launch.
 
+## Current Scope Note
+
+As of April 27, 2026:
+
+- the current Kenya rollout is still primarily gated by M-Pesa and bank-transfer validation
+- Stripe remains implemented and should be validated where it is enabled in the target environment
+- if Stripe is intentionally out of scope for the tenant being validated, record an explicit waiver with owner and date instead of silently skipping it
+
 ## 1. Readiness Snapshot
 
 Start with the tenant readiness endpoint:
