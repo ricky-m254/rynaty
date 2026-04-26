@@ -1,0 +1,114 @@
+# Next-Phase Task Register
+
+Date: 2026-04-26
+
+## Purpose
+
+This register starts after the closure of [task.md](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/task.md:1).
+
+The previous register is complete. This one tracks the next operational and product-hardening wave.
+
+## Current Baseline
+
+- legacy issue register is closed
+- M-Pesa hardening, session timeout, approvals-hub repair, DB-health surfacing, and finance ops controls are complete
+- tenant secret storage and key rotation support are complete in code
+
+## Do Now
+
+### P0. Production Secret Rotation Rollout
+
+Status: `Do Now`
+
+Goal:
+- roll the encrypted tenant secret store safely into staging/production
+
+Acceptance criteria:
+- `DJANGO_TENANT_SECRET_KEYS` is configured with a new primary key followed by the old key
+- dry-run rotation completes with zero failures
+- live rotation completes with zero failures
+- no decrypt failures appear during the observation window
+
+Primary references:
+- [PRODUCTION_SECRET_ROTATION_CHECKLIST.md](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/docs/PRODUCTION_SECRET_ROTATION_CHECKLIST.md:1)
+- [TENANT_SECRET_STORE.md](/c:/Users/emuri/OneDrive/Desktop/Sms-Deployment/sms-backend/docs/TENANT_SECRET_STORE.md:1)
+
+### P1. Live Payment Validation
+
+Status: `Do Now`
+
+Goal:
+- confirm real-environment payment flows after the secret rotation rollout
+
+Acceptance criteria:
+- one bursar STK payment completes end to end
+- one portal M-Pesa payment completes end to end
+- one Stripe checkout/webhook flow completes end to end
+- downloadable receipts are confirmed on the resulting records
+
+### P2. Launch Evidence Refresh
+
+Status: `Do Now`
+
+Goal:
+- refresh rollout evidence using live-environment results instead of only repo-backed proof
+
+Acceptance criteria:
+- payment launch evidence reflects the current tenant list, callback URL state, and live smoke results
+- any remaining external blockers are named explicitly with owner and date
+
+## Do After
+
+### P3. Mask Secret Values In Settings Reads
+
+Status: `Do After`
+
+Reason:
+- current compatibility behavior still returns decrypted secret values to authorized callers
+- this is acceptable for transition, but long-term UI/API behavior should prefer masked reads plus explicit replacement writes
+
+Acceptance criteria:
+- settings APIs return masked secret placeholders instead of raw secret values
+- save flows preserve existing secrets unless the caller explicitly replaces them
+- UI continues to show configured state without exposing raw secret material
+
+### P4. Audit Secret Access Events
+
+Status: `Do After`
+
+Reason:
+- writes are attributable today, but secret reads are not centrally audited
+
+Acceptance criteria:
+- sensitive settings reads and test-connection actions emit auditable security events
+- finance/platform operators can trace who inspected or rotated tenant secrets
+
+### P5. Workspace Hygiene Automation
+
+Status: `Do After`
+
+Reason:
+- browser-run and artifact clutter keeps accumulating outside git
+
+Acceptance criteria:
+- a documented cleanup path exists for local runtime clutter
+- optional `.gitignore` or helper automation prevents repeat noise
+
+## Deferred
+
+### P6. Settings API Contract Tightening
+
+Status: `Deferred`
+
+Reason:
+- secret masking is more important than broader payload redesign
+- contract changes should follow after live rollout is stable
+
+## Execution Order
+
+1. `P0` Production Secret Rotation Rollout
+2. `P1` Live Payment Validation
+3. `P2` Launch Evidence Refresh
+4. `P3` Mask Secret Values In Settings Reads
+5. `P4` Audit Secret Access Events
+6. `P5` Workspace Hygiene Automation
