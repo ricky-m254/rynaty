@@ -15,7 +15,7 @@ from django_tenants.utils import schema_context
 from rest_framework.test import APIRequestFactory, force_authenticate
 
 from clients.models import Domain, Tenant
-from school.models import Role, TenantSettings, UserProfile
+from school.models import Role, TenantSecret, TenantSettings, UserProfile
 from school.views import TenantSettingsView
 
 User = get_user_model()
@@ -57,6 +57,7 @@ class TenantTestBase(TestCase):
 
     def tearDown(self):
         TenantSettings.objects.filter(key="integrations.mpesa").delete()
+        TenantSecret.objects.all().delete()
         self.schema_ctx.__exit__(None, None, None)
 
 
@@ -100,6 +101,14 @@ class MpesaSettingsRoundTripTests(TenantTestBase):
         self.assertEqual(saved["passkey"], MPESA_CREDS["passkey"])
         self.assertEqual(saved["environment"], MPESA_CREDS["environment"])
 
+        stored = TenantSettings.objects.get(key="integrations.mpesa")
+        self.assertNotIn("consumer_key", stored.value)
+        self.assertNotIn("consumer_secret", stored.value)
+        self.assertNotIn("passkey", stored.value)
+        self.assertTrue(TenantSecret.objects.filter(key="tenant_setting:integrations.mpesa:consumer_key").exists())
+        self.assertTrue(TenantSecret.objects.filter(key="tenant_setting:integrations.mpesa:consumer_secret").exists())
+        self.assertTrue(TenantSecret.objects.filter(key="tenant_setting:integrations.mpesa:passkey").exists())
+
     def test_category_filter_returns_entry_after_save(self):
         """GET ?category=integrations exposes the saved key after POST."""
         self._post_settings(
@@ -122,9 +131,15 @@ class MpesaSettingsRoundTripTests(TenantTestBase):
             {"key": "integrations.mpesa", "value": MPESA_CREDS, "category": "integrations"}
         )
         updated_creds = {**MPESA_CREDS, "shortcode": "999888", "environment": "production"}
-        self._post_settings(
-            {"key": "integrations.mpesa", "value": updated_creds, "category": "integrations"}
+        update_response = self._post_settings(
+            {
+                "key": "integrations.mpesa",
+                "value": updated_creds,
+                "category": "integrations",
+                "production_acknowledged": True,
+            }
         )
+        self.assertEqual(update_response.status_code, 200)
 
         get_resp = self._get_settings()
         saved = get_resp.data["settings"]["integrations.mpesa"]

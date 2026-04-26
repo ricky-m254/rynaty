@@ -2223,6 +2223,29 @@ class TenantSettings(models.Model):
         return f"{self.key} = {self.value}"
 
 
+class TenantSecret(models.Model):
+    """
+    Tenant-scoped encrypted secret storage.
+    Secrets live in the tenant schema and are encrypted with an
+    application key ring derived from environment-managed master keys.
+    """
+
+    key = models.CharField(max_length=150, unique=True)
+    ciphertext = models.TextField()
+    key_version = models.CharField(max_length=32)
+    description = models.CharField(max_length=255, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey('auth.User', on_delete=models.SET_NULL, null=True, blank=True)
+
+    class Meta:
+        ordering = ['key']
+        verbose_name = 'Tenant Secret'
+        verbose_name_plural = 'Tenant Secrets'
+
+    def __str__(self):
+        return self.key
+
+
 class InstitutionSecurityPolicy(models.Model):
     """
     Tenant-scoped singleton-style security policy.

@@ -2546,10 +2546,15 @@ class FinanceGatewayWebhookView(APIView):
     def _verify_stripe_request(request, raw_body):
         from .models import TenantSettings
         from .stripe import verify_webhook_signature
+        from .tenant_secrets import merge_tenant_setting_secrets
 
         strict_mode = bool(getattr(settings, "FINANCE_WEBHOOK_STRICT_MODE", True))
         stripe_setting = TenantSettings.objects.filter(key="integrations.stripe").first()
-        stripe_cfg = stripe_setting.value if stripe_setting and isinstance(stripe_setting.value, dict) else {}
+        stripe_cfg = (
+            merge_tenant_setting_secrets("integrations.stripe", stripe_setting.value)
+            if stripe_setting and isinstance(stripe_setting.value, dict)
+            else {}
+        )
         webhook_secret = str(stripe_cfg.get("webhook_secret") or "").strip()
 
         if not webhook_secret:
@@ -3116,7 +3121,7 @@ class SchoolProfileView(APIView):
 
     def get(self, request):
         profile = SchoolProfile.objects.filter(is_active=True).first()
-        serializer = SchoolProfileSerializer(profile) if profile else None
+        serializer = SchoolProfileSerializer(profile, context={"request": request}) if profile else None
         profile_data = serializer.data if serializer else None
         if profile_data and profile_data.get("logo_url"):
             profile_data["logo_url"] = request.build_absolute_uri(profile_data["logo_url"])
@@ -3159,7 +3164,12 @@ class SchoolProfileView(APIView):
             security_serializer.is_valid(raise_exception=True)
             security_serializer.save(updated_by=request.user)
 
-        serializer = SchoolProfileSerializer(profile, data=profile_payload, partial=True)
+        serializer = SchoolProfileSerializer(
+            profile,
+            data=profile_payload,
+            partial=True,
+            context={"request": request},
+        )
         serializer.is_valid(raise_exception=True)
         serializer.save()
         payload = serializer.data
@@ -9081,6 +9091,7 @@ class TenantSettingsView(APIView):
 
     def get(self, request):
         from .models import TenantSettings
+        from .tenant_secrets import merge_tenant_setting_secrets
         category = request.query_params.get('category', '')
         qs = TenantSettings.objects.all()
         if category:
@@ -9094,9 +9105,10 @@ class TenantSettingsView(APIView):
         flat = {}
         grouped = {}
         for s in qs:
-            flat[s.key] = s.value
+            resolved_value = merge_tenant_setting_secrets(s.key, s.value) if isinstance(s.value, dict) else s.value
+            flat[s.key] = resolved_value
             grouped.setdefault(s.category, {})[s.key] = {
-                'value': s.value,
+                'value': resolved_value,
                 'description': s.description,
                 'updated_at': s.updated_at,
             }
@@ -9109,6 +9121,7 @@ class TenantSettingsView(APIView):
 
     def post(self, request):
         from .models import TenantSettings, AuditLog
+        from .tenant_secrets import sanitize_tenant_setting_value_for_storage
         data = request.data
         is_admin = self._is_full_admin(request)
 
@@ -9142,7 +9155,11 @@ class TenantSettingsView(APIView):
             obj, _ = TenantSettings.objects.update_or_create(
                 key=key,
                 defaults={
-                    'value': entry.get('value'),
+                    'value': sanitize_tenant_setting_value_for_storage(
+                        key,
+                        entry.get('value'),
+                        updated_by=request.user,
+                    ),
                     'description': entry.get('description', ''),
                     'category': entry.get('category', 'general'),
                     'updated_by': request.user,
@@ -9167,7 +9184,9 @@ class TenantSettingDeleteView(APIView):
 
     def delete(self, request, setting_key):
         from .models import TenantSettings
+        from .tenant_secrets import delete_tenant_setting_secrets
         deleted, _ = TenantSettings.objects.filter(key=setting_key).delete()
+        delete_tenant_setting_secrets(setting_key)
         return Response({'deleted': deleted, 'key': setting_key})
 
 
@@ -9207,7 +9226,12 @@ class FinanceSettingsView(APIView):
     def patch(self, request):
         profile = self._get_profile()
         payload = {field: request.data[field] for field in self._FINANCE_FIELDS if field in request.data}
-        serializer = SchoolProfileSerializer(profile, data=payload, partial=True)
+        serializer = SchoolProfileSerializer(
+            profile,
+            data=payload,
+            partial=True,
+            context={"request": request},
+        )
         serializer.is_valid(raise_exception=True)
         serializer.save()
         data = {f: serializer.data.get(f) for f in self._FINANCE_FIELDS}
@@ -9632,9 +9656,14 @@ class MpesaCallbackUrlView(APIView):
 
     def _get_mpesa_summary(self):
         from .models import TenantSettings
+        from .tenant_secrets import merge_tenant_setting_secrets
 
         setting = TenantSettings.objects.filter(key="integrations.mpesa").first()
-        config = setting.value if setting and isinstance(setting.value, dict) else {}
+        config = (
+            merge_tenant_setting_secrets("integrations.mpesa", setting.value)
+            if setting and isinstance(setting.value, dict)
+            else {}
+        )
         shortcode = str(config.get("shortcode") or "").strip()
         environment = str(config.get("environment") or "sandbox").lower()
         enabled = config.get("enabled", True) is not False
@@ -9768,9 +9797,14 @@ class FinanceLaunchReadinessView(APIView):
 
     def _stripe_readiness(self, base_url_context):
         from .models import TenantSettings
+        from .tenant_secrets import merge_tenant_setting_secrets
 
         setting = TenantSettings.objects.filter(key="integrations.stripe").first()
-        config = setting.value if setting and isinstance(setting.value, dict) else {}
+        config = (
+            merge_tenant_setting_secrets("integrations.stripe", setting.value)
+            if setting and isinstance(setting.value, dict)
+            else {}
+        )
         secret_key = str(config.get("secret_key") or "").strip()
         webhook_secret = str(config.get("webhook_secret") or "").strip()
         webhook_url = self._build_public_url(base_url_context["effective_base_url"], self.STRIPE_WEBHOOK_PATH)
@@ -9809,9 +9843,14 @@ class FinanceLaunchReadinessView(APIView):
 
     def _mpesa_readiness(self, base_url_context):
         from .models import TenantSettings
+        from .tenant_secrets import merge_tenant_setting_secrets
 
         setting = TenantSettings.objects.filter(key="integrations.mpesa").first()
-        config = setting.value if setting and isinstance(setting.value, dict) else {}
+        config = (
+            merge_tenant_setting_secrets("integrations.mpesa", setting.value)
+            if setting and isinstance(setting.value, dict)
+            else {}
+        )
         enabled = config.get("enabled", True) is not False
         environment = str(config.get("environment") or "sandbox").lower()
         callback_url = self._build_public_url(base_url_context["effective_base_url"], self.MPESA_CALLBACK_PATH)

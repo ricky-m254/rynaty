@@ -84,15 +84,17 @@ def _friendly_stripe_error(status_code, response_body):
 
 def _get_credentials():
     from .models import TenantSettings
+    from .tenant_secrets import merge_tenant_setting_secrets
 
     setting = TenantSettings.objects.filter(key="integrations.stripe").first()
-    if not setting or not setting.value:
+    raw_value = setting.value if setting else None
+    cfg = merge_tenant_setting_secrets("integrations.stripe", raw_value) if isinstance(raw_value, dict) else raw_value
+    if not setting or not cfg:
         raise StripeError(
             "Stripe is not configured for this school. "
             "Go to Settings -> Finance -> Stripe to add your API keys."
         )
 
-    cfg = setting.value or {}
     if cfg.get("enabled") is False:
         raise StripeError("Stripe integration is disabled for this school.")
 

@@ -40,15 +40,16 @@ def _get_credentials():
     Raises MpesaError if credentials are missing or disabled.
     """
     from .models import TenantSettings
+    from .tenant_secrets import merge_tenant_setting_secrets
 
     setting = TenantSettings.objects.filter(key="integrations.mpesa").first()
-    if not setting or not setting.value:
+    raw_value = setting.value if setting else None
+    cfg = merge_tenant_setting_secrets("integrations.mpesa", raw_value) if isinstance(raw_value, dict) else raw_value
+    if not setting or not cfg:
         raise MpesaError(
             "M-Pesa is not configured for this school. "
             "Go to Settings → Integrations → M-Pesa to add credentials."
         )
-
-    cfg = setting.value
     if not cfg.get("enabled", True) is True and cfg.get("enabled") is not None:
         # Only block if explicitly set to False
         if cfg.get("enabled") is False:

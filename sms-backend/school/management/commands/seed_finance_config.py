@@ -147,6 +147,7 @@ class Command(BaseCommand):
 
     def _seed_mpesa(self, schema, force_mpesa):
         from school.models import TenantSettings
+        from school.tenant_secrets import merge_tenant_setting_secrets, sanitize_tenant_setting_value_for_storage
 
         obj, created = TenantSettings.objects.get_or_create(
             key="integrations.mpesa",
@@ -157,7 +158,7 @@ class Command(BaseCommand):
             },
         )
 
-        existing = obj.value if isinstance(obj.value, dict) else {}
+        existing = merge_tenant_setting_secrets("integrations.mpesa", obj.value) if isinstance(obj.value, dict) else {}
         updated = dict(existing)
 
         for k, v in MPESA_SANDBOX_DEFAULTS.items():
@@ -174,7 +175,7 @@ class Command(BaseCommand):
                 )
 
         if updated != existing or created:
-            obj.value = updated
+            obj.value = sanitize_tenant_setting_value_for_storage("integrations.mpesa", updated)
             obj.save(update_fields=["value"])
             status = "created" if created else "updated"
             self.stdout.write(

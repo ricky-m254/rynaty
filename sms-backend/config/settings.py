@@ -107,6 +107,7 @@ def _assert_not_placeholder(name: str, value: str, placeholders: set[str]) -> No
 DEBUG = _env_bool("DJANGO_DEBUG", default=False)
 ALLOW_INSECURE_DEFAULTS = _env_bool("DJANGO_ALLOW_INSECURE_DEFAULTS", default=False)
 STRICT_PRODUCTION_MODE = not DEBUG and not ALLOW_INSECURE_DEFAULTS
+DJANGO_TENANT_SECRET_KEYS = _env_list("DJANGO_TENANT_SECRET_KEYS", [])
 RENDER_EXTERNAL_HOSTNAME = _env_str("RENDER_EXTERNAL_HOSTNAME", default="")
 RENDER_EXTERNAL_HOST = RENDER_EXTERNAL_HOSTNAME.split(":")[0].strip().lower()
 

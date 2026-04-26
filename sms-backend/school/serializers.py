@@ -103,6 +103,7 @@ class SchoolClassSerializer(serializers.ModelSerializer):
 
 class SchoolProfileSerializer(serializers.ModelSerializer):
     logo_url = serializers.SerializerMethodField()
+    _SECRET_FIELDS = ("smtp_password", "sms_api_key", "whatsapp_api_key")
 
     class Meta:
         model = SchoolProfile
@@ -168,6 +169,34 @@ class SchoolProfileSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError("Payment method labels cannot be blank.")
             normalized.append(label)
         return normalized
+
+    def _pop_secret_values(self, validated_data):
+        secret_values = {}
+        for field_name in self._SECRET_FIELDS:
+            if field_name in validated_data:
+                secret_values[field_name] = validated_data.pop(field_name)
+        return secret_values
+
+    def _persist_secret_values(self, instance, secret_values):
+        if not secret_values:
+            return
+        from .tenant_secrets import store_school_profile_secrets
+
+        request = self.context.get("request")
+        actor = getattr(request, "user", None) if request else None
+        store_school_profile_secrets(instance, secret_values, updated_by=actor)
+
+    def create(self, validated_data):
+        secret_values = self._pop_secret_values(validated_data)
+        instance = super().create(validated_data)
+        self._persist_secret_values(instance, secret_values)
+        return instance
+
+    def update(self, instance, validated_data):
+        secret_values = self._pop_secret_values(validated_data)
+        instance = super().update(instance, validated_data)
+        self._persist_secret_values(instance, secret_values)
+        return instance
 
     def get_logo_url(self, obj):
         request = self.context.get('request')
