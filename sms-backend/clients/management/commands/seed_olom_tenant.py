@@ -17,7 +17,7 @@ from django_tenants.utils import schema_context, get_public_schema_name
 
 
 _SCHEMA = "olom"
-_NAME = "Olom School"
+_NAME = "Our Lady Of Mercy"
 _DOMAIN = "olom.rynatyschool.app"
 _ADMIN_USER = "olom_admin"
 _ADMIN_PASS = "OlomAdmin#2025!"
@@ -43,6 +43,20 @@ class Command(BaseCommand):
             # This enables X-Tenant-ID: olom header lookups regardless of
             # what the schema_name was auto-generated as (e.g. schema could
             # be 'school_olomrynatyschoolapp' but user types 'olom').
+            tenant_updates = []
+            if tenant.name != _NAME:
+                tenant.name = _NAME
+                tenant_updates.append("name")
+            if tenant.contact_email != _ADMIN_EMAIL:
+                tenant.contact_email = _ADMIN_EMAIL
+                tenant_updates.append("contact_email")
+            if not tenant.is_active:
+                tenant.is_active = True
+                tenant_updates.append("is_active")
+            if tenant_updates:
+                tenant.save(update_fields=tenant_updates)
+                self.stdout.write(f"  [olom] Updated tenant metadata ({', '.join(tenant_updates)})")
+
             if not getattr(tenant, "subdomain", None):
                 try:
                     tenant.subdomain = "olom"
@@ -138,10 +152,10 @@ class Command(BaseCommand):
             tenant = Tenant.objects.create(
                 schema_name=_SCHEMA,
                 name=_NAME,
+                subdomain="olom",
                 status="TRIAL",
                 contact_email=_ADMIN_EMAIL,
                 is_active=True,
-                auto_create_schema=True,
             )
             self.stdout.write("  [olom] Tenant + schema created.")
             return tenant
@@ -202,6 +216,4 @@ class Command(BaseCommand):
                     self.stdout.write(f"  [olom] UserProfile role: {action} (TENANT_SUPER_ADMIN)")
             except Exception as exc:
                 self.stdout.write(f"  [olom] WARNING: Could not assign UserProfile role: {exc}")
-
-
 
