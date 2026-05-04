@@ -65,10 +65,15 @@ from finance.presentation.views import (
     FinanceEnrollmentRefView,
     FinanceInstallmentAgingView,
     FinanceOverdueAccountsView,
+    FinanceOverdueAccountsCsvExportView,
     FinanceReceiptPdfView as FinanceReceiptPdfView,
     FinanceReceivablesAgingView,
+    FinanceReceivablesAgingCsvExportView,
+    FinanceStudentDetailView,
     FinanceStudentRefView,
     FinanceStudentLedgerView as FinanceStudentLedgerView,
+    FinanceSummaryCsvExportView,
+    FinanceSummaryPdfExportView,
     FinanceVoteHeadAllocationReportView,
     FinanceVoteHeadBudgetReportView,
     FinancialSummaryView,
@@ -96,19 +101,27 @@ from finance.presentation.accounting_viewsets import (
     ChartOfAccountViewSet as FinanceChartOfAccountViewSet,
     JournalEntryViewSet as FinanceJournalEntryViewSet,
 )
+from finance.presentation.collection_ops_viewsets import (
+    BankStatementLineViewSet as FinanceBankStatementLineViewSet,
+    FeeReminderLogViewSet as FinanceFeeReminderLogViewSet,
+    LateFeeRuleViewSet as FinanceLateFeeRuleViewSet,
+    PaymentGatewayTransactionViewSet as FinancePaymentGatewayTransactionViewSet,
+    PaymentGatewayWebhookEventViewSet as FinancePaymentGatewayWebhookEventViewSet,
+)
+from finance.presentation.collection_ops_views import (
+    FinanceGatewayWebhookView as FinancePresentationGatewayWebhookView,
+)
 from finance.presentation.governance_viewsets import (
     BudgetViewSet as FinanceBudgetViewSet,
+    ExpenseViewSet as FinanceExpenseViewSet,
+    ScholarshipAwardViewSet as FinanceScholarshipAwardViewSet,
+    TermViewSet as FinanceTermViewSet,
+    VoteHeadPaymentAllocationViewSet as FinanceVoteHeadPaymentAllocationViewSet,
 )
 from .views import (
-    EnrollmentViewSet, ExpenseViewSet, MessageViewSet, 
+    EnrollmentViewSet, MessageViewSet, 
     StaffViewSet, StudentViewSet,
     DepartmentViewSet,
-    PaymentGatewayTransactionViewSet,
-    PaymentGatewayWebhookEventViewSet,
-    BankStatementLineViewSet,
-    FinanceGatewayWebhookView,
-    LateFeeRuleViewSet,
-    FeeReminderLogViewSet,
     TermViewSet, ModuleViewSet, UserModuleAssignmentViewSet,
     DashboardRoutingView, DashboardSummaryView, StudentsSummaryView, StudentsDashboardView,
     SchoolProfileView, SchoolTestEmailView, SchoolTestSmsView,
@@ -119,8 +132,6 @@ from .views import (
     StudentsModuleReportCsvExportView, StudentReportCsvExportView,
     StudentsModuleReportPdfExportView, StudentReportPdfExportView,
     StudentsDirectoryCsvExportView, StudentsDirectoryPdfExportView,
-    FinanceSummaryCsvExportView, FinanceSummaryPdfExportView,
-    FinanceReceivablesAgingCsvExportView, FinanceOverdueAccountsCsvExportView,
     AttendanceSummaryCsvExportView, AttendanceSummaryPdfExportView,
     AttendanceRecordsCsvExportView, AttendanceRecordsPdfExportView,
     BehaviorIncidentsCsvExportView, BehaviorIncidentsPdfExportView,
@@ -128,7 +139,6 @@ from .views import (
     MedicalImmunizationsCsvExportView, MedicalImmunizationsPdfExportView,
     MedicalClinicVisitsCsvExportView, MedicalClinicVisitsPdfExportView,
     StudentsDocumentsCsvExportView, StudentsDocumentsPdfExportView,
-    ScholarshipAwardViewSet,
     TenantSequenceResetView,
     AttendanceRecordViewSet,
     AttendanceSummaryView,
@@ -138,7 +148,6 @@ from .views import (
     ClinicVisitViewSet,
     TenantModuleListView,
     TenantModuleSettingsView,
-    VoteHeadPaymentAllocationViewSet,
     DispensaryVisitViewSet, DispensaryPrescriptionViewSet, DispensaryStockViewSet, DispensaryDashboardView,
     DispensaryDeliveryNoteViewSet, DispensaryOutsideTreatmentViewSet,
     StudentTransferViewSet,
@@ -176,29 +185,29 @@ router.register(r'medical/immunizations', ImmunizationRecordViewSet, basename='m
 router.register(r'medical/visits', ClinicVisitViewSet, basename='medical-visit')
 
 # Finance (Primary)
-router.register(r'finance/terms', TermViewSet, basename='term') 
+router.register(r'finance/terms', FinanceTermViewSet, basename='term') 
 router.register(r'finance/fees', FinanceFeeStructureViewSet, basename='feestructure')
 router.register(r'finance/fee-assignments', FinanceFeeAssignmentViewSet, basename='feeassignment')
-router.register(r'finance/scholarships', ScholarshipAwardViewSet, basename='scholarshipaward')
+router.register(r'finance/scholarships', FinanceScholarshipAwardViewSet, basename='scholarshipaward')
 router.register(r'finance/optional-charges', FinanceOptionalChargeViewSet, basename='optional-charge')
 router.register(r'finance/student-optional-charges', FinanceStudentOptionalChargeViewSet, basename='student-optional-charge')
 router.register(r'finance/invoice-adjustments', FinanceInvoiceAdjustmentViewSet, basename='invoiceadjustment')
 router.register(r'finance/invoices', FinanceInvoiceViewSet, basename='invoice')
 router.register(r'finance/payments', FinancePaymentViewSet, basename='payment')
-router.register(r'finance/expenses', ExpenseViewSet, basename='expense')
+router.register(r'finance/expenses', FinanceExpenseViewSet, basename='expense')
 router.register(r'finance/budgets', FinanceBudgetViewSet, basename='budget')
 router.register(r'finance/payment-reversals', FinancePaymentReversalRequestViewSet, basename='payment-reversal')
 router.register(r'finance/write-offs', FinanceInvoiceWriteOffRequestViewSet, basename='invoice-writeoff-request')
-router.register(r'finance/gateway/transactions', PaymentGatewayTransactionViewSet, basename='payment-gateway-transaction')
-router.register(r'finance/gateway/events', PaymentGatewayWebhookEventViewSet, basename='payment-gateway-event')
-router.register(r'finance/reconciliation/bank-lines', BankStatementLineViewSet, basename='bank-statement-line')
-router.register(r'finance/late-fee-rules', LateFeeRuleViewSet, basename='late-fee-rule')
-router.register(r'finance/reminders', FeeReminderLogViewSet, basename='fee-reminder')
+router.register(r'finance/gateway/transactions', FinancePaymentGatewayTransactionViewSet, basename='payment-gateway-transaction')
+router.register(r'finance/gateway/events', FinancePaymentGatewayWebhookEventViewSet, basename='payment-gateway-event')
+router.register(r'finance/reconciliation/bank-lines', FinanceBankStatementLineViewSet, basename='bank-statement-line')
+router.register(r'finance/late-fee-rules', FinanceLateFeeRuleViewSet, basename='late-fee-rule')
+router.register(r'finance/reminders', FinanceFeeReminderLogViewSet, basename='fee-reminder')
 router.register(r'finance/accounting/periods', FinanceAccountingPeriodViewSet, basename='accounting-period')
 router.register(r'finance/accounting/accounts', FinanceChartOfAccountViewSet, basename='accounting-account')
 router.register(r'finance/accounting/journals', FinanceJournalEntryViewSet, basename='accounting-journal')
 router.register(r'finance/vote-heads', FinanceVoteHeadViewSet, basename='vote-head')
-router.register(r'finance/vote-head-allocations', VoteHeadPaymentAllocationViewSet, basename='vote-head-allocation')
+router.register(r'finance/vote-head-allocations', FinanceVoteHeadPaymentAllocationViewSet, basename='vote-head-allocation')
 router.register(r'finance/cashbook', FinanceCashbookEntryViewSet, basename='cashbook-entry')
 router.register(r'finance/carry-forwards', FinanceBalanceCarryForwardViewSet, basename='carry-forward')
 router.register(r'store/categories', StoreCategoryViewSet, basename='store-category')
@@ -239,7 +248,7 @@ urlpatterns = [
     path('finance/reports/summary/export/pdf/', FinanceSummaryPdfExportView.as_view(), name='finance_reports_summary_pdf'),
     path('finance/accounting/trial-balance/', FinanceAccountingTrialBalanceView.as_view(), name='finance_accounting_trial_balance'),
     path('finance/accounting/ledger/', FinanceAccountingLedgerView.as_view(), name='finance_accounting_ledger'),
-    path('finance/gateway/webhooks/<str:provider>/', FinanceGatewayWebhookView.as_view(), name='finance_gateway_webhook'),
+    path('finance/gateway/webhooks/<str:provider>/', FinancePresentationGatewayWebhookView.as_view(), name='finance_gateway_webhook'),
     path('dashboard/routing/', DashboardRoutingView.as_view(), name='dashboard_routing'),
     path('dashboard/summary/', DashboardSummaryView.as_view(), name='dashboard_summary'),
     path('students/summary/', StudentsSummaryView.as_view(), name='students_summary'),
@@ -308,6 +317,7 @@ urlpatterns = [
     path('finance/reports/budget-variance/', FinanceBudgetVarianceReportView.as_view(), name='finance_budget_variance_report'),
     path('finance/reports/vote-head-budget/', FinanceVoteHeadBudgetReportView.as_view(), name='finance_vote_head_budget_report'),
     path('finance/payments/<int:pk>/receipt/pdf/', FinanceReceiptPdfView.as_view(), name='finance_receipt_pdf'),
+    path('finance/students/<int:student_id>/', FinanceStudentDetailView.as_view(), name='finance_student_detail'),
     path('finance/students/<int:student_id>/ledger/', FinanceStudentLedgerView.as_view(), name='finance_student_ledger'),
 
     # Store module

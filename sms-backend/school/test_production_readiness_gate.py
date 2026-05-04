@@ -10,6 +10,7 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 from academics.views import AcademicEnrollmentViewSet
 from admissions.views import AdmissionApplicationViewSet, AdmissionDecisionViewSet, AdmissionInquiryViewSet
 from clients.models import Domain, Tenant
+from finance.presentation.viewsets import InvoiceViewSet as RuntimeInvoiceViewSet
 from parent_portal.models import ParentStudentLink
 from parent_portal.views import _children_for_parent
 from school.models import (
@@ -19,6 +20,7 @@ from school.models import (
     FeeStructure,
     GradeLevel,
     Invoice,
+    JournalEntry,
     Module,
     Payment,
     Role,
@@ -100,8 +102,9 @@ class ProductionReadinessGateTests(ProductionGateTenantBase):
         force_authenticate(request, user=accountant)
         response = InvoiceViewSet.as_view({"post": "create"})(request)
         self.assertEqual(response.status_code, 400)
-        self.assertIn("term", response.data)
-        self.assertIn("line_items", response.data)
+        error_details = response.data.get("error", {}).get("details", response.data)
+        self.assertIn("term", error_details)
+        self.assertIn("line_items", error_details)
 
     def test_role_boundary_teacher_cannot_access_finance(self):
         teacher = self._create_user_with_role("gate_teacher", "TEACHER", ["STUDENTS", "ACADEMICS"])
@@ -189,6 +192,103 @@ class ProductionReadinessGateTests(ProductionGateTenantBase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("closed", str(response.data).lower())
 
+    def test_runtime_invoice_create_posts_single_journal_entry(self):
+        accountant = self._create_user_with_role("gate_acc_invoice_single", "ACCOUNTANT", ["FINANCE"])
+        year = AcademicYear.objects.create(name="Gate 2028", start_date=date(2028, 1, 1), end_date=date(2028, 12, 31), is_active=True)
+        term = Term.objects.create(
+            academic_year=year,
+            name="Gate Term 3",
+            start_date=date(2028, 1, 1),
+            end_date=date(2028, 4, 30),
+            is_active=True,
+        )
+        student = Student.objects.create(
+            first_name="Single",
+            last_name="Journal",
+            date_of_birth=date(2012, 3, 3),
+            admission_number="GATE-INV-001",
+            gender="M",
+            is_active=True,
+        )
+        fee = FeeStructure.objects.create(
+            name="Gate Single Fee",
+            amount=Decimal("1250.00"),
+            academic_year=year,
+            term=term,
+            is_active=True,
+        )
+
+        request = self.factory.post(
+            "/api/finance/invoices/",
+            {
+                "student": student.id,
+                "term": term.id,
+                "due_date": (timezone.now().date() + timedelta(days=30)).isoformat(),
+                "line_items": [{"fee_structure": fee.id, "amount": "1250.00", "description": "Tuition"}],
+            },
+            format="json",
+        )
+        force_authenticate(request, user=accountant)
+        response = RuntimeInvoiceViewSet.as_view({"post": "create"})(request)
+
+        self.assertEqual(response.status_code, 201)
+        invoice = Invoice.objects.get(id=response.data["id"])
+        self.assertEqual(JournalEntry.objects.filter(source_type="Invoice", source_id=invoice.id).count(), 1)
+        self.assertTrue(JournalEntry.objects.filter(entry_key=f"invoice:{invoice.id}").exists())
+        self.assertFalse(JournalEntry.objects.filter(entry_key=f"INV-{invoice.id}").exists())
+
+    def test_service_record_payment_posts_single_journal_entry(self):
+        accountant = self._create_user_with_role("gate_acc_payment_single", "ACCOUNTANT", ["FINANCE"])
+        student = Student.objects.create(
+            first_name="Payment",
+            last_name="Journal",
+            date_of_birth=date(2012, 4, 4),
+            admission_number="GATE-PAY-001",
+            gender="F",
+            is_active=True,
+        )
+
+        payment = FinanceService.record_payment(
+            student=student,
+            amount=Decimal("980.00"),
+            payment_method="Cash",
+            reference_number="GATE-PAY-001",
+        )
+
+        self.assertTrue(getattr(payment, "_was_created", False))
+        self.assertEqual(JournalEntry.objects.filter(source_type="Payment", source_id=payment.id).count(), 1)
+        self.assertTrue(JournalEntry.objects.filter(entry_key=f"payment:{payment.id}").exists())
+        self.assertFalse(JournalEntry.objects.filter(entry_key=f"PAY-{payment.id}").exists())
+
+    def test_service_record_payment_duplicate_reference_keeps_single_journal_entry(self):
+        self._create_user_with_role("gate_acc_payment_repeat", "ACCOUNTANT", ["FINANCE"])
+        student = Student.objects.create(
+            first_name="Repeat",
+            last_name="Payment",
+            date_of_birth=date(2012, 5, 5),
+            admission_number="GATE-PAY-002",
+            gender="M",
+            is_active=True,
+        )
+
+        first_payment = FinanceService.record_payment(
+            student=student,
+            amount=Decimal("540.00"),
+            payment_method="Cash",
+            reference_number="GATE-PAY-002",
+        )
+        second_payment = FinanceService.record_payment(
+            student=student,
+            amount=Decimal("540.00"),
+            payment_method="Cash",
+            reference_number="GATE-PAY-002",
+        )
+
+        self.assertEqual(first_payment.id, second_payment.id)
+        self.assertFalse(getattr(second_payment, "_was_created", True))
+        self.assertEqual(JournalEntry.objects.filter(source_type="Payment", source_id=first_payment.id).count(), 1)
+        self.assertEqual(JournalEntry.objects.filter(entry_key=f"payment:{first_payment.id}").count(), 1)
+
     def test_payment_reversal_approval_rolls_back_allocations(self):
         admin = self._create_user_with_role("gate_admin_fin", "ADMIN", ["FINANCE"])
         year = AcademicYear.objects.create(name="Gate 2027", start_date=date(2027, 1, 1), end_date=date(2027, 12, 31), is_active=True)
@@ -226,8 +326,10 @@ class ProductionReadinessGateTests(ProductionGateTenantBase):
             payment_method="Cash",
             reference_number="GATE-RBK-PAY-001",
         )
-        FinanceService.allocate_payment(payment, invoice, Decimal("600.00"))
+        payment_journal = JournalEntry.objects.get(source_type="Payment", source_id=payment.id)
+        allocation = FinanceService.allocate_payment(payment, invoice, Decimal("600.00"))
         self.assertEqual(str(invoice.balance_due), "0.00")
+        allocation_journal = JournalEntry.objects.get(source_type="PaymentAllocation", source_id=allocation.id)
 
         reversal = FinanceService.request_payment_reversal(payment=payment, reason="Audit reversal", requested_by=admin)
         FinanceService.approve_payment_reversal(reversal_request=reversal, reviewed_by=admin, review_notes="Approved in gate test")
@@ -236,6 +338,52 @@ class ProductionReadinessGateTests(ProductionGateTenantBase):
         self.assertFalse(payment.is_active)
         self.assertEqual(payment.allocations.count(), 0)
         self.assertEqual(str(invoice.balance_due), "600.00")
+        payment_reversal_entry = JournalEntry.objects.get(
+            source_type="PaymentReversal",
+            source_id=reversal.id,
+            entry_key=f"payment-reversal:{reversal.id}:payment:{payment.id}",
+        )
+        reversal_entry = JournalEntry.objects.get(
+            source_type="PaymentReversal",
+            source_id=reversal.id,
+            entry_key=f"payment-reversal:{reversal.id}:allocation:{allocation.id}",
+        )
+        original_payment_cash_debit = sum(
+            Decimal(str(line.debit))
+            for line in payment_journal.lines.filter(account__code="1000")
+        )
+        original_payment_receivable_credit = sum(
+            Decimal(str(line.credit))
+            for line in payment_journal.lines.filter(account__code="1100")
+        )
+        original_cash_debit = sum(
+            Decimal(str(line.debit))
+            for line in allocation_journal.lines.filter(account__code="1000")
+        )
+        original_receivable_credit = sum(
+            Decimal(str(line.credit))
+            for line in allocation_journal.lines.filter(account__code="1100")
+        )
+        reversal_cash_credit = sum(
+            Decimal(str(line.credit))
+            for line in reversal_entry.lines.filter(account__code="1000")
+        )
+        reversal_receivable_debit = sum(
+            Decimal(str(line.debit))
+            for line in reversal_entry.lines.filter(account__code="1100")
+        )
+        payment_reversal_cash_credit = sum(
+            Decimal(str(line.credit))
+            for line in payment_reversal_entry.lines.filter(account__code="1000")
+        )
+        payment_reversal_receivable_debit = sum(
+            Decimal(str(line.debit))
+            for line in payment_reversal_entry.lines.filter(account__code="1100")
+        )
+        self.assertEqual(payment_reversal_cash_credit, original_payment_cash_debit)
+        self.assertEqual(payment_reversal_receivable_debit, original_payment_receivable_credit)
+        self.assertEqual(reversal_cash_credit, original_cash_debit)
+        self.assertEqual(reversal_receivable_debit, original_receivable_credit)
 
     def test_promotion_constraints_no_grade_skip(self):
         admin = self._create_user_with_role("gate_admin_acad", "ADMIN", ["ACADEMICS"])

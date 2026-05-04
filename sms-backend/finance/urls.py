@@ -1,3 +1,12 @@
+"""
+Staged finance URLConf.
+
+Live tenant routing is mounted through `school.urls`, which re-exports the
+finance presentation views on the production `/api/finance/*` surface.
+This module stays importable for staged parity checks and direct inspection,
+but it is intentionally not mounted in `config.urls` to avoid duplicate routes.
+"""
+
 from django.urls import path
 from rest_framework.routers import SimpleRouter
 
@@ -13,10 +22,15 @@ from finance.presentation.views import (
     FinanceEnrollmentRefView,
     FinanceInstallmentAgingView,
     FinanceOverdueAccountsView,
+    FinanceOverdueAccountsCsvExportView,
     FinanceReceiptPdfView,
     FinanceReceivablesAgingView,
+    FinanceReceivablesAgingCsvExportView,
+    FinanceStudentDetailView,
     FinanceStudentRefView,
     FinanceStudentLedgerView,
+    FinanceSummaryCsvExportView,
+    FinanceSummaryPdfExportView,
     FinanceVoteHeadAllocationReportView,
     FinanceVoteHeadBudgetReportView,
     FinancialSummaryView,
@@ -103,6 +117,18 @@ urlpatterns = [
     path("reports/installments-aging/", FinanceInstallmentAgingView.as_view(), name="finance_installments_aging"),
     path("reports/overdue-accounts/", FinanceOverdueAccountsView.as_view(), name="finance_overdue_accounts"),
     path(
+        "reports/receivables-aging/export/csv/",
+        FinanceReceivablesAgingCsvExportView.as_view(),
+        name="finance_receivables_aging_csv",
+    ),
+    path(
+        "reports/overdue-accounts/export/csv/",
+        FinanceOverdueAccountsCsvExportView.as_view(),
+        name="finance_overdue_accounts_csv",
+    ),
+    path("reports/summary/export/csv/", FinanceSummaryCsvExportView.as_view(), name="finance_reports_summary_csv"),
+    path("reports/summary/export/pdf/", FinanceSummaryPdfExportView.as_view(), name="finance_reports_summary_pdf"),
+    path(
         "reports/vote-head-allocation/",
         FinanceVoteHeadAllocationReportView.as_view(),
         name="finance_vote_head_allocation_report",
@@ -118,5 +144,6 @@ urlpatterns = [
     ),
     path("accounting/trial-balance/", AccountingTrialBalanceView.as_view(), name="finance_accounting_trial_balance"),
     path("accounting/ledger/", AccountingLedgerView.as_view(), name="finance_accounting_ledger"),
+    path("students/<int:student_id>/", FinanceStudentDetailView.as_view(), name="finance_student_detail"),
     path("gateway/webhooks/<str:provider>/", FinanceGatewayWebhookView.as_view(), name="finance_gateway_webhook"),
 ] + router.urls

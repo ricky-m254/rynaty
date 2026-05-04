@@ -1649,6 +1649,9 @@ class JournalEntry(models.Model):
 
     class Meta:
         ordering = ['-entry_date', '-id']
+        indexes = [
+            models.Index(fields=['entry_date', 'id'], name='school_jent_date_id_idx'),
+        ]
 
     def __str__(self):
         return f"JE-{self.id} {self.entry_date}"
@@ -1664,6 +1667,9 @@ class JournalLine(models.Model):
 
     class Meta:
         ordering = ['id']
+        indexes = [
+            models.Index(fields=['account', 'entry'], name='school_jlin_acct_entry_idx'),
+        ]
 
     def __str__(self):
         return f"JE-{self.entry_id} {self.account.code} D{self.debit} C{self.credit}"

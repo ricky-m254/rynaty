@@ -55,6 +55,8 @@ urlpatterns = [
     path("api/tenant/info/", _tenant_info_view),
 
     # 3. School API Modules (Students, Finance, etc.)
+    #    Finance routes are mounted here via school.urls; the staged finance.urls
+    #    module remains unmounted to avoid duplicating the live /api/finance/* surface.
     path("api/", include("school.urls")),
 
     # 4. Platform (Super Admin) APIs — protected by IsGlobalSuperAdmin (schema-aware).

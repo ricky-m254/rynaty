@@ -25,14 +25,12 @@ from finance.application.master_data import (
 )
 from finance.application.receivables import (
     approval_threshold,
-    auto_post_journal,
     get_invoice_adjustment_queryset,
     get_invoice_queryset,
     get_invoice_writeoff_request_queryset,
     get_payment_queryset,
     get_payment_reversal_request_queryset,
     is_admin_like,
-    journal_get_or_create_account,
 )
 from school.payment_receipts import build_payment_receipt_payload
 from finance.presentation.serializers import (
@@ -263,21 +261,6 @@ class InvoiceViewSet(viewsets.ModelViewSet):
                 status=serializer.validated_data.get("status"),
                 is_active=serializer.validated_data.get("is_active"),
             )
-            total = sum(float(item.get("amount", 0)) for item in line_items) if line_items else 0
-            if total > 0:
-                accounts_receivable = journal_get_or_create_account("1100", "Accounts Receivable", "ASSET")
-                revenue = journal_get_or_create_account("4000", "Tuition & Fees Revenue", "REVENUE")
-                auto_post_journal(
-                    entry_key=f"INV-{invoice.id}",
-                    entry_date=invoice.issue_date or invoice.created_at.date(),
-                    memo=f"Invoice INV-{invoice.id} \u2013 Student {invoice.student_id}",
-                    source_type="Invoice",
-                    source_id=invoice.id,
-                    lines=[
-                        (accounts_receivable, total, 0, "Accounts Receivable"),
-                        (revenue, 0, total, "Tuition & Fees Revenue"),
-                    ],
-                )
             response_serializer = self.get_serializer(invoice)
             return Response(response_serializer.data, status=status.HTTP_201_CREATED)
         except Exception as exc:
@@ -439,21 +422,6 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 notes=serializer.validated_data.get("notes", ""),
             )
             response_status = status.HTTP_201_CREATED if getattr(payment, "_was_created", True) else status.HTTP_200_OK
-            amount = float(payment.amount or 0)
-            if amount > 0:
-                cash = journal_get_or_create_account("1000", "Cash and Bank", "ASSET")
-                accounts_receivable = journal_get_or_create_account("1100", "Accounts Receivable", "ASSET")
-                auto_post_journal(
-                    entry_key=f"PAY-{payment.id}",
-                    entry_date=payment.payment_date or payment.created_at.date(),
-                    memo=f"Payment {payment.receipt_number or payment.id} \u2013 {payment.payment_method}",
-                    source_type="Payment",
-                    source_id=payment.id,
-                    lines=[
-                        (cash, amount, 0, "Cash received"),
-                        (accounts_receivable, 0, amount, "Accounts Receivable cleared"),
-                    ],
-                )
             response_serializer = self.get_serializer(payment)
             return Response(response_serializer.data, status=response_status)
         except Exception as exc:

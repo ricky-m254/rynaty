@@ -133,6 +133,45 @@ def _push_config():
     return {"setting_key": "", "server_key": ""}
 
 
+def email_gateway_snapshot() -> dict:
+    sender_email = str(getattr(settings, "DEFAULT_FROM_EMAIL", "") or "").strip()
+    return {
+        "provider": "django_email",
+        "configured": bool(sender_email),
+        "sender_email": sender_email,
+    }
+
+
+def sms_gateway_snapshot() -> dict:
+    config = _sms_config()
+    provider = str(config.get("provider") or "").strip()
+    return {
+        "provider": provider,
+        "configured": bool(provider and config.get("api_key")),
+        "sender_id": str(config.get("sender_id") or "").strip(),
+        "username": str(config.get("username") or "").strip(),
+    }
+
+
+def whatsapp_gateway_snapshot() -> dict:
+    config = _whatsapp_config()
+    phone_id = str(config.get("phone_id") or "").strip()
+    return {
+        "provider": "meta_whatsapp_cloud",
+        "configured": bool(phone_id and config.get("api_key")),
+        "phone_id": phone_id,
+    }
+
+
+def push_gateway_snapshot() -> dict:
+    config = _push_config()
+    return {
+        "provider": "fcm",
+        "configured": bool(config.get("server_key")),
+        "setting_key": str(config.get("setting_key") or "").strip(),
+    }
+
+
 def _send_sms_africas_talking(phone: str, message: str, config: dict) -> DispatchResult:
     api_key = config["api_key"]
     username = config["username"] or "sandbox"

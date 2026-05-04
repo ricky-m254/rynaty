@@ -1,12 +1,20 @@
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.db import connection
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from django_tenants.utils import schema_context
 from rest_framework.test import APIRequestFactory, force_authenticate
 
 from clients.models import Domain, Tenant
+from finance.application import accounting_queries
+from finance.application.accounting_queries import (
+    get_account_ledger_payload,
+    get_trial_balance_payload,
+)
 from finance.presentation.accounting_views import (
     AccountingLedgerView as StagedAccountingLedgerView,
     AccountingTrialBalanceView as StagedAccountingTrialBalanceView,
@@ -105,7 +113,7 @@ class FinanceAccountingActivationPrepTests(TenantTestBase):
             is_active=True,
         )
 
-        entry_one = JournalEntry.objects.create(
+        self.entry_one = JournalEntry.objects.create(
             entry_date="2026-01-10",
             memo="January fee collection",
             source_type="Payment",
@@ -114,21 +122,21 @@ class FinanceAccountingActivationPrepTests(TenantTestBase):
             posted_by=self.user,
         )
         JournalLine.objects.create(
-            entry=entry_one,
+            entry=self.entry_one,
             account=self.cash_account,
             debit=Decimal("5000.00"),
             credit=Decimal("0.00"),
             description="Cash received",
         )
         JournalLine.objects.create(
-            entry=entry_one,
+            entry=self.entry_one,
             account=self.revenue_account,
             debit=Decimal("0.00"),
             credit=Decimal("5000.00"),
             description="Revenue recognized",
         )
 
-        entry_two = JournalEntry.objects.create(
+        self.entry_two = JournalEntry.objects.create(
             entry_date="2026-01-15",
             memo="Utility payment",
             source_type="Expense",
@@ -137,14 +145,14 @@ class FinanceAccountingActivationPrepTests(TenantTestBase):
             posted_by=self.user,
         )
         JournalLine.objects.create(
-            entry=entry_two,
+            entry=self.entry_two,
             account=self.expense_account,
             debit=Decimal("1200.00"),
             credit=Decimal("0.00"),
             description="Utility expense",
         )
         JournalLine.objects.create(
-            entry=entry_two,
+            entry=self.entry_two,
             account=self.cash_account,
             debit=Decimal("0.00"),
             credit=Decimal("1200.00"),
@@ -312,3 +320,158 @@ class FinanceAccountingActivationPrepTests(TenantTestBase):
 
         self.assertEqual(staged_response.status_code, live_response.status_code)
         self.assertEqual(staged_response.data, live_response.data)
+
+    def test_trial_balance_helper_aggregates_one_row_per_account_and_balances(self):
+        payload = get_trial_balance_payload(date_from="2026-01-01", date_to="2026-01-31")
+
+        self.assertEqual(payload["total_debit"], 6200.0)
+        self.assertEqual(payload["total_credit"], 6200.0)
+        self.assertTrue(payload["is_balanced"])
+        self.assertEqual([row["code"] for row in payload["rows"]], ["1000", "4000", "6000"])
+        self.assertEqual(
+            payload["rows"],
+            [
+                {
+                    "account_id": self.cash_account.id,
+                    "code": "1000",
+                    "name": "Cash and Bank",
+                    "type": "ASSET",
+                    "debit": 5000.0,
+                    "credit": 1200.0,
+                },
+                {
+                    "account_id": self.revenue_account.id,
+                    "code": "4000",
+                    "name": "Fee Revenue",
+                    "type": "REVENUE",
+                    "debit": 0.0,
+                    "credit": 5000.0,
+                },
+                {
+                    "account_id": self.expense_account.id,
+                    "code": "6000",
+                    "name": "Operating Expenses",
+                    "type": "EXPENSE",
+                    "debit": 1200.0,
+                    "credit": 0.0,
+                },
+            ],
+        )
+
+    def test_trial_balance_helper_honors_date_filters(self):
+        payload = get_trial_balance_payload(date_from="2026-01-11", date_to="2026-01-31")
+
+        self.assertEqual(payload["rows"], [
+            {
+                "account_id": self.cash_account.id,
+                "code": "1000",
+                "name": "Cash and Bank",
+                "type": "ASSET",
+                "debit": 0.0,
+                "credit": 1200.0,
+            },
+            {
+                "account_id": self.expense_account.id,
+                "code": "6000",
+                "name": "Operating Expenses",
+                "type": "EXPENSE",
+                "debit": 1200.0,
+                "credit": 0.0,
+            },
+        ])
+        self.assertEqual(payload["total_debit"], 1200.0)
+        self.assertEqual(payload["total_credit"], 1200.0)
+        self.assertTrue(payload["is_balanced"])
+
+    def test_trial_balance_helper_uses_single_query(self):
+        with CaptureQueriesContext(connection) as queries:
+            payload = get_trial_balance_payload(date_from="2026-01-01", date_to="2026-01-31")
+
+        self.assertEqual(payload["total_debit"], 6200.0)
+        self.assertLessEqual(len(queries), 2)
+
+    def test_ledger_helper_honors_date_filters(self):
+        payload = get_account_ledger_payload(
+            account_id=str(self.cash_account.id),
+            date_from="2026-01-11",
+            date_to="2026-01-31",
+        )
+
+        self.assertEqual(payload["account_id"], self.cash_account.id)
+        self.assertEqual(len(payload["rows"]), 1)
+        self.assertEqual(payload["rows"][0]["entry_id"], self.entry_two.id)
+        self.assertEqual(payload["rows"][0]["credit"], 1200.0)
+        self.assertEqual(payload["rows"][0]["running_balance"], -1200.0)
+        self.assertEqual(payload["closing_balance"], -1200.0)
+
+    def test_ledger_helper_preserves_order_and_running_balance(self):
+        entry_three = JournalEntry.objects.create(
+            entry_date="2026-01-15",
+            memo="Additional bank charge",
+            source_type="Expense",
+            source_id=2,
+            entry_key="JE-ACC-003",
+            posted_by=self.user,
+        )
+        JournalLine.objects.create(
+            entry=entry_three,
+            account=self.expense_account,
+            debit=Decimal("300.00"),
+            credit=Decimal("0.00"),
+            description="Bank charge expense",
+        )
+        JournalLine.objects.create(
+            entry=entry_three,
+            account=self.cash_account,
+            debit=Decimal("0.00"),
+            credit=Decimal("300.00"),
+            description="Cash paid",
+        )
+
+        payload = get_account_ledger_payload(
+            account_id=str(self.cash_account.id),
+            date_from="2026-01-01",
+            date_to="2026-01-31",
+        )
+
+        self.assertEqual([row["entry_id"] for row in payload["rows"]], [self.entry_one.id, self.entry_two.id, entry_three.id])
+        self.assertEqual([row["running_balance"] for row in payload["rows"]], [5000.0, 3800.0, 3500.0])
+        self.assertEqual(payload["closing_balance"], 3500.0)
+
+    def test_ledger_helper_zero_result_returns_requested_account(self):
+        dormant_account = ChartOfAccount.objects.create(
+            code="7000",
+            name="Dormant Account",
+            account_type="EXPENSE",
+            is_active=True,
+        )
+
+        payload = get_account_ledger_payload(
+            account_id=str(dormant_account.id),
+            date_from="2026-01-01",
+            date_to="2026-01-31",
+        )
+
+        self.assertEqual(payload, {"account_id": dormant_account.id, "rows": [], "closing_balance": 0.0})
+
+    def test_ledger_helper_falls_back_without_window_support(self):
+        with patch.object(accounting_queries.connection.features, "supports_over_clause", False):
+            payload = get_account_ledger_payload(
+                account_id=str(self.cash_account.id),
+                date_from="2026-01-01",
+                date_to="2026-01-31",
+            )
+
+        self.assertEqual([row["running_balance"] for row in payload["rows"]], [5000.0, 3800.0])
+        self.assertEqual(payload["closing_balance"], 3800.0)
+
+    def test_ledger_helper_uses_single_query(self):
+        with CaptureQueriesContext(connection) as queries:
+            payload = get_account_ledger_payload(
+                account_id=str(self.cash_account.id),
+                date_from="2026-01-01",
+                date_to="2026-01-31",
+            )
+
+        self.assertEqual(payload["closing_balance"], 3800.0)
+        self.assertLessEqual(len(queries), 2)

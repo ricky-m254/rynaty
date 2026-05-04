@@ -13,6 +13,7 @@ from django.db import connection
 from django.http import HttpResponse
 from django.utils import timezone
 from django.contrib.auth import authenticate, get_user_model
+from django.shortcuts import get_object_or_404
 from psycopg2 import sql as pgsql
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -46,8 +47,8 @@ from .models import (
 )
 from hr.models import Staff
 from academics.models import AcademicYear, Term, SchoolClass
+from communication.gateway_settings import run_communication_gateway_test
 from communication.models import Message
-from communication.services import send_email_placeholder, send_sms_placeholder
 from common.media_urls import build_absolute_media_url
 from reporting.models import AuditLog
 from .control_plane import build_control_plane_summary
@@ -684,22 +685,6 @@ class InvoiceViewSet(viewsets.ModelViewSet):
                 status=serializer.validated_data.get('status'),
                 is_active=serializer.validated_data.get('is_active'),
             )
-            # IPSAS: Auto double-entry journal — DR Accounts Receivable / CR Revenue
-            total = sum(float(li.get('amount', 0)) for li in line_items) if line_items else 0
-            if total > 0:
-                ar = _journal_get_or_create_account('1100', 'Accounts Receivable', 'ASSET')
-                rev = _journal_get_or_create_account('4000', 'Tuition & Fees Revenue', 'REVENUE')
-                _auto_post_journal(
-                    entry_key=f"INV-{invoice.id}",
-                    entry_date=invoice.issue_date or invoice.created_at.date(),
-                    memo=f"Invoice INV-{invoice.id} – Student {invoice.student_id}",
-                    source_type='Invoice',
-                    source_id=invoice.id,
-                    lines=[
-                        (ar, total, 0, 'Accounts Receivable'),
-                        (rev, 0, total, 'Tuition & Fees Revenue'),
-                    ],
-                )
             # Return the created invoice
             response_serializer = self.get_serializer(invoice)
             return Response(response_serializer.data, status=status.HTTP_201_CREATED)
@@ -888,23 +873,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 reference_number=serializer.validated_data['reference_number'],
                 notes=serializer.validated_data.get('notes', '')
             )
-            # IPSAS: Auto double-entry journal — DR Cash & Bank / CR Accounts Receivable
             response_status = status.HTTP_201_CREATED if getattr(payment, "_was_created", True) else status.HTTP_200_OK
-            amount = float(payment.amount or 0)
-            if amount > 0:
-                cash = _journal_get_or_create_account('1000', 'Cash and Bank', 'ASSET')
-                ar = _journal_get_or_create_account('1100', 'Accounts Receivable', 'ASSET')
-                _auto_post_journal(
-                    entry_key=f"PAY-{payment.id}",
-                    entry_date=payment.payment_date or payment.created_at.date(),
-                    memo=f"Payment {payment.receipt_number or payment.id} – {payment.payment_method}",
-                    source_type='Payment',
-                    source_id=payment.id,
-                    lines=[
-                        (cash, amount, 0, 'Cash received'),
-                        (ar, 0, amount, 'Accounts Receivable cleared'),
-                    ],
-                )
             response_serializer = self.get_serializer(payment)
             return Response(response_serializer.data, status=response_status)
         except Exception as e:
@@ -2334,40 +2303,13 @@ class AccountingTrialBalanceView(APIView):
     module_key = "FINANCE"
 
     def get(self, request):
-        date_from = request.query_params.get('date_from')
-        date_to = request.query_params.get('date_to')
+        from finance.application.accounting_queries import get_trial_balance_payload
 
-        lines = JournalLine.objects.select_related('account', 'entry')
-        if date_from:
-            lines = lines.filter(entry__entry_date__gte=date_from)
-        if date_to:
-            lines = lines.filter(entry__entry_date__lte=date_to)
-
-        by_account = {}
-        for line in lines:
-            key = line.account_id
-            if key not in by_account:
-                by_account[key] = {
-                    "account_id": line.account_id,
-                    "code": line.account.code,
-                    "name": line.account.name,
-                    "type": line.account.account_type,
-                    "debit": 0,
-                    "credit": 0,
-                }
-            by_account[key]["debit"] += float(line.debit)
-            by_account[key]["credit"] += float(line.credit)
-
-        rows = sorted(by_account.values(), key=lambda x: x["code"])
-        total_debit = round(sum(row["debit"] for row in rows), 2)
-        total_credit = round(sum(row["credit"] for row in rows), 2)
         return Response(
-            {
-                "rows": rows,
-                "total_debit": total_debit,
-                "total_credit": total_credit,
-                "is_balanced": round(total_debit - total_credit, 2) == 0,
-            },
+            get_trial_balance_payload(
+                date_from=request.query_params.get("date_from"),
+                date_to=request.query_params.get("date_to"),
+            ),
             status=status.HTTP_200_OK,
         )
 
@@ -2381,33 +2323,15 @@ class AccountingLedgerView(APIView):
         if not account_id:
             return Response({"error": "account_id is required"}, status=status.HTTP_400_BAD_REQUEST)
 
-        date_from = request.query_params.get('date_from')
-        date_to = request.query_params.get('date_to')
-        lines = JournalLine.objects.select_related('entry', 'account').filter(account_id=account_id)
-        if date_from:
-            lines = lines.filter(entry__entry_date__gte=date_from)
-        if date_to:
-            lines = lines.filter(entry__entry_date__lte=date_to)
-        lines = lines.order_by('entry__entry_date', 'id')
+        from finance.application.accounting_queries import get_account_ledger_payload
 
-        running = 0.0
-        rows = []
-        for line in lines:
-            running += float(line.debit) - float(line.credit)
-            rows.append(
-                {
-                    "entry_id": line.entry_id,
-                    "entry_date": line.entry.entry_date,
-                    "memo": line.entry.memo,
-                    "source_type": line.entry.source_type,
-                    "source_id": line.entry.source_id,
-                    "debit": float(line.debit),
-                    "credit": float(line.credit),
-                    "running_balance": round(running, 2),
-                }
+        return Response(
+            get_account_ledger_payload(
+                account_id=account_id,
+                date_from=request.query_params.get("date_from"),
+                date_to=request.query_params.get("date_to"),
             )
-
-        return Response({"account_id": int(account_id), "rows": rows, "closing_balance": round(running, 2)})
+        )
 
 
 class PaymentGatewayTransactionViewSet(viewsets.ModelViewSet):
@@ -2813,7 +2737,9 @@ class FinancialSummaryView(APIView):
     module_key = "FINANCE"
 
     def get(self, request):
-        return Response(FinanceService.get_summary())
+        from finance.application.report_queries import get_financial_summary_payload
+
+        return Response(get_financial_summary_payload())
 
 
 class FinanceReceivablesAgingView(APIView):
@@ -2821,34 +2747,9 @@ class FinanceReceivablesAgingView(APIView):
     module_key = "FINANCE"
 
     def get(self, request):
-        today = timezone.now().date()
-        buckets = {
-            "0_30": {"count": 0, "amount": 0.0},
-            "31_60": {"count": 0, "amount": 0.0},
-            "61_90": {"count": 0, "amount": 0.0},
-            "90_plus": {"count": 0, "amount": 0.0},
-        }
-        invoices = Invoice.objects.filter(is_active=True).exclude(status='VOID').select_related('student')
-        for invoice in invoices:
-            FinanceService.sync_invoice_status(invoice)
-            balance = float(invoice.balance_due)
-            if balance <= 0:
-                continue
-            overdue_days = max(0, (today - invoice.due_date).days)
-            if overdue_days <= 30:
-                key = "0_30"
-            elif overdue_days <= 60:
-                key = "31_60"
-            elif overdue_days <= 90:
-                key = "61_90"
-            else:
-                key = "90_plus"
-            buckets[key]["count"] += 1
-            buckets[key]["amount"] += balance
+        from finance.application.report_queries import get_receivables_aging_payload
 
-        for key in buckets:
-            buckets[key]["amount"] = round(buckets[key]["amount"], 2)
-        return Response({"as_of": str(today), "buckets": buckets}, status=status.HTTP_200_OK)
+        return Response(get_receivables_aging_payload(), status=status.HTTP_200_OK)
 
 
 class FinanceOverdueAccountsView(APIView):
@@ -2856,35 +2757,12 @@ class FinanceOverdueAccountsView(APIView):
     module_key = "FINANCE"
 
     def get(self, request):
-        today = timezone.now().date()
-        search = (request.query_params.get('search') or '').strip().lower()
-        rows = []
-        invoices = Invoice.objects.filter(is_active=True).exclude(status='VOID').select_related('student').order_by('due_date', 'id')
-        for invoice in invoices:
-            FinanceService.sync_invoice_status(invoice)
-            balance = float(invoice.balance_due)
-            if balance <= 0:
-                continue
-            overdue_days = max(0, (today - invoice.due_date).days)
-            if overdue_days <= 0 and invoice.status not in {'OVERDUE', 'PARTIALLY_PAID', 'ISSUED', 'CONFIRMED'}:
-                continue
-            student_name = f"{invoice.student.first_name} {invoice.student.last_name}".strip()
-            row = {
-                "invoice_id": invoice.id,
-                "invoice_number": invoice.invoice_number or f"INV-{invoice.id}",
-                "student_id": invoice.student_id,
-                "student_name": student_name,
-                "admission_number": invoice.student.admission_number,
-                "due_date": str(invoice.due_date),
-                "status": invoice.status,
-                "balance_due": round(balance, 2),
-                "overdue_days": overdue_days,
-            }
-            searchable = f"{row['invoice_number']} {row['student_name']} {row['admission_number']}".lower()
-            if search and search not in searchable:
-                continue
-            rows.append(row)
-        return Response({"count": len(rows), "results": rows}, status=status.HTTP_200_OK)
+        from finance.application.report_queries import get_overdue_accounts_payload
+
+        return Response(
+            get_overdue_accounts_payload(search=request.query_params.get("search") or ""),
+            status=status.HTTP_200_OK,
+        )
 
 
 class FinanceInstallmentAgingView(APIView):
@@ -2892,32 +2770,9 @@ class FinanceInstallmentAgingView(APIView):
     module_key = "FINANCE"
 
     def get(self, request):
-        today = timezone.now().date()
-        buckets = {
-            "0_30": {"count": 0, "amount": 0.0},
-            "31_60": {"count": 0, "amount": 0.0},
-            "61_90": {"count": 0, "amount": 0.0},
-            "90_plus": {"count": 0, "amount": 0.0},
-        }
-        installments = InvoiceInstallment.objects.select_related('plan__invoice').exclude(status='WAIVED')
-        for installment in installments:
-            if installment.status == 'PAID':
-                continue
-            overdue_days = max(0, (today - installment.due_date).days)
-            if overdue_days <= 30:
-                key = "0_30"
-            elif overdue_days <= 60:
-                key = "31_60"
-            elif overdue_days <= 90:
-                key = "61_90"
-            else:
-                key = "90_plus"
-            buckets[key]["count"] += 1
-            buckets[key]["amount"] += float(installment.amount)
+        from finance.application.report_queries import get_installment_aging_payload
 
-        for key in buckets:
-            buckets[key]["amount"] = round(buckets[key]["amount"], 2)
-        return Response({"as_of": str(today), "buckets": buckets}, status=status.HTTP_200_OK)
+        return Response(get_installment_aging_payload(), status=status.HTTP_200_OK)
 
 
 class FinanceReceivablesAgingCsvExportView(APIView):
@@ -2925,35 +2780,16 @@ class FinanceReceivablesAgingCsvExportView(APIView):
     module_key = "FINANCE"
 
     def get(self, request):
-        today = timezone.now().date()
-        buckets = {
-            "0_30": {"count": 0, "amount": 0.0},
-            "31_60": {"count": 0, "amount": 0.0},
-            "61_90": {"count": 0, "amount": 0.0},
-            "90_plus": {"count": 0, "amount": 0.0},
-        }
-        invoices = Invoice.objects.filter(is_active=True).exclude(status='VOID').select_related('student')
-        for invoice in invoices:
-            FinanceService.sync_invoice_status(invoice)
-            balance = float(invoice.balance_due)
-            if balance <= 0:
-                continue
-            overdue_days = max(0, (today - invoice.due_date).days)
-            if overdue_days <= 30:
-                key = "0_30"
-            elif overdue_days <= 60:
-                key = "31_60"
-            elif overdue_days <= 90:
-                key = "61_90"
-            else:
-                key = "90_plus"
-            buckets[key]["count"] += 1
-            buckets[key]["amount"] += balance
+        from finance.application.report_queries import get_receivables_aging_payload
+
+        payload = get_receivables_aging_payload()
+        today = payload["as_of"]
+        buckets = payload["buckets"]
 
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = 'attachment; filename="finance_receivables_aging.csv"'
         writer = _SafeCsvWriter(response)
-        writer.writerow(['as_of', str(today)])
+        writer.writerow(['as_of', today])
         writer.writerow(['bucket', 'invoice_count', 'amount'])
         for key, label in [('0_30', '0-30'), ('31_60', '31-60'), ('61_90', '61-90'), ('90_plus', '90+')]:
             writer.writerow([label, buckets[key]['count'], round(buckets[key]['amount'], 2)])
@@ -2965,33 +2801,9 @@ class FinanceOverdueAccountsCsvExportView(APIView):
     module_key = "FINANCE"
 
     def get(self, request):
-        today = timezone.now().date()
-        search = (request.query_params.get('search') or '').strip().lower()
-        rows = []
-        invoices = Invoice.objects.filter(is_active=True).exclude(status='VOID').select_related('student').order_by('due_date', 'id')
-        for invoice in invoices:
-            FinanceService.sync_invoice_status(invoice)
-            balance = float(invoice.balance_due)
-            if balance <= 0:
-                continue
-            overdue_days = max(0, (today - invoice.due_date).days)
-            if overdue_days <= 0 and invoice.status not in {'OVERDUE', 'PARTIALLY_PAID', 'ISSUED', 'CONFIRMED'}:
-                continue
-            student_name = f"{invoice.student.first_name} {invoice.student.last_name}".strip()
-            invoice_number = invoice.invoice_number or f"INV-{invoice.id}"
-            searchable = f"{invoice_number} {student_name} {invoice.student.admission_number}".lower()
-            if search and search not in searchable:
-                continue
-            rows.append({
-                "invoice_id": invoice.id,
-                "invoice_number": invoice_number,
-                "student_name": student_name,
-                "admission_number": invoice.student.admission_number,
-                "due_date": str(invoice.due_date),
-                "status": invoice.status,
-                "balance_due": round(balance, 2),
-                "overdue_days": overdue_days,
-            })
+        from finance.application.report_queries import get_overdue_accounts_payload
+
+        rows = get_overdue_accounts_payload(search=request.query_params.get("search") or "")["results"]
 
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = 'attachment; filename="finance_overdue_accounts.csv"'
@@ -3188,50 +3000,10 @@ class SchoolTestEmailView(APIView):
                 {"error": "Only tenant admins can run communication tests."},
                 status=status.HTTP_403_FORBIDDEN,
             )
-
-        profile = _active_school_profile()
-        if not profile:
-            return Response(
-                {"error": "Save school communication settings before running the email test."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        smtp_host = (profile.smtp_host or "").strip()
-        recipient = (profile.smtp_user or profile.email_address or "").strip()
-        if not smtp_host:
-            return Response(
-                {"error": "Set the SMTP host before running the email test."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        if not recipient:
-            return Response(
-                {"error": "Set the SMTP username/email before running the email test."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        school_name = (profile.school_name or getattr(getattr(request, "tenant", None), "name", "") or "School").strip()
-        result = send_email_placeholder(
-            subject=f"{school_name} test email",
-            body=(
-                f"This is a test email from {school_name}. "
-                "If you received this message, the communication test endpoint is working."
-            ),
-            recipients=[recipient],
-            from_email=recipient,
-        )
-        if result.status != "Sent":
-            return Response(
-                {"error": result.failure_reason or "Email test failed."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        payload = {
-            "message": f"Test email sent to {recipient}.",
-            "provider_id": result.provider_id,
-        }
-        if result.failure_reason:
-            payload["note"] = result.failure_reason
-        return Response(payload, status=status.HTTP_200_OK)
+        result = run_communication_gateway_test(channel="EMAIL", request=request)
+        if not result["ok"]:
+            return Response({"error": result["error"]}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(result["payload"], status=status.HTTP_200_OK)
 
 
 class SchoolTestSmsView(APIView):
@@ -3244,46 +3016,10 @@ class SchoolTestSmsView(APIView):
                 {"error": "Only tenant admins can run communication tests."},
                 status=status.HTTP_403_FORBIDDEN,
             )
-
-        profile = _active_school_profile()
-        if not profile:
-            return Response(
-                {"error": "Save school communication settings before running the SMS test."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        phone = (profile.phone or "").strip()
-        provider = (profile.sms_provider or "").strip()
-        if not provider:
-            return Response(
-                {"error": "Set the SMS provider before running the SMS test."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        if not phone:
-            return Response(
-                {"error": "Set the school phone number before running the SMS test."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        school_name = (profile.school_name or getattr(getattr(request, "tenant", None), "name", "") or "School").strip()
-        result = send_sms_placeholder(
-            phone=phone,
-            message=f"{school_name}: this is a test SMS from the communication settings page.",
-            channel="SMS",
-        )
-        if result.status != "Sent":
-            return Response(
-                {"error": result.failure_reason or "SMS test failed."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        payload = {
-            "message": f"Test SMS sent to {phone}.",
-            "provider_id": result.provider_id,
-        }
-        if result.failure_reason:
-            payload["note"] = result.failure_reason
-        return Response(payload, status=status.HTTP_200_OK)
+        result = run_communication_gateway_test(channel="SMS", request=request)
+        if not result["ok"]:
+            return Response({"error": result["error"]}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(result["payload"], status=status.HTTP_200_OK)
 
 
 class ControlPlaneSummaryView(APIView):
@@ -6182,22 +5918,9 @@ class CashbookSummaryView(APIView):
     module_key = "FINANCE"
 
     def get(self, request):
-        from decimal import Decimal as D
-        result = {}
-        for book_type in ['CASH', 'BANK']:
-            entries = CashbookEntry.objects.filter(book_type=book_type).order_by('entry_date', 'created_at')
-            total_in = entries.aggregate(t=Sum('amount_in'))['t'] or D('0.00')
-            total_out = entries.aggregate(t=Sum('amount_out'))['t'] or D('0.00')
-            closing = entries.last()
-            opening = entries.filter(entry_type='OPENING').first()
-            result[book_type.lower()] = {
-                'total_in': float(total_in),
-                'total_out': float(total_out),
-                'closing_balance': float(closing.running_balance) if closing else 0.0,
-                'opening_balance': float(opening.amount_in) if opening else 0.0,
-                'entry_count': entries.count(),
-            }
-        return Response(result)
+        from finance.application.report_queries import get_cashbook_summary_payload
+
+        return Response(get_cashbook_summary_payload())
 
 
 # ==========================================
@@ -6235,47 +5958,14 @@ class FinanceArrearsView(APIView):
     module_key = "FINANCE"
 
     def get(self, request):
-        from decimal import Decimal as D
-        term_id = request.query_params.get('term')
-        group_by = request.query_params.get('group_by', 'student')
+        from finance.application.report_queries import get_arrears_payload
 
-        invoices_qs = Invoice.objects.filter(is_active=True).exclude(status__in=['PAID', 'VOID'])
-        if term_id:
-            invoices_qs = invoices_qs.filter(term_id=term_id)
-
-        rows = []
-        for inv in invoices_qs.select_related('student', 'term'):
-            balance = float(inv.balance_due)
-            if balance <= 0:
-                continue
-            enrollment = inv.student.enrollment_set.filter(is_active=True).select_related('school_class').first()
-            class_name = enrollment.school_class.name if enrollment and enrollment.school_class else 'N/A'
-            rows.append({
-                'invoice_id': inv.id,
-                'invoice_number': inv.invoice_number,
-                'student_id': inv.student.id,
-                'student_name': f"{inv.student.first_name} {inv.student.last_name}".strip(),
-                'admission_number': inv.student.admission_number,
-                'class_name': class_name,
-                'term': inv.term.name if inv.term else '',
-                'total_amount': float(inv.total_amount),
-                'balance_due': balance,
-                'due_date': str(inv.due_date),
-                'status': inv.status,
-            })
-
-        if group_by == 'class':
-            from collections import defaultdict
-            grouped = defaultdict(lambda: {'class_name': '', 'student_count': 0, 'total_balance': 0.0, 'invoices': []})
-            for row in rows:
-                key = row['class_name']
-                grouped[key]['class_name'] = key
-                grouped[key]['student_count'] += 1
-                grouped[key]['total_balance'] += row['balance_due']
-                grouped[key]['invoices'].append(row)
-            return Response({'group_by': 'class', 'data': list(grouped.values())})
-
-        return Response({'group_by': 'student', 'count': len(rows), 'results': rows})
+        return Response(
+            get_arrears_payload(
+                term_id=request.query_params.get("term"),
+                group_by=request.query_params.get("group_by", "student"),
+            )
+        )
 
 
 # ==========================================
@@ -6287,38 +5977,14 @@ class FinanceVoteHeadAllocationReportView(APIView):
     module_key = "FINANCE"
 
     def get(self, request):
-        from decimal import Decimal as D
-        date_from = request.query_params.get('date_from')
-        date_to = request.query_params.get('date_to')
+        from finance.application.report_queries import get_vote_head_allocation_payload
 
-        qs = VoteHeadPaymentAllocation.objects.select_related('vote_head', 'payment')
-        if date_from:
-            qs = qs.filter(payment__payment_date__date__gte=date_from)
-        if date_to:
-            qs = qs.filter(payment__payment_date__date__lte=date_to)
-
-        totals = qs.values('vote_head__id', 'vote_head__name').annotate(
-            total_allocated=Sum('amount'),
-            transaction_count=Count('id')
-        ).order_by('vote_head__order', 'vote_head__name')
-
-        grand_total = sum(float(r['total_allocated'] or 0) for r in totals)
-
-        return Response({
-            'date_from': date_from,
-            'date_to': date_to,
-            'grand_total': grand_total,
-            'rows': [
-                {
-                    'vote_head_id': r['vote_head__id'],
-                    'vote_head_name': r['vote_head__name'],
-                    'total_allocated': float(r['total_allocated'] or 0),
-                    'transaction_count': r['transaction_count'],
-                    'percentage_of_total': round(float(r['total_allocated'] or 0) / grand_total * 100, 2) if grand_total else 0,
-                }
-                for r in totals
-            ]
-        })
+        return Response(
+            get_vote_head_allocation_payload(
+                date_from=request.query_params.get("date_from"),
+                date_to=request.query_params.get("date_to"),
+            )
+        )
 
 
 # ==========================================
@@ -6330,37 +5996,9 @@ class FinanceClassBalancesReportView(APIView):
     module_key = "FINANCE"
 
     def get(self, request):
-        term_id = request.query_params.get('term')
-        invoices_qs = Invoice.objects.filter(is_active=True)
-        if term_id:
-            invoices_qs = invoices_qs.filter(term_id=term_id)
+        from finance.application.report_queries import get_class_balances_payload
 
-        from collections import defaultdict
-        class_data = defaultdict(lambda: {
-            'class_name': '', 'student_count': 0,
-            'total_billed': 0.0, 'total_paid': 0.0, 'total_outstanding': 0.0
-        })
-
-        for inv in invoices_qs.select_related('student'):
-            enrollment = inv.student.enrollment_set.filter(is_active=True).select_related('school_class').first()
-            class_name = enrollment.school_class.name if enrollment and enrollment.school_class else 'Unassigned'
-            balance = float(inv.balance_due)
-            class_data[class_name]['class_name'] = class_name
-            class_data[class_name]['total_billed'] += float(inv.total_amount)
-            class_data[class_name]['total_paid'] += float(inv.total_amount) - balance
-            class_data[class_name]['total_outstanding'] += max(balance, 0)
-        student_counts = defaultdict(set)
-        for inv in invoices_qs.select_related('student'):
-            enrollment = inv.student.enrollment_set.filter(is_active=True).select_related('school_class').first()
-            class_name = enrollment.school_class.name if enrollment and enrollment.school_class else 'Unassigned'
-            student_counts[class_name].add(inv.student_id)
-        for class_name, students in student_counts.items():
-            class_data[class_name]['student_count'] = len(students)
-
-        return Response({
-            'term_id': term_id,
-            'rows': sorted(class_data.values(), key=lambda x: x['class_name'])
-        })
+        return Response(get_class_balances_payload(term_id=request.query_params.get("term")))
 
 
 # ==========================================
@@ -6372,32 +6010,9 @@ class FinanceArrearsByTermReportView(APIView):
     module_key = "FINANCE"
 
     def get(self, request):
-        from collections import defaultdict
-        invoices_qs = Invoice.objects.filter(is_active=True).exclude(status__in=['PAID', 'VOID'])
-        term_data = defaultdict(lambda: {
-            'term_id': None, 'term_name': '', 'student_count': 0,
-            'total_outstanding': 0.0, 'invoice_count': 0
-        })
-        for inv in invoices_qs.select_related('term'):
-            balance = float(inv.balance_due)
-            if balance <= 0:
-                continue
-            key = inv.term_id
-            term_data[key]['term_id'] = inv.term_id
-            term_data[key]['term_name'] = inv.term.name if inv.term else 'N/A'
-            term_data[key]['total_outstanding'] += balance
-            term_data[key]['invoice_count'] += 1
+        from finance.application.report_queries import get_arrears_by_term_payload
 
-        student_counts = defaultdict(set)
-        for inv in invoices_qs.select_related('term'):
-            if float(inv.balance_due) > 0:
-                student_counts[inv.term_id].add(inv.student_id)
-        for term_id, students in student_counts.items():
-            term_data[term_id]['student_count'] = len(students)
-
-        return Response({
-            'rows': sorted(term_data.values(), key=lambda x: (x['term_name']))
-        })
+        return Response(get_arrears_by_term_payload())
 
 
 # ==========================================
@@ -6409,72 +6024,14 @@ class FinanceBudgetVarianceReportView(APIView):
     module_key = "FINANCE"
 
     def get(self, request):
-        from collections import defaultdict
-        academic_year = request.query_params.get('academic_year')
-        term = request.query_params.get('term')
+        from finance.application.report_queries import get_budget_variance_payload
 
-        budgets_qs = Budget.objects.filter(is_active=True)
-        if academic_year:
-            budgets_qs = budgets_qs.filter(academic_year_id=academic_year)
-        if term:
-            budgets_qs = budgets_qs.filter(term_id=term)
-
-        expenses_qs = Expense.objects.all()
-        if term:
-            try:
-                term_obj = Term.objects.get(id=term)
-                expenses_qs = expenses_qs.filter(
-                    expense_date__gte=term_obj.start_date,
-                    expense_date__lte=term_obj.end_date,
-                )
-            except Exception:
-                logger.warning("Caught and logged", exc_info=True)
-        elif academic_year:
-            try:
-                year_obj = AcademicYear.objects.get(id=academic_year)
-                expenses_qs = expenses_qs.filter(
-                    expense_date__gte=year_obj.start_date,
-                    expense_date__lte=year_obj.end_date,
-                )
-            except Exception:
-                logger.warning("Caught and logged", exc_info=True)
-
-        expense_by_category = defaultdict(float)
-        for exp in expenses_qs:
-            expense_by_category[exp.category] += float(exp.amount or 0)
-
-        total_actual = sum(expense_by_category.values())
-
-        rows = []
-        for budget in budgets_qs.select_related('academic_year', 'term'):
-            annual = float(budget.annual_budget or 0)
-            monthly = float(budget.monthly_budget or 0)
-            quarterly = float(budget.quarterly_budget or 0)
-            variance = annual - total_actual
-            utilization_pct = round((total_actual / annual * 100), 1) if annual > 0 else None
-            rows.append({
-                'budget_id': budget.id,
-                'academic_year': budget.academic_year.name,
-                'term': budget.term.name,
-                'monthly_budget': monthly,
-                'quarterly_budget': quarterly,
-                'annual_budget': annual,
-                'total_actual_spend': round(total_actual, 2),
-                'variance': round(variance, 2),
-                'utilization_pct': utilization_pct,
-                'status': 'UNDER' if variance >= 0 else 'OVER',
-            })
-
-        by_category = [
-            {'category': cat, 'actual': round(amt, 2)}
-            for cat, amt in sorted(expense_by_category.items(), key=lambda x: -x[1])
-        ]
-
-        return Response({
-            'rows': rows,
-            'by_category': by_category,
-            'total_actual': round(total_actual, 2),
-        })
+        return Response(
+            get_budget_variance_payload(
+                academic_year=request.query_params.get("academic_year"),
+                term=request.query_params.get("term"),
+            )
+        )
 
 
 # ==========================================

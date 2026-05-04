@@ -12,15 +12,26 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from school.permissions import HasModuleAccess, IsSchoolAdmin, IsTeacher
+from .alert_rules import (
+    build_communication_alert_summary,
+    evaluate_communication_alert_rules,
+    resolve_communication_alert_rule_events,
+)
+from .campaign_stats import ensure_campaign_stats, sync_campaign_stats
+from .delivery_backbone import sync_email_delivery_webhook, sync_sms_delivery_webhook
+from .gateway_status import sync_gateway_statuses
 from .models import (
     Announcement,
     AnnouncementRead,
+    CommunicationAlertEvent,
+    CommunicationAlertRule,
     CommunicationMessage,
     Conversation,
     ConversationParticipant,
     EmailCampaign,
     EmailRecipient,
     MessageAttachment,
+    MessageDelivery,
     MessageReadReceipt,
     Message,
     MessageTemplate,
@@ -29,9 +40,49 @@ from .models import (
     PushDevice,
     PushNotificationLog,
     SmsMessage,
+    UnifiedMessage,
+)
+from .campaign_dispatch import (
+    dispatch_due_email_campaigns,
+    dispatch_email_campaign,
+    queue_campaign_recipients,
+)
+from .dispatch_queue import (
+    get_dispatch_queue_health_payload,
+    queue_direct_emails,
+    queue_push_notifications,
+    queue_sms_messages,
+)
+from .gateway_settings import (
+    apply_communication_gateway_settings,
+    build_communication_gateway_settings_payload,
+    run_communication_gateway_test,
+)
+from .read_models import (
+    build_alerts_center_payload,
+    build_campaign_performance,
+    build_communication_activity_feed,
+    build_delivery_reference_lookup,
+    build_delivery_history,
+    build_gateway_health_payload,
+    build_unified_message_reference_lookup,
+    build_unified_message_detail,
+    build_unified_message_feed,
+)
+from .realtime import (
+    publish_alert_event,
+    publish_alert_rule_event,
+    publish_delivery_webhook_event,
+    publish_message_event,
+    publish_notification_bulk_event,
+    publish_notification_event,
 )
 from .serializers import (
     AnnouncementSerializer,
+    CommunicationAlertEventSerializer,
+    CommunicationGatewaySettingsUpdateSerializer,
+    CommunicationGatewayTestRequestSerializer,
+    CommunicationAlertRuleSerializer,
     CommunicationMessageSerializer,
     ConversationParticipantSerializer,
     ConversationSerializer,
@@ -49,8 +100,6 @@ from .services import (
     now_ts,
     render_template_placeholders,
     send_email_placeholder,
-    send_push_placeholder,
-    send_sms_placeholder,
     sms_balance_placeholder,
     verify_webhook_request,
 )
@@ -86,6 +135,10 @@ SMS_WEBHOOK_STATUS_MAP = {
 class CommunicationAccessMixin:
     permission_classes = [permissions.IsAuthenticated, HasModuleAccess]
     module_key = "COMMUNICATION"
+
+
+class CommunicationAdminAccessMixin(CommunicationAccessMixin):
+    permission_classes = [permissions.IsAuthenticated, HasModuleAccess, IsSchoolAdmin]
 
 
 def _is_admin(user):
@@ -131,66 +184,6 @@ def _notification_recipient_options(query: str = "", limit: int = 200):
             }
         )
     return payload
-
-
-def _queue_campaign_recipients(campaign, emails: list[str]):
-    existing = set(campaign.recipients.values_list("email", flat=True))
-    queued = 0
-    failed = 0
-    for email in emails:
-        if email in existing:
-            continue
-        if "@" not in email:
-            EmailRecipient.objects.create(
-                campaign=campaign,
-                email=email,
-                status="Failed",
-                bounce_reason="Invalid email format.",
-            )
-            failed += 1
-            existing.add(email)
-            continue
-        EmailRecipient.objects.create(
-            campaign=campaign,
-            email=email,
-            status="Queued",
-        )
-        queued += 1
-        existing.add(email)
-    return {"queued": queued, "failed": failed}
-
-
-def _dispatch_email_recipient(campaign, row):
-    result = send_email_placeholder(
-        subject=campaign.subject,
-        body=campaign.body_text or campaign.body_html,
-        recipients=[row.email],
-        from_email=campaign.sender_email or None,
-    )
-    row.provider_id = result.provider_id
-    row.status = "Sent" if result.status == "Sent" else "Failed"
-    row.sent_at = now_ts() if result.status == "Sent" else None
-    row.bounce_reason = result.failure_reason
-    row.save(update_fields=["provider_id", "status", "sent_at", "bounce_reason"])
-    return result
-
-
-def _dispatch_campaign(campaign):
-    queued_rows = list(campaign.recipients.filter(status="Queued").order_by("id"))
-    sent = 0
-    failed = 0
-    campaign.status = "Sending"
-    campaign.save(update_fields=["status"])
-    for row in queued_rows:
-        result = _dispatch_email_recipient(campaign, row)
-        if result.status == "Sent":
-            sent += 1
-        else:
-            failed += 1
-    campaign.status = "Sent" if sent else "Failed"
-    campaign.sent_at = now_ts()
-    campaign.save(update_fields=["status", "sent_at"])
-    return {"sent": sent, "failed": failed, "processed": len(queued_rows)}
 
 
 def _uploaded_message_files(request):
@@ -272,6 +265,19 @@ class CommunicationMessageViewSet(CommunicationAccessMixin, viewsets.ModelViewSe
     queryset = CommunicationMessage.objects.filter(is_active=True).order_by("-sent_at")
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
+    def _summary_limit(self):
+        limit_raw = self.request.query_params.get("limit")
+        try:
+            limit = int(limit_raw) if limit_raw is not None else 20
+        except (TypeError, ValueError):
+            limit = 20
+        return max(1, min(limit, 100))
+
+    def _is_activity_feed_request(self):
+        if self.request.query_params.get("conversation"):
+            return False
+        return bool(self.request.query_params.get("ordering") or self.request.query_params.get("limit"))
+
     def get_queryset(self):
         qs = super().get_queryset()
         conversation = self.request.query_params.get("conversation")
@@ -303,6 +309,29 @@ class CommunicationMessageViewSet(CommunicationAccessMixin, viewsets.ModelViewSe
                 qs = qs[: min(limit, 100)]
 
         return qs
+
+    def list(self, request, *args, **kwargs):
+        if self._is_activity_feed_request():
+            limit = self._summary_limit()
+            ordering = str(request.query_params.get("ordering") or "").strip()
+            descending = ordering not in {"created_at", "sent_at"}
+            message_rows = CommunicationMessage.objects.filter(is_active=True, is_deleted=False).select_related("sender", "conversation")
+            if not _is_admin(request.user):
+                message_rows = message_rows.filter(
+                    conversation__participants__user=request.user,
+                    conversation__participants__is_active=True,
+                ).distinct()
+            message_rows = message_rows.order_by("-sent_at", "-id")[:limit]
+            payload = build_communication_activity_feed(
+                conversation_messages=message_rows,
+                limit=limit,
+                descending=descending,
+            )
+            page = self.paginate_queryset(payload)
+            if page is not None:
+                return self.get_paginated_response(page)
+            return Response(payload, status=status.HTTP_200_OK)
+        return super().list(request, *args, **kwargs)
 
     def perform_create(self, serializer):
         uploads = _uploaded_message_files(self.request)
@@ -337,12 +366,14 @@ class CommunicationMessageViewSet(CommunicationAccessMixin, viewsets.ModelViewSe
                 file_size=getattr(upload, "size", 0) or 0,
                 mime_type=(getattr(upload, "content_type", "") or "").strip(),
             )
+        publish_message_event(message, event_type="message.created")
 
     def perform_update(self, serializer):
         instance = self.get_object()
         if instance.sender_id != self.request.user.id and not _is_admin(self.request.user):
             raise PermissionDenied("Only sender or admin can edit this message.")
-        serializer.save(is_edited=True, edited_at=now_ts())
+        message = serializer.save(is_edited=True, edited_at=now_ts())
+        publish_message_event(message, event_type="message.updated")
 
     def perform_destroy(self, instance):
         if instance.sender_id != self.request.user.id and not _is_admin(self.request.user):
@@ -350,6 +381,7 @@ class CommunicationMessageViewSet(CommunicationAccessMixin, viewsets.ModelViewSe
         instance.is_deleted = True
         instance.is_active = False
         instance.save(update_fields=["is_deleted", "is_active"])
+        publish_message_event(instance, event_type="message.deleted")
 
     @action(detail=True, methods=["post"], url_path="read")
     def mark_read(self, request, pk=None):
@@ -363,6 +395,7 @@ class CommunicationMessageViewSet(CommunicationAccessMixin, viewsets.ModelViewSe
         if message.delivery_status != "Read":
             message.delivery_status = "Read"
             message.save(update_fields=["delivery_status"])
+        publish_message_event(message, event_type="message.read")
         return Response({"message": "Message marked as read."}, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=["get"], url_path="unread-count")
@@ -456,6 +489,8 @@ class NotificationViewSet(CommunicationAccessMixin, viewsets.ModelViewSet):
             "created": len(created),
             "results": self.get_serializer(created, many=True).data,
         }
+        for row in created:
+            publish_notification_event(row, event_type="notification.created")
         status_code = status.HTTP_201_CREATED
         return Response(payload, status=status_code)
 
@@ -478,11 +513,18 @@ class NotificationViewSet(CommunicationAccessMixin, viewsets.ModelViewSet):
         row.is_read = True
         row.read_at = now_ts()
         row.save(update_fields=["is_read", "read_at"])
+        publish_notification_event(row, event_type="notification.read")
         return Response({"message": "Notification marked as read."}, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=["post"], url_path="read-all")
     def read_all(self, request):
         updated = self.get_queryset().filter(is_read=False).update(is_read=True, read_at=now_ts())
+        if updated:
+            publish_notification_bulk_event(
+                event_type="notification.read_all",
+                user_id=request.user.id,
+                updated=updated,
+            )
         return Response({"updated": updated}, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=["get"], url_path="unread-count")
@@ -493,6 +535,7 @@ class NotificationViewSet(CommunicationAccessMixin, viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         instance.is_active = False
         instance.save(update_fields=["is_active"])
+        publish_notification_event(instance, event_type="notification.deleted")
 
 
 class NotificationPreferenceView(CommunicationAccessMixin, APIView):
@@ -535,10 +578,24 @@ class EmailCampaignViewSet(CommunicationAccessMixin, viewsets.ModelViewSet):
     serializer_class = EmailCampaignSerializer
     queryset = EmailCampaign.objects.filter(is_active=True).order_by("-created_at")
 
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        if getattr(self, "action", "") in {"list", "retrieve"}:
+            if getattr(self, "action", "") == "retrieve":
+                campaign_ids = [self.kwargs.get("pk")]
+            else:
+                campaign_ids = list(self.get_queryset().values_list("id", flat=True)[:200])
+            context["campaign_message_map"] = build_unified_message_reference_lookup(
+                source_type="EmailCampaign",
+                source_ids=[campaign_id for campaign_id in campaign_ids if campaign_id],
+            )
+        return context
+
     def perform_create(self, serializer):
         scheduled_at = serializer.validated_data.get("scheduled_at")
         status_value = "Scheduled" if scheduled_at and scheduled_at > now_ts() else serializer.validated_data.get("status", "Draft")
-        serializer.save(created_by=self.request.user, status=status_value)
+        campaign = serializer.save(created_by=self.request.user, status=status_value)
+        ensure_campaign_stats(campaign)
 
     @action(detail=True, methods=["post"], url_path="test")
     def test(self, request, pk=None):
@@ -554,7 +611,7 @@ class EmailCampaignViewSet(CommunicationAccessMixin, viewsets.ModelViewSet):
         campaign = self.get_object()
         recipients = _normalize_email_list(request.data.get("emails") or [])
         if recipients:
-            queue_result = _queue_campaign_recipients(campaign, recipients)
+            queue_result = queue_campaign_recipients(campaign, recipients)
         else:
             queue_result = {"queued": 0, "failed": 0}
 
@@ -565,8 +622,10 @@ class EmailCampaignViewSet(CommunicationAccessMixin, viewsets.ModelViewSet):
         if campaign.scheduled_at and campaign.scheduled_at > now_ts() and not force_send:
             campaign.status = "Scheduled"
             campaign.save(update_fields=["status"])
+            message_id = campaign.unified_messages.order_by("-id").values_list("id", flat=True).first()
             return Response(
                 {
+                    "message_id": message_id,
                     "queued": queue_result["queued"],
                     "failed": queue_result["failed"],
                     "status": campaign.status,
@@ -575,65 +634,75 @@ class EmailCampaignViewSet(CommunicationAccessMixin, viewsets.ModelViewSet):
                 status=status.HTTP_202_ACCEPTED,
             )
 
-        dispatch_result = _dispatch_campaign(campaign)
+        dispatch_result = dispatch_email_campaign(campaign)
         return Response(
             {
-                "queued": queue_result["queued"],
-                "failed": dispatch_result["failed"] + queue_result["failed"],
-                "sent": dispatch_result["sent"],
+                "message_id": dispatch_result.get("message_id"),
+                "queued": dispatch_result["queued"],
+                "failed": queue_result["failed"],
                 "processed": dispatch_result["processed"],
                 "status": campaign.status,
             },
-            status=status.HTTP_200_OK,
+            status=status.HTTP_202_ACCEPTED,
         )
 
     @action(detail=False, methods=["post"], url_path="dispatch-due")
     def dispatch_due(self, request):
-        due_campaigns = list(
-            self.get_queryset().filter(status="Scheduled", scheduled_at__isnull=False, scheduled_at__lte=now_ts())
-        )
-        results = []
-        for campaign in due_campaigns:
-            result = _dispatch_campaign(campaign)
-            results.append(
-                {
-                    "campaign_id": campaign.id,
-                    "title": campaign.title,
-                    "status": campaign.status,
-                    "sent": result["sent"],
-                    "failed": result["failed"],
-                    "processed": result["processed"],
-                }
-            )
-        return Response({"dispatched": len(results), "results": results}, status=status.HTTP_200_OK)
+        return Response(dispatch_due_email_campaigns(), status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["get"], url_path="stats")
     def stats(self, request, pk=None):
         campaign = self.get_object()
-        recipients = campaign.recipients.all()
+        reference = build_unified_message_reference_lookup(source_type="EmailCampaign", source_ids=[campaign.id]).get(campaign.id, {})
+        stats = campaign.stats_snapshot if hasattr(campaign, "stats_snapshot") else ensure_campaign_stats(campaign)
         payload = {
             "campaign_id": campaign.id,
-            "total": recipients.count(),
-            "queued": recipients.filter(status="Queued").count(),
-            "sent": recipients.filter(status="Sent").count(),
-            "delivered": recipients.filter(status="Delivered").count(),
-            "opened": recipients.filter(status="Opened").count(),
-            "clicked": recipients.filter(status="Clicked").count(),
-            "bounced": recipients.filter(status="Bounced").count(),
-            "failed": recipients.filter(status="Failed").count(),
+            "message_id": reference.get("message_id"),
+            "message_status": reference.get("message_status", ""),
+            "message_kind": reference.get("message_kind", ""),
+            "message_channels": reference.get("message_channels", []),
+            "delivery_summary": reference.get("delivery_summary", {}),
+            "total": stats.total_recipients,
+            "queued": stats.queued_recipients,
+            "sent": stats.successful_recipients,
+            "delivered": stats.delivered_recipients,
+            "opened": stats.opened_recipients,
+            "clicked": stats.clicked_recipients,
+            "bounced": stats.bounced_recipients,
+            "failed": stats.failed_recipients,
+            "open_events": stats.open_events,
+            "click_events": stats.click_events,
+            "delivery_rate": float(stats.delivery_rate),
+            "open_rate": float(stats.open_rate),
+            "click_rate": float(stats.click_rate),
+            "last_event_at": stats.last_event_at,
+            "last_synced_at": stats.last_synced_at,
         }
         return Response(payload, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["get"], url_path="recipients")
     def recipients(self, request, pk=None):
         campaign = self.get_object()
-        return Response(EmailRecipientSerializer(campaign.recipients.all(), many=True).data, status=status.HTTP_200_OK)
+        rows = list(campaign.recipients.all())
+        context = self.get_serializer_context()
+        context["email_recipient_delivery_map"] = build_delivery_reference_lookup(
+            source_type="EmailRecipient",
+            source_ids=[row.id for row in rows],
+        )
+        return Response(EmailRecipientSerializer(rows, many=True, context=context).data, status=status.HTTP_200_OK)
 
 
 class SmsGatewayView(CommunicationAccessMixin, APIView):
     def get(self, request):
-        rows = SmsMessage.objects.filter(is_active=True).order_by("-created_at")
-        return Response(SmsMessageSerializer(rows, many=True).data, status=status.HTTP_200_OK)
+        rows = list(SmsMessage.objects.filter(is_active=True).order_by("-created_at"))
+        context = {
+            "request": request,
+            "sms_delivery_map": build_delivery_reference_lookup(
+                source_type="SmsMessage",
+                source_ids=[row.id for row in rows],
+            ),
+        }
+        return Response(SmsMessageSerializer(rows, many=True, context=context).data, status=status.HTTP_200_OK)
 
 
 class SmsSendView(CommunicationAccessMixin, APIView):
@@ -647,23 +716,21 @@ class SmsSendView(CommunicationAccessMixin, APIView):
         phones = list(dict.fromkeys(phones))
         if not phones or not message:
             return Response({"error": "phones and message are required"}, status=status.HTTP_400_BAD_REQUEST)
-        created = []
-        for phone in phones:
-            row = SmsMessage.objects.create(
-                recipient_phone=phone,
-                message=message,
-                channel=channel,
-                created_by=request.user,
-            )
-            result = send_sms_placeholder(phone=phone, message=message, channel=channel)
-            row.status = result.status
-            row.provider_id = result.provider_id
-            row.failure_reason = result.failure_reason
-            row.cost = result.cost
-            row.sent_at = now_ts() if result.status == "Sent" else None
-            row.save(update_fields=["status", "provider_id", "failure_reason", "cost", "sent_at"])
-            created.append(row)
-        return Response(SmsMessageSerializer(created, many=True).data, status=status.HTTP_201_CREATED)
+        queue_result = queue_sms_messages(
+            phones=phones,
+            message=message,
+            channel=channel,
+            created_by=request.user,
+        )
+        rows = list(queue_result["rows"])
+        context = {
+            "request": request,
+            "sms_delivery_map": build_delivery_reference_lookup(
+                source_type="SmsMessage",
+                source_ids=[row.id for row in rows],
+            ),
+        }
+        return Response(SmsMessageSerializer(rows, many=True, context=context).data, status=status.HTTP_202_ACCEPTED)
 
 
 class SmsStatusView(CommunicationAccessMixin, APIView):
@@ -671,7 +738,11 @@ class SmsStatusView(CommunicationAccessMixin, APIView):
         row = SmsMessage.objects.filter(id=pk, is_active=True).first()
         if not row:
             return Response({"error": "SMS record not found"}, status=status.HTTP_404_NOT_FOUND)
-        return Response(SmsMessageSerializer(row).data, status=status.HTTP_200_OK)
+        context = {
+            "request": request,
+            "sms_delivery_map": build_delivery_reference_lookup(source_type="SmsMessage", source_ids=[row.id]),
+        }
+        return Response(SmsMessageSerializer(row, context=context).data, status=status.HTTP_200_OK)
 
 
 class SmsBalanceView(CommunicationAccessMixin, APIView):
@@ -688,13 +759,16 @@ class PushDeviceViewSet(CommunicationAccessMixin, viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user, last_seen_at=now_ts())
+        sync_gateway_statuses(channels=["PUSH"])
 
     def perform_update(self, serializer):
         serializer.save(last_seen_at=now_ts())
+        sync_gateway_statuses(channels=["PUSH"])
 
     def perform_destroy(self, instance):
         instance.is_active = False
         instance.save(update_fields=["is_active"])
+        sync_gateway_statuses(channels=["PUSH"])
 
 
 class PushSendView(CommunicationAccessMixin, APIView):
@@ -707,45 +781,41 @@ class PushSendView(CommunicationAccessMixin, APIView):
         body = (request.data.get("body") or "").strip()
         if not user_ids or not title or not body:
             return Response({"error": "users, title and body are required"}, status=status.HTTP_400_BAD_REQUEST)
-        logs = []
-        for user_id in user_ids:
-            devices = PushDevice.objects.filter(user_id=user_id, is_active=True)
-            if not devices.exists():
-                logs.append(
-                    PushNotificationLog.objects.create(
-                        user_id=user_id,
-                        title=title,
-                        body=body,
-                        status="Failed",
-                        failure_reason="No active push device for user.",
-                        created_by=request.user,
-                    )
-                )
-                continue
-            device = devices.first()
-            result = send_push_placeholder(token=device.token, title=title, body=body)
-            logs.append(
-                PushNotificationLog.objects.create(
-                    user_id=user_id,
-                    title=title,
-                    body=body,
-                    status=result.status,
-                    provider_id=result.provider_id,
-                    failure_reason=result.failure_reason,
-                    sent_at=now_ts() if result.status == "Sent" else None,
-                    created_by=request.user,
-                )
-            )
-        return Response(PushNotificationLogSerializer(logs, many=True).data, status=status.HTTP_201_CREATED)
+        try:
+            normalized_user_ids = [int(user_id) for user_id in user_ids]
+        except (TypeError, ValueError):
+            return Response({"error": "users must contain integer IDs"}, status=status.HTTP_400_BAD_REQUEST)
+        queue_result = queue_push_notifications(
+            user_ids=normalized_user_ids,
+            title=title,
+            body=body,
+            created_by=request.user,
+        )
+        rows = list(queue_result["logs"])
+        context = {
+            "request": request,
+            "push_delivery_map": build_delivery_reference_lookup(
+                source_type="PushNotificationLog",
+                source_ids=[row.id for row in rows],
+            ),
+        }
+        return Response(PushNotificationLogSerializer(rows, many=True, context=context).data, status=status.HTTP_202_ACCEPTED)
 
 
 class PushLogView(CommunicationAccessMixin, APIView):
     def get(self, request):
         if _is_admin(request.user):
-            rows = PushNotificationLog.objects.all().order_by("-created_at")[:200]
+            rows = list(PushNotificationLog.objects.all().order_by("-created_at")[:200])
         else:
-            rows = PushNotificationLog.objects.filter(user=request.user).order_by("-created_at")[:200]
-        return Response(PushNotificationLogSerializer(rows, many=True).data, status=status.HTTP_200_OK)
+            rows = list(PushNotificationLog.objects.filter(user=request.user).order_by("-created_at")[:200])
+        context = {
+            "request": request,
+            "push_delivery_map": build_delivery_reference_lookup(
+                source_type="PushNotificationLog",
+                source_ids=[row.id for row in rows],
+            ),
+        }
+        return Response(PushNotificationLogSerializer(rows, many=True, context=context).data, status=status.HTTP_200_OK)
 
 
 class EmailWebhookView(APIView):
@@ -779,6 +849,21 @@ class EmailWebhookView(APIView):
         if normalized in ["Bounced", "Failed"]:
             row.bounce_reason = request.data.get("reason", row.bounce_reason)
         row.save()
+        sync_email_delivery_webhook(row, normalized, reason=str(request.data.get("reason") or row.bounce_reason or ""))
+        sync_campaign_stats(row.campaign)
+        sync_gateway_statuses(channels=["EMAIL"])
+        publish_delivery_webhook_event(
+            channel="email",
+            source_type="EmailRecipient",
+            source_id=row.id,
+            payload={
+                "provider_id": row.provider_id,
+                "status": normalized,
+                "reason": str(request.data.get("reason") or row.bounce_reason or ""),
+                "email": row.email,
+                "campaign_id": row.campaign_id,
+            },
+        )
         return Response({"message": "Email webhook processed."}, status=status.HTTP_200_OK)
 
 
@@ -808,6 +893,20 @@ class SmsWebhookView(APIView):
         if normalized == "Failed":
             row.failure_reason = request.data.get("reason", row.failure_reason)
         row.save()
+        sync_sms_delivery_webhook(row, normalized, reason=str(request.data.get("reason") or row.failure_reason or ""))
+        sync_gateway_statuses(channels=["WHATSAPP" if row.channel == "WhatsApp" else "SMS"])
+        publish_delivery_webhook_event(
+            channel="whatsapp" if row.channel == "WhatsApp" else "sms",
+            source_type="SmsMessage",
+            source_id=row.id,
+            payload={
+                "provider_id": row.provider_id,
+                "status": normalized,
+                "reason": str(request.data.get("reason") or row.failure_reason or ""),
+                "channel": row.channel,
+                "recipient_phone": row.recipient_phone,
+            },
+        )
         return Response({"message": "SMS webhook processed."}, status=status.HTTP_200_OK)
 
 
@@ -816,7 +915,20 @@ class MessageTemplateViewSet(CommunicationAccessMixin, viewsets.ModelViewSet):
     queryset = MessageTemplate.objects.filter(is_active=True).order_by("name")
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+        row = serializer.save(created_by=self.request.user)
+        publish_alert_rule_event(
+            rule_id=row.id,
+            event_type="alert.rule.created",
+            payload={
+                "rule_id": row.id,
+                "name": row.name,
+                "rule_type": row.rule_type,
+                "severity": row.severity,
+                "channel": row.channel,
+                "threshold": row.threshold,
+                "is_active": row.is_active,
+            },
+        )
 
     @action(detail=True, methods=["post"], url_path="preview")
     def preview(self, request, pk=None):
@@ -855,6 +967,167 @@ class AnnouncementViewSet(CommunicationAccessMixin, viewsets.ModelViewSet):
         return Response({"announcement_id": row.id, "read_count": readers}, status=status.HTTP_200_OK)
 
 
+class CommunicationAlertRuleViewSet(CommunicationAdminAccessMixin, viewsets.ModelViewSet):
+    serializer_class = CommunicationAlertRuleSerializer
+    queryset = CommunicationAlertRule.objects.all().order_by("name", "id")
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        include_inactive = _parse_bool(self.request.query_params.get("include_inactive"))
+        rule_type = str(self.request.query_params.get("rule_type") or "").strip().upper()
+        severity = str(self.request.query_params.get("severity") or "").strip().upper()
+        channel = str(self.request.query_params.get("channel") or "").strip().upper()
+        if not include_inactive:
+            queryset = queryset.filter(is_active=True)
+        if rule_type:
+            queryset = queryset.filter(rule_type=rule_type)
+        if severity:
+            queryset = queryset.filter(severity=severity)
+        if channel:
+            queryset = queryset.filter(channel=channel)
+        return queryset
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
+    def perform_update(self, serializer):
+        was_active = serializer.instance.is_active
+        row = serializer.save()
+        if was_active and not row.is_active:
+            resolve_communication_alert_rule_events(row, reason="Rule deactivated.")
+        publish_alert_rule_event(
+            rule_id=row.id,
+            event_type="alert.rule.updated",
+            payload={
+                "rule_id": row.id,
+                "name": row.name,
+                "rule_type": row.rule_type,
+                "severity": row.severity,
+                "channel": row.channel,
+                "threshold": row.threshold,
+                "is_active": row.is_active,
+            },
+        )
+
+    def perform_destroy(self, instance):
+        instance.is_active = False
+        instance.save(update_fields=["is_active"])
+        resolve_communication_alert_rule_events(instance, reason="Rule archived.")
+        publish_alert_rule_event(
+            rule_id=instance.id,
+            event_type="alert.rule.archived",
+            payload={"rule_id": instance.id, "is_active": False},
+        )
+
+    @action(detail=False, methods=["post"], url_path="evaluate")
+    def evaluate(self, request):
+        raw_rule_ids = request.data.get("rule_ids") or []
+        rule_ids = []
+        for value in raw_rule_ids:
+            try:
+                rule_ids.append(int(value))
+            except (TypeError, ValueError):
+                continue
+        result = evaluate_communication_alert_rules(rule_ids=rule_ids or None)
+        return Response(result, status=status.HTTP_200_OK)
+
+
+class CommunicationAlertEventViewSet(CommunicationAdminAccessMixin, viewsets.ReadOnlyModelViewSet):
+    serializer_class = CommunicationAlertEventSerializer
+    queryset = CommunicationAlertEvent.objects.select_related("rule").all().order_by("-last_triggered_at", "-id")
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        status_value = str(self.request.query_params.get("status") or "").strip().upper()
+        severity = str(self.request.query_params.get("severity") or "").strip().upper()
+        channel = str(self.request.query_params.get("channel") or "").strip().upper()
+        rule_id = self.request.query_params.get("rule_id")
+        if status_value:
+            queryset = queryset.filter(status=status_value)
+        if severity:
+            queryset = queryset.filter(severity=severity)
+        if channel:
+            queryset = queryset.filter(channel=channel)
+        if rule_id:
+            queryset = queryset.filter(rule_id=rule_id)
+        return queryset
+
+    @action(detail=False, methods=["get"], url_path="summary")
+    def summary(self, request):
+        return Response(build_communication_alert_summary(), status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="acknowledge")
+    def acknowledge(self, request, pk=None):
+        event = self.get_object()
+        if event.status != CommunicationAlertEvent.STATUS_OPEN:
+            return Response({"detail": "Only open alerts can be acknowledged."}, status=status.HTTP_400_BAD_REQUEST)
+        event.status = CommunicationAlertEvent.STATUS_ACKNOWLEDGED
+        event.acknowledged_at = now_ts()
+        event.save(update_fields=["status", "acknowledged_at"])
+        publish_alert_event(event, event_type="alert.event.acknowledged")
+        return Response(self.get_serializer(event).data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="resolve")
+    def resolve(self, request, pk=None):
+        event = self.get_object()
+        if event.status == CommunicationAlertEvent.STATUS_RESOLVED:
+            return Response({"detail": "Alert is already resolved."}, status=status.HTTP_400_BAD_REQUEST)
+        event.status = CommunicationAlertEvent.STATUS_RESOLVED
+        event.resolved_at = now_ts()
+        event.save(update_fields=["status", "resolved_at"])
+        publish_alert_event(event, event_type="alert.event.resolved")
+        return Response(self.get_serializer(event).data, status=status.HTTP_200_OK)
+
+
+class CommunicationAlertsFeedView(CommunicationAdminAccessMixin, APIView):
+    def get(self, request):
+        try:
+            alert_limit = int(request.query_params.get("alert_limit", 20) or 20)
+        except (TypeError, ValueError):
+            alert_limit = 20
+        try:
+            announcement_limit = int(request.query_params.get("announcement_limit", 20) or 20)
+        except (TypeError, ValueError):
+            announcement_limit = 20
+        try:
+            reminder_limit = int(request.query_params.get("reminder_limit", 10) or 10)
+        except (TypeError, ValueError):
+            reminder_limit = 10
+        return Response(
+            build_alerts_center_payload(
+                alert_limit=alert_limit,
+                announcement_limit=announcement_limit,
+                reminder_limit=reminder_limit,
+            ),
+            status=status.HTTP_200_OK,
+        )
+
+
+class CommunicationGatewaySettingsView(CommunicationAdminAccessMixin, APIView):
+    def get(self, request):
+        return Response(build_communication_gateway_settings_payload(request=request), status=status.HTTP_200_OK)
+
+    def patch(self, request):
+        serializer = CommunicationGatewaySettingsUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        payload = apply_communication_gateway_settings(serializer.validated_data, request=request)
+        return Response(payload, status=status.HTTP_200_OK)
+
+
+class CommunicationGatewayTestView(CommunicationAdminAccessMixin, APIView):
+    def post(self, request):
+        serializer = CommunicationGatewayTestRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        result = run_communication_gateway_test(
+            channel=serializer.validated_data["channel"],
+            request=request,
+            target_user_id=serializer.validated_data.get("user_id"),
+        )
+        if not result["ok"]:
+            return Response({"error": result["error"]}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(result["payload"], status=status.HTTP_200_OK)
+
+
 class CommunicationAnalyticsSummaryView(CommunicationAccessMixin, APIView):
     def get(self, request):
         total_messages = CommunicationMessage.objects.filter(is_active=True).count()
@@ -869,6 +1142,11 @@ class CommunicationAnalyticsSummaryView(CommunicationAccessMixin, APIView):
                 "total_emails": total_emails,
                 "total_sms": total_sms,
                 "total_push_notifications": total_push,
+                "total_unified_messages": UnifiedMessage.objects.count(),
+                "total_message_deliveries": MessageDelivery.objects.count(),
+                "dispatch_queue": get_dispatch_queue_health_payload(),
+                "gateway_health": build_gateway_health_payload(),
+                "alerts": build_communication_alert_summary(limit=5),
             },
             status=status.HTTP_200_OK,
         )
@@ -904,6 +1182,57 @@ class CommunicationAnalyticsDeliveryRateView(CommunicationAccessMixin, APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+class CommunicationAnalyticsDeliveryHistoryView(CommunicationAccessMixin, APIView):
+    def get(self, request):
+        try:
+            limit = int(request.query_params.get("limit", 50) or 50)
+        except (TypeError, ValueError):
+            limit = 50
+        channel = str(request.query_params.get("channel") or "").strip().upper() or None
+        status_filter = str(request.query_params.get("status") or "").strip() or None
+        rows = build_delivery_history(limit=limit, channel=channel, status=status_filter)
+        return Response({"count": len(rows), "results": rows}, status=status.HTTP_200_OK)
+
+
+class CommunicationAnalyticsCampaignPerformanceView(CommunicationAccessMixin, APIView):
+    def get(self, request):
+        try:
+            limit = int(request.query_params.get("limit", 20) or 20)
+        except (TypeError, ValueError):
+            limit = 20
+        rows = build_campaign_performance(limit=limit)
+        return Response({"count": len(rows), "results": rows}, status=status.HTTP_200_OK)
+
+
+class CommunicationAnalyticsGatewayHealthView(CommunicationAccessMixin, APIView):
+    def get(self, request):
+        return Response(build_gateway_health_payload(), status=status.HTTP_200_OK)
+
+
+class CommunicationUnifiedMessageListView(CommunicationAccessMixin, APIView):
+    def get(self, request):
+        try:
+            limit = int(request.query_params.get("limit", 50) or 50)
+        except (TypeError, ValueError):
+            limit = 50
+        rows = build_unified_message_feed(
+            limit=limit,
+            status=str(request.query_params.get("status") or "").strip() or None,
+            kind=str(request.query_params.get("kind") or "").strip().upper() or None,
+            channel=str(request.query_params.get("channel") or "").strip().upper() or None,
+            source_type=str(request.query_params.get("source_type") or "").strip() or None,
+        )
+        return Response({"count": len(rows), "results": rows}, status=status.HTTP_200_OK)
+
+
+class CommunicationUnifiedMessageDetailView(CommunicationAccessMixin, APIView):
+    def get(self, request, pk):
+        row = build_unified_message_detail(pk)
+        if row is None:
+            return Response({"error": "Unified message not found"}, status=status.HTTP_404_NOT_FOUND)
+        return Response(row, status=status.HTTP_200_OK)
 
 
 class CommunicationAnalyticsEngagementView(CommunicationAccessMixin, APIView):
@@ -946,29 +1275,29 @@ class ParentNotifyView(CommunicationAccessMixin, APIView):
         email_result = None
         sms_results = []
         if parent_emails:
-            email_result = send_email_placeholder(subject=subject, body=message, recipients=parent_emails)
-        for phone in parent_phones:
-            row = SmsMessage.objects.create(
-                recipient_phone=phone,
+            email_result = queue_direct_emails(
+                subject=subject,
+                body=message,
+                recipients=[str(email).strip() for email in parent_emails if str(email).strip()],
+                created_by=request.user,
+            )
+        if parent_phones:
+            sms_queue = queue_sms_messages(
+                phones=[str(phone).strip() for phone in parent_phones if str(phone).strip()],
                 message=message,
                 channel="SMS",
                 created_by=request.user,
             )
-            result = send_sms_placeholder(phone=phone, message=message, channel="SMS")
-            row.status = result.status
-            row.provider_id = result.provider_id
-            row.failure_reason = result.failure_reason
-            row.cost = result.cost
-            row.sent_at = now_ts() if result.status == "Sent" else None
-            row.save(update_fields=["status", "provider_id", "failure_reason", "cost", "sent_at"])
-            sms_results.append(row.id)
+            sms_results = [row.id for row in sms_queue["rows"]]
         return Response(
             {
                 "template": self.template_name,
-                "email_status": email_result.status if email_result else "Skipped",
+                "email_status": "Queued" if email_result and email_result["queued"] else "Skipped",
+                "email_message_id": email_result.get("message_id") if email_result else None,
+                "email_queued": email_result["queued"] if email_result else 0,
                 "sms_records": sms_results,
             },
-            status=status.HTTP_200_OK,
+            status=status.HTTP_202_ACCEPTED,
         )
 
 

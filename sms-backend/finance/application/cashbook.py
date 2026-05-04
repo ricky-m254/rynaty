@@ -1,5 +1,7 @@
 from decimal import Decimal
 
+from django.db import transaction
+
 from school.models import CashbookEntry
 
 
@@ -15,17 +17,19 @@ def get_cashbook_queryset(book_type=None, date_from=None, date_to=None):
 
 
 def recompute_running_balances(book_type):
-    entries = list(
-        CashbookEntry.objects.filter(book_type=book_type).order_by(
-            "entry_date",
-            "created_at",
+    with transaction.atomic():
+        entries = list(
+            CashbookEntry.objects.select_for_update().filter(book_type=book_type).order_by(
+                "entry_date",
+                "created_at",
+                "id",
+            )
         )
-    )
-    balance = Decimal("0.00")
-    for entry in entries:
-        balance += (entry.amount_in or Decimal("0.00")) - (
-            entry.amount_out or Decimal("0.00")
-        )
-        entry.running_balance = balance
-    if entries:
-        CashbookEntry.objects.bulk_update(entries, ["running_balance"])
+        balance = Decimal("0.00")
+        for entry in entries:
+            balance += (entry.amount_in or Decimal("0.00")) - (
+                entry.amount_out or Decimal("0.00")
+            )
+            entry.running_balance = balance
+        if entries:
+            CashbookEntry.objects.bulk_update(entries, ["running_balance"])

@@ -9,8 +9,10 @@ https://docs.djangoproject.com/en/5.2/howto/deployment/wsgi/
 
 import os
 
+from config.runtime_bootstrap import ensure_pkg_resources_compat
 from django.core.wsgi import get_wsgi_application
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
+ensure_pkg_resources_compat()
 
 application = get_wsgi_application()

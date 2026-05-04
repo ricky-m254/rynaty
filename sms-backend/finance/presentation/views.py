@@ -38,6 +38,13 @@ from finance.presentation.serializers import (
 from school.models import Payment, VoteHeadPaymentAllocation
 from school.payment_receipts import build_payment_receipt_payload
 from school.permissions import HasModuleAccess, IsAccountant
+from school.views import (
+    FinanceOverdueAccountsCsvExportView as SchoolFinanceOverdueAccountsCsvExportView,
+    FinanceReceivablesAgingCsvExportView as SchoolFinanceReceivablesAgingCsvExportView,
+    FinanceStudentDetailView as SchoolFinanceStudentDetailView,
+    FinanceSummaryCsvExportView as SchoolFinanceSummaryCsvExportView,
+    FinanceSummaryPdfExportView as SchoolFinanceSummaryPdfExportView,
+)
 
 import logging
 
@@ -418,3 +425,23 @@ class FinanceStudentLedgerView(APIView):
         except LookupError:
             return Response({"detail": "Student not found."}, status=status.HTTP_404_NOT_FOUND)
         return Response(payload, status=status.HTTP_200_OK)
+
+
+class FinanceReceivablesAgingCsvExportView(SchoolFinanceReceivablesAgingCsvExportView):
+    pass
+
+
+class FinanceOverdueAccountsCsvExportView(SchoolFinanceOverdueAccountsCsvExportView):
+    pass
+
+
+class FinanceSummaryCsvExportView(SchoolFinanceSummaryCsvExportView):
+    pass
+
+
+class FinanceSummaryPdfExportView(SchoolFinanceSummaryPdfExportView):
+    pass
+
+
+class FinanceStudentDetailView(SchoolFinanceStudentDetailView):
+    pass

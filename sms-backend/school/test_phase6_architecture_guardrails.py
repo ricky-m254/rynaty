@@ -35,13 +35,18 @@ class Phase6ArchitectureGuardrailTests(SimpleTestCase):
                 "financial_summary",
                 "finance_cashbook_summary",
                 "finance_receivables_aging",
+                "finance_receivables_aging_csv",
                 "finance_installments_aging",
                 "finance_overdue_accounts",
+                "finance_overdue_accounts_csv",
+                "finance_reports_summary_csv",
+                "finance_reports_summary_pdf",
                 "finance_vote_head_allocation_report",
                 "finance_arrears_report",
                 "finance_class_balances_report",
                 "finance_arrears_by_term_report",
                 "finance_budget_variance_report",
+                "finance_student_detail",
                 "finance_vote_head_budget_report",
             }.issubset({pattern.name for pattern in staged_finance_urls.urlpatterns})
         )
@@ -49,25 +54,35 @@ class Phase6ArchitectureGuardrailTests(SimpleTestCase):
         summary_match = resolve("/api/finance/summary/")
         cashbook_summary_match = resolve("/api/finance/cashbook/summary/")
         receivables_match = resolve("/api/finance/reports/receivables-aging/")
+        receivables_csv_match = resolve("/api/finance/reports/receivables-aging/export/csv/")
         overdue_match = resolve("/api/finance/reports/overdue-accounts/")
+        overdue_csv_match = resolve("/api/finance/reports/overdue-accounts/export/csv/")
         installments_match = resolve("/api/finance/reports/installments-aging/")
+        summary_csv_match = resolve("/api/finance/reports/summary/export/csv/")
+        summary_pdf_match = resolve("/api/finance/reports/summary/export/pdf/")
         vote_head_allocation_match = resolve("/api/finance/reports/vote-head-allocation/")
         arrears_match = resolve("/api/finance/reports/arrears/")
         class_balances_match = resolve("/api/finance/reports/class-balances/")
         arrears_by_term_match = resolve("/api/finance/reports/arrears-by-term/")
         budget_variance_match = resolve("/api/finance/reports/budget-variance/")
+        finance_student_detail_match = resolve("/api/finance/students/1/")
         vote_head_budget_match = resolve("/api/finance/reports/vote-head-budget/")
 
         self.assertEqual(summary_match.func.view_class.__module__, "finance.presentation.views")
         self.assertEqual(cashbook_summary_match.func.view_class.__module__, "finance.presentation.views")
         self.assertEqual(receivables_match.func.view_class.__module__, "finance.presentation.views")
+        self.assertEqual(receivables_csv_match.func.view_class.__module__, "finance.presentation.views")
         self.assertEqual(overdue_match.func.view_class.__module__, "finance.presentation.views")
+        self.assertEqual(overdue_csv_match.func.view_class.__module__, "finance.presentation.views")
         self.assertEqual(installments_match.func.view_class.__module__, "finance.presentation.views")
+        self.assertEqual(summary_csv_match.func.view_class.__module__, "finance.presentation.views")
+        self.assertEqual(summary_pdf_match.func.view_class.__module__, "finance.presentation.views")
         self.assertEqual(vote_head_allocation_match.func.view_class.__module__, "finance.presentation.views")
         self.assertEqual(arrears_match.func.view_class.__module__, "finance.presentation.views")
         self.assertEqual(class_balances_match.func.view_class.__module__, "finance.presentation.views")
         self.assertEqual(arrears_by_term_match.func.view_class.__module__, "finance.presentation.views")
         self.assertEqual(budget_variance_match.func.view_class.__module__, "finance.presentation.views")
+        self.assertEqual(finance_student_detail_match.func.view_class.__module__, "finance.presentation.views")
         self.assertEqual(vote_head_budget_match.func.view_class.__module__, "finance.presentation.views")
 
     def test_router_registry_keeps_current_runtime_owner_modules_explicit(self):
@@ -124,29 +139,37 @@ class Phase6ArchitectureGuardrailTests(SimpleTestCase):
             self.assertEqual(registered[prefix].__module__, "finance.presentation.viewsets")
 
         self.assertEqual(registered["finance/budgets"].__module__, "finance.presentation.governance_viewsets")
+        self.assertEqual(registered["finance/terms"].__module__, "finance.presentation.governance_viewsets")
         self.assertEqual(registered["finance/accounting/periods"].__module__, "finance.presentation.accounting_viewsets")
         self.assertEqual(registered["finance/accounting/accounts"].__module__, "finance.presentation.accounting_viewsets")
         self.assertEqual(registered["finance/accounting/journals"].__module__, "finance.presentation.accounting_viewsets")
 
         for prefix in [
-            "finance/terms",
-            "finance/scholarships",
-            "finance/expenses",
-            "finance/gateway/transactions",
-            "finance/gateway/events",
-            "finance/reconciliation/bank-lines",
-            "finance/late-fee-rules",
-            "finance/reminders",
-            "finance/vote-head-allocations",
             "dispensary/visits",
             "dispensary/stock",
         ]:
             self.assertEqual(registered[prefix].__module__, "school.views")
 
-        self.assertEqual(registered["finance/terms"].module_key, "ACADEMICS")
+        for prefix in [
+            "finance/scholarships",
+            "finance/expenses",
+            "finance/vote-head-allocations",
+        ]:
+            self.assertEqual(registered[prefix].__module__, "finance.presentation.governance_viewsets")
+
+        for prefix in [
+            "finance/gateway/transactions",
+            "finance/gateway/events",
+            "finance/reconciliation/bank-lines",
+            "finance/late-fee-rules",
+            "finance/reminders",
+        ]:
+            self.assertEqual(registered[prefix].__module__, "finance.presentation.collection_ops_viewsets")
+
+        self.assertEqual(registered["finance/terms"].module_key, "FINANCE")
         self.assertEqual(
             [permission.__name__ for permission in registered["finance/terms"].permission_classes],
-            ["IsSchoolAdmin", "HasModuleAccess"],
+            ["IsAccountant", "HasModuleAccess"],
         )
 
         for prefix in [
@@ -162,6 +185,7 @@ class Phase6ArchitectureGuardrailTests(SimpleTestCase):
         fee_assign_by_class_match = resolve("/api/finance/fee-assignments/by-class/")
         optional_charge_by_class_match = resolve("/api/finance/optional-charges/by-class/")
         finance_receipt_pdf_match = resolve("/api/finance/payments/1/receipt/pdf/")
+        finance_student_detail_match = resolve("/api/finance/students/1/")
         finance_student_ledger_match = resolve("/api/finance/students/1/ledger/")
         store_match = resolve("/api/store/dashboard/")
         store_reports_match = resolve("/api/store/reports/")
@@ -171,6 +195,7 @@ class Phase6ArchitectureGuardrailTests(SimpleTestCase):
         self.assertEqual(fee_assign_by_class_match.func.view_class.__module__, "finance.presentation.views")
         self.assertEqual(optional_charge_by_class_match.func.view_class.__module__, "finance.presentation.views")
         self.assertEqual(finance_receipt_pdf_match.func.view_class.__module__, "finance.presentation.views")
+        self.assertEqual(finance_student_detail_match.func.view_class.__module__, "finance.presentation.views")
         self.assertEqual(finance_student_ledger_match.func.view_class.__module__, "finance.presentation.views")
         self.assertEqual(store_match.func.view_class.__module__, "domains.inventory.presentation.views")
         self.assertEqual(store_reports_match.func.view_class.__module__, "domains.inventory.presentation.views")
@@ -183,7 +208,7 @@ class Phase6ArchitectureGuardrailTests(SimpleTestCase):
         self.assertEqual(reporting_ref_match.func.view_class.__module__, "reporting.views")
         self.assertEqual(reporting_list_match.func.cls.__module__, "reporting.views")
 
-    def test_accounting_paths_reflect_current_cutover_state_while_webhook_stays_school_owned(self):
+    def test_accounting_and_collection_paths_reflect_finance_owned_cutover_state(self):
         self.assertTrue(
             {
                 "finance_accounting_trial_balance",
@@ -198,7 +223,26 @@ class Phase6ArchitectureGuardrailTests(SimpleTestCase):
 
         self.assertEqual(trial_balance_match.func.view_class.__module__, "finance.presentation.accounting_views")
         self.assertEqual(ledger_match.func.view_class.__module__, "finance.presentation.accounting_views")
-        self.assertEqual(webhook_match.func.view_class.__module__, "school.views")
+        self.assertEqual(webhook_match.func.view_class.__module__, "finance.presentation.collection_ops_views")
+
+    def test_remaining_finance_collection_and_governance_paths_now_resolve_to_finance_presentation(self):
+        scholarships_match = resolve("/api/finance/scholarships/")
+        expenses_match = resolve("/api/finance/expenses/")
+        vote_head_allocations_match = resolve("/api/finance/vote-head-allocations/")
+        transactions_match = resolve("/api/finance/gateway/transactions/")
+        events_match = resolve("/api/finance/gateway/events/")
+        bank_lines_match = resolve("/api/finance/reconciliation/bank-lines/")
+        late_fee_rules_match = resolve("/api/finance/late-fee-rules/")
+        reminders_match = resolve("/api/finance/reminders/")
+
+        self.assertEqual(scholarships_match.func.cls.__module__, "finance.presentation.governance_viewsets")
+        self.assertEqual(expenses_match.func.cls.__module__, "finance.presentation.governance_viewsets")
+        self.assertEqual(vote_head_allocations_match.func.cls.__module__, "finance.presentation.governance_viewsets")
+        self.assertEqual(transactions_match.func.cls.__module__, "finance.presentation.collection_ops_viewsets")
+        self.assertEqual(events_match.func.cls.__module__, "finance.presentation.collection_ops_viewsets")
+        self.assertEqual(bank_lines_match.func.cls.__module__, "finance.presentation.collection_ops_viewsets")
+        self.assertEqual(late_fee_rules_match.func.cls.__module__, "finance.presentation.collection_ops_viewsets")
+        self.assertEqual(reminders_match.func.cls.__module__, "finance.presentation.collection_ops_viewsets")
 
     def test_portal_route_prefixes_remain_backed_by_parent_portal_package(self):
         parent_match = resolve("/api/parent-portal/dashboard/")

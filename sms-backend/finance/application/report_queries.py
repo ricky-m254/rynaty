@@ -1,17 +1,34 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from decimal import Decimal
 
-from django.db.models import Count, Sum
+from django.db.models import (
+    Case,
+    CharField,
+    Count,
+    DecimalField,
+    ExpressionWrapper,
+    F,
+    OuterRef,
+    Subquery,
+    Sum,
+    Value,
+    When,
+)
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from school.models import (
     AcademicYear,
     Budget,
     CashbookEntry,
+    Enrollment,
     Expense,
     Invoice,
+    InvoiceAdjustment,
     InvoiceInstallment,
+    PaymentAllocation,
     Term,
     VoteHead,
     VoteHeadPaymentAllocation,
@@ -21,6 +38,9 @@ from school.services import FinanceService
 import logging
 
 logger = logging.getLogger(__name__)
+
+MONEY_FIELD = DecimalField(max_digits=12, decimal_places=2)
+ZERO_MONEY = Value(Decimal("0.00"), output_field=MONEY_FIELD)
 
 
 
@@ -43,21 +63,94 @@ def _bucket_key_for_overdue_days(overdue_days: int) -> str:
     return "90_plus"
 
 
+def _invoice_payment_total_subquery() -> Subquery:
+    return Subquery(
+        PaymentAllocation.objects.filter(invoice_id=OuterRef("pk"), payment__is_active=True)
+        .values("invoice_id")
+        .annotate(total=Sum("amount_allocated"))
+        .values("total")[:1],
+        output_field=MONEY_FIELD,
+    )
+
+
+def _invoice_adjustment_total_subquery() -> Subquery:
+    signed_amount = Case(
+        When(adjustment_type="CREDIT", then=F("amount")),
+        default=ExpressionWrapper(F("amount") * Value(Decimal("-1.00")), output_field=MONEY_FIELD),
+        output_field=MONEY_FIELD,
+    )
+    return Subquery(
+        InvoiceAdjustment.objects.filter(invoice_id=OuterRef("pk"), status="APPROVED")
+        .values("invoice_id")
+        .annotate(total=Sum(signed_amount))
+        .values("total")[:1],
+        output_field=MONEY_FIELD,
+    )
+
+
+def _active_enrollment_class_name_subquery() -> Subquery:
+    return Subquery(
+        Enrollment.objects.filter(student_id=OuterRef("student_id"), is_active=True)
+        .order_by("id")
+        .values("school_class__name")[:1],
+        output_field=CharField(),
+    )
+
+
+def _build_invoice_report_queryset():
+    # Avoid Invoice.balance_due and enrollment lookups in report loops; they fan out into per-row queries.
+    return (
+        Invoice.objects.select_related("student", "term")
+        .annotate(
+            paid_total=Coalesce(_invoice_payment_total_subquery(), ZERO_MONEY),
+            adjustment_total=Coalesce(_invoice_adjustment_total_subquery(), ZERO_MONEY),
+            active_class_name=_active_enrollment_class_name_subquery(),
+        )
+        .annotate(
+            balance_due_amount=ExpressionWrapper(
+                F("total_amount") - F("paid_total") - F("adjustment_total"),
+                output_field=MONEY_FIELD,
+            )
+        )
+    )
+
+
+def _invoice_balance(invoice) -> Decimal:
+    return invoice.balance_due_amount or Decimal("0.00")
+
+
+def _derived_invoice_status(invoice, *, balance: Decimal, today) -> str:
+    if invoice.status == "VOID":
+        return "VOID"
+    if balance <= 0:
+        return "PAID"
+    if balance < invoice.total_amount:
+        return "PARTIALLY_PAID"
+    if invoice.due_date < today:
+        return "OVERDUE"
+    if invoice.status in {"DRAFT", "CONFIRMED"}:
+        return "ISSUED"
+    return invoice.status
+
+
+def _invoice_class_name(invoice, fallback: str) -> str:
+    return invoice.active_class_name or fallback
+
+
 def get_receivables_aging_payload() -> dict[str, object]:
     today = timezone.now().date()
     buckets = _empty_aging_buckets()
-    invoices = Invoice.objects.filter(is_active=True).exclude(status="VOID").select_related("student")
+    invoices = _build_invoice_report_queryset().filter(is_active=True).exclude(status="VOID")
 
     for invoice in invoices:
-        FinanceService.sync_invoice_status(invoice)
-        balance = float(invoice.balance_due)
-        if balance <= 0:
+        balance_amount = _invoice_balance(invoice)
+        if balance_amount <= 0:
             continue
 
         overdue_days = max(0, (today - invoice.due_date).days)
         key = _bucket_key_for_overdue_days(overdue_days)
         buckets[key]["count"] += 1
-        buckets[key]["amount"] += balance
+        buckets[key]["amount"] += float(balance_amount)
 
     for key in buckets:
         buckets[key]["amount"] = round(buckets[key]["amount"], 2)
@@ -70,20 +163,20 @@ def get_overdue_accounts_payload(*, search: str) -> dict[str, object]:
     normalized_search = search.strip().lower()
     rows: list[dict[str, object]] = []
     invoices = (
-        Invoice.objects.filter(is_active=True)
+        _build_invoice_report_queryset()
+        .filter(is_active=True)
         .exclude(status="VOID")
-        .select_related("student")
         .order_by("due_date", "id")
     )
 
     for invoice in invoices:
-        FinanceService.sync_invoice_status(invoice)
-        balance = float(invoice.balance_due)
-        if balance <= 0:
+        balance_amount = _invoice_balance(invoice)
+        if balance_amount <= 0:
             continue
 
+        status = _derived_invoice_status(invoice, balance=balance_amount, today=today)
         overdue_days = max(0, (today - invoice.due_date).days)
-        if overdue_days <= 0 and invoice.status not in {"OVERDUE", "PARTIALLY_PAID", "ISSUED", "CONFIRMED"}:
+        if overdue_days <= 0 and status not in {"OVERDUE", "PARTIALLY_PAID", "ISSUED", "CONFIRMED"}:
             continue
 
         student_name = f"{invoice.student.first_name} {invoice.student.last_name}".strip()
@@ -94,8 +187,8 @@ def get_overdue_accounts_payload(*, search: str) -> dict[str, object]:
             "student_name": student_name,
             "admission_number": invoice.student.admission_number,
             "due_date": str(invoice.due_date),
-            "status": invoice.status,
-            "balance_due": round(balance, 2),
+            "status": status,
+            "balance_due": round(float(balance_amount), 2),
             "overdue_days": overdue_days,
         }
         searchable = f"{row['invoice_number']} {row['student_name']} {row['admission_number']}".lower()
@@ -127,18 +220,17 @@ def get_installment_aging_payload() -> dict[str, object]:
 
 
 def get_arrears_payload(*, term_id: str | None, group_by: str) -> dict[str, object]:
-    invoices_qs = Invoice.objects.filter(is_active=True).exclude(status__in=["PAID", "VOID"])
+    invoices_qs = _build_invoice_report_queryset().filter(is_active=True).exclude(status__in=["PAID", "VOID"])
     if term_id:
         invoices_qs = invoices_qs.filter(term_id=term_id)
 
     rows: list[dict[str, object]] = []
-    for invoice in invoices_qs.select_related("student", "term"):
-        balance = float(invoice.balance_due)
-        if balance <= 0:
+    for invoice in invoices_qs.order_by("id"):
+        balance_amount = _invoice_balance(invoice)
+        if balance_amount <= 0:
             continue
 
-        enrollment = invoice.student.enrollment_set.filter(is_active=True).select_related("school_class").first()
-        class_name = enrollment.school_class.name if enrollment and enrollment.school_class else "N/A"
+        class_name = _invoice_class_name(invoice, "N/A")
         rows.append(
             {
                 "invoice_id": invoice.id,
@@ -149,7 +241,7 @@ def get_arrears_payload(*, term_id: str | None, group_by: str) -> dict[str, obje
                 "class_name": class_name,
                 "term": invoice.term.name if invoice.term else "",
                 "total_amount": float(invoice.total_amount),
-                "balance_due": balance,
+                "balance_due": float(balance_amount),
                 "due_date": str(invoice.due_date),
                 "status": invoice.status,
             }
@@ -171,7 +263,7 @@ def get_arrears_payload(*, term_id: str | None, group_by: str) -> dict[str, obje
 
 
 def get_class_balances_payload(*, term_id: str | None) -> dict[str, object]:
-    invoices_qs = Invoice.objects.filter(is_active=True)
+    invoices_qs = _build_invoice_report_queryset().filter(is_active=True)
     if term_id:
         invoices_qs = invoices_qs.filter(term_id=term_id)
 
@@ -184,20 +276,16 @@ def get_class_balances_payload(*, term_id: str | None) -> dict[str, object]:
             "total_outstanding": 0.0,
         }
     )
+    student_counts = defaultdict(set)
 
-    for invoice in invoices_qs.select_related("student"):
-        enrollment = invoice.student.enrollment_set.filter(is_active=True).select_related("school_class").first()
-        class_name = enrollment.school_class.name if enrollment and enrollment.school_class else "Unassigned"
-        balance = float(invoice.balance_due)
+    for invoice in invoices_qs.order_by("id"):
+        class_name = _invoice_class_name(invoice, "Unassigned")
+        balance_amount = _invoice_balance(invoice)
+        balance = float(balance_amount)
         class_data[class_name]["class_name"] = class_name
         class_data[class_name]["total_billed"] += float(invoice.total_amount)
         class_data[class_name]["total_paid"] += float(invoice.total_amount) - balance
         class_data[class_name]["total_outstanding"] += max(balance, 0)
-
-    student_counts = defaultdict(set)
-    for invoice in invoices_qs.select_related("student"):
-        enrollment = invoice.student.enrollment_set.filter(is_active=True).select_related("school_class").first()
-        class_name = enrollment.school_class.name if enrollment and enrollment.school_class else "Unassigned"
         student_counts[class_name].add(invoice.student_id)
 
     for class_name, students in student_counts.items():
@@ -210,7 +298,7 @@ def get_class_balances_payload(*, term_id: str | None) -> dict[str, object]:
 
 
 def get_arrears_by_term_payload() -> dict[str, object]:
-    invoices_qs = Invoice.objects.filter(is_active=True).exclude(status__in=["PAID", "VOID"])
+    invoices_qs = _build_invoice_report_queryset().filter(is_active=True).exclude(status__in=["PAID", "VOID"])
     term_data = defaultdict(
         lambda: {
             "term_id": None,
@@ -220,21 +308,18 @@ def get_arrears_by_term_payload() -> dict[str, object]:
             "invoice_count": 0,
         }
     )
+    student_counts = defaultdict(set)
 
-    for invoice in invoices_qs.select_related("term"):
-        balance = float(invoice.balance_due)
-        if balance <= 0:
+    for invoice in invoices_qs.order_by("term__name", "id"):
+        balance_amount = _invoice_balance(invoice)
+        if balance_amount <= 0:
             continue
         key = invoice.term_id
         term_data[key]["term_id"] = invoice.term_id
         term_data[key]["term_name"] = invoice.term.name if invoice.term else "N/A"
-        term_data[key]["total_outstanding"] += balance
+        term_data[key]["total_outstanding"] += float(balance_amount)
         term_data[key]["invoice_count"] += 1
-
-    student_counts = defaultdict(set)
-    for invoice in invoices_qs.select_related("term"):
-        if float(invoice.balance_due) > 0:
-            student_counts[invoice.term_id].add(invoice.student_id)
+        student_counts[invoice.term_id].add(invoice.student_id)
 
     for term_id, students in student_counts.items():
         term_data[term_id]["student_count"] = len(students)

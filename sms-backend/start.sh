@@ -44,7 +44,7 @@ connection.set_schema_to_public()
 print('  Done.')
 " 2>&1 | grep -v "^$" || true
 
-echo "[sms] Repairing diverged migration state (0058: photo/bio; 0059: wallet/ledger; lib/0004: digital_url)..."
+echo "[sms] Repairing diverged migration state (0058: photo/bio; 0059: wallet/ledger; 0065: tenant secrets; lib/0004: digital_url)..."
 # Step 1: per-schema detection of drift for known migrations.
 #         Each schema is wrapped in its own try/except so a failure on one
 #         schema never prevents the others from being processed.
@@ -103,6 +103,26 @@ for schema in schemas:
                         repaired.append(schema)
 
             # ── library/0004: check digital_url on library_libraryresource ─
+            cur.execute(
+                \"SELECT 1 FROM information_schema.tables \"
+                \"WHERE table_schema=%s AND table_name='school_tenantsecret' LIMIT 1\",
+                [schema],
+            )
+            tenantsecret_exists = cur.fetchone() is not None
+            if not tenantsecret_exists:
+                cur.execute(
+                    \"SELECT 1 FROM django_migrations WHERE app='school' AND name='0065_tenantsecret_encrypted_store' LIMIT 1\"
+                )
+                if cur.fetchone():
+                    cur.execute(
+                        \"DELETE FROM django_migrations WHERE app='school' AND name='0065_tenantsecret_encrypted_store'\"
+                    )
+                    print(f'  [repair-0065] {schema}: cleared stale 0065 record (tenant secret table missing)')
+                else:
+                    print(f'  [repair-0065] {schema}: tenant secret table missing (migration will be re-applied)')
+                if schema not in repaired:
+                    repaired.append(schema)
+
             cur.execute(
                 \"SELECT 1 FROM information_schema.columns \"
                 \"WHERE table_schema=%s AND table_name='library_libraryresource' \"
@@ -178,8 +198,8 @@ print('  [sql-net] Done.')
 echo "[sms] Collecting static files..."
 python3.11 manage.py collectstatic --noinput 2>/dev/null || true
 
-echo "[sms] Starting server on port ${PORT:-8080}..."
-python3.11 manage.py runserver 0.0.0.0:${PORT:-8080} --noreload &
+echo "[sms] Starting ASGI server on port ${PORT:-8080}..."
+python3.11 -m daphne -b 0.0.0.0 -p ${PORT:-8080} config.asgi:application &
 SERVER_PID=$!
 
 echo "[sms] Server started (PID: $SERVER_PID)"
@@ -358,6 +378,39 @@ echo "[sms] Starting M-Pesa reconciliation loop (every 15 minutes)..."
   while true; do
     sleep 900  # 15 minutes
     python3.11 manage.py reconcile_mpesa_pending --all-tenants 2>&1 || true
+  done
+) &
+
+echo "[sms] Queueing due communication email campaigns at startup..."
+python3.11 manage.py dispatch_due_email_campaigns --all-tenants 2>&1 || echo "[sms] Communication due-campaign enqueue skipped"
+
+echo "[sms] Processing queued communication dispatch work at startup..."
+python3.11 manage.py process_communication_dispatch_queue --all-tenants 2>&1 || echo "[sms] Communication dispatch worker startup pass skipped"
+
+echo "[sms] Evaluating communication alert rules at startup..."
+python3.11 manage.py evaluate_communication_alert_rules --all-tenants 2>&1 || echo "[sms] Communication alert-rule evaluation startup pass skipped"
+
+echo "[sms] Starting communication due-campaign loop (every 60 seconds)..."
+(
+  while true; do
+    sleep 60
+    python3.11 manage.py dispatch_due_email_campaigns --all-tenants 2>&1 || true
+  done
+) &
+
+echo "[sms] Starting communication dispatch worker loop (every 30 seconds)..."
+(
+  while true; do
+    sleep 30
+    python3.11 manage.py process_communication_dispatch_queue --all-tenants 2>&1 || true
+  done
+) &
+
+echo "[sms] Starting communication alert-rule loop (every 120 seconds)..."
+(
+  while true; do
+    sleep 120
+    python3.11 manage.py evaluate_communication_alert_rules --all-tenants 2>&1 || true
   done
 ) &
 

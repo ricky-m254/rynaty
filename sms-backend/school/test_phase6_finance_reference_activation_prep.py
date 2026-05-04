@@ -8,12 +8,14 @@ from clients.models import Domain, Tenant
 from finance.presentation.views import (
     FinanceClassRefView as StagedFinanceClassRefView,
     FinanceEnrollmentRefView as StagedFinanceEnrollmentRefView,
+    FinanceStudentDetailView as StagedFinanceStudentDetailView,
     FinanceStudentRefView as StagedFinanceStudentRefView,
 )
 from school.models import Enrollment, Module, Role, Student, UserModuleAssignment, UserProfile
 from school.views import (
     FinanceClassRefView as LiveFinanceClassRefView,
     FinanceEnrollmentRefView as LiveFinanceEnrollmentRefView,
+    FinanceStudentDetailView as LiveFinanceStudentDetailView,
     FinanceStudentRefView as LiveFinanceStudentRefView,
 )
 
@@ -135,10 +137,10 @@ class FinanceReferenceActivationPrepTests(TenantTestBase):
             is_active=False,
         )
 
-    def _invoke(self, view_class, path):
+    def _invoke(self, view_class, path, **kwargs):
         request = self.factory.get(path)
         force_authenticate(request, user=self.user)
-        return view_class.as_view()(request)
+        return view_class.as_view()(request, **kwargs)
 
     def test_staged_finance_student_ref_matches_live_contract(self):
         path = "/api/finance/ref/students/?limit=1&offset=0&order_by=last_name&order_dir=desc"
@@ -169,5 +171,14 @@ class FinanceReferenceActivationPrepTests(TenantTestBase):
         live_response = self._invoke(LiveFinanceClassRefView, path)
         staged_response = self._invoke(StagedFinanceClassRefView, path)
 
+        self.assertEqual(staged_response.status_code, live_response.status_code)
+        self.assertEqual(staged_response.data, live_response.data)
+
+    def test_staged_finance_student_detail_matches_live_contract(self):
+        path = f"/api/finance/students/{self.student_one.id}/"
+        live_response = self._invoke(LiveFinanceStudentDetailView, path, student_id=self.student_one.id)
+        staged_response = self._invoke(StagedFinanceStudentDetailView, path, student_id=self.student_one.id)
+
+        self.assertEqual(live_response.status_code, 200)
         self.assertEqual(staged_response.status_code, live_response.status_code)
         self.assertEqual(staged_response.data, live_response.data)

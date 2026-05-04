@@ -1,6 +1,6 @@
 from decimal import Decimal, InvalidOperation
 
-from django.db import models
+from django.db import models, transaction
 
 from school.models import (
     Enrollment,
@@ -100,61 +100,65 @@ def assign_fee_structure_to_class(*, class_id, fee_structure_id, term_id=None, d
     if not fee_structure_id:
         raise ValueError("fee_structure_id is required.")
 
-    school_class = SchoolClass.objects.filter(id=class_id).first()
-    if school_class is None:
-        raise LookupError("Class not found.")
-
-    fee_structure = FeeStructure.objects.filter(id=fee_structure_id).first()
-    if fee_structure is None:
-        raise LookupError("Fee structure not found.")
-
     try:
         discount = Decimal(str(discount_amount or 0))
     except (InvalidOperation, TypeError, ValueError):
         raise ValueError("discount_amount must be a number.")
 
-    enrollments = Enrollment.objects.filter(school_class_id=school_class.id, is_active=True)
-    if term_id:
-        enrollments = enrollments.filter(term_id=term_id)
+    with transaction.atomic():
+        school_class = SchoolClass.objects.select_for_update().filter(id=class_id).first()
+        if school_class is None:
+            raise LookupError("Class not found.")
 
-    student_ids = list(enrollments.values_list("student_id", flat=True).distinct())
-    if not student_ids:
-        return {
-            "created": 0,
-            "updated": 0,
-            "student_count": 0,
-            "message": "No enrolled students found in this class/term combination.",
-        }
+        fee_structure = FeeStructure.objects.select_for_update().filter(id=fee_structure_id).first()
+        if fee_structure is None:
+            raise LookupError("Fee structure not found.")
 
-    created_count = 0
-    updated_count = 0
-    for student_id in student_ids:
-        existing = FeeAssignment.objects.filter(
-            student_id=student_id,
-            fee_structure=fee_structure,
+        enrollments = Enrollment.objects.select_for_update().filter(
+            school_class_id=school_class.id,
             is_active=True,
-        ).first()
-        if existing:
-            existing.discount_amount = discount
-            existing.save(update_fields=["discount_amount"])
-            updated_count += 1
-        else:
-            FeeAssignment.objects.create(
+        )
+        if term_id:
+            enrollments = enrollments.filter(term_id=term_id)
+
+        student_ids = list(dict.fromkeys(enrollments.values_list("student_id", flat=True)))
+        if not student_ids:
+            return {
+                "created": 0,
+                "updated": 0,
+                "student_count": 0,
+                "message": "No enrolled students found in this class/term combination.",
+            }
+
+        created_count = 0
+        updated_count = 0
+        for student_id in student_ids:
+            existing = FeeAssignment.objects.select_for_update().filter(
                 student_id=student_id,
                 fee_structure=fee_structure,
-                discount_amount=discount,
                 is_active=True,
-            )
-            created_count += 1
+            ).first()
+            if existing:
+                existing.discount_amount = discount
+                existing.save(update_fields=["discount_amount"])
+                updated_count += 1
+            else:
+                FeeAssignment.objects.create(
+                    student_id=student_id,
+                    fee_structure=fee_structure,
+                    discount_amount=discount,
+                    is_active=True,
+                )
+                created_count += 1
 
-    return {
-        "created": created_count,
-        "updated": updated_count,
-        "student_count": len(student_ids),
-        "class_name": school_class.display_name,
-        "fee_structure": fee_structure.name,
-        "message": f'Assigned "{fee_structure.name}" to {len(student_ids)} students in {school_class.display_name}.',
-    }
+        return {
+            "created": created_count,
+            "updated": updated_count,
+            "student_count": len(student_ids),
+            "class_name": school_class.display_name,
+            "fee_structure": fee_structure.name,
+            "message": f'Assigned "{fee_structure.name}" to {len(student_ids)} students in {school_class.display_name}.',
+        }
 
 
 def assign_optional_charge_to_class(*, class_id, optional_charge_id, term_id=None):
@@ -163,42 +167,46 @@ def assign_optional_charge_to_class(*, class_id, optional_charge_id, term_id=Non
     if not optional_charge_id:
         raise ValueError("optional_charge_id is required.")
 
-    school_class = SchoolClass.objects.filter(id=class_id).first()
-    if school_class is None:
-        raise LookupError("Class not found.")
+    with transaction.atomic():
+        school_class = SchoolClass.objects.select_for_update().filter(id=class_id).first()
+        if school_class is None:
+            raise LookupError("Class not found.")
 
-    optional_charge = OptionalCharge.objects.filter(id=optional_charge_id).first()
-    if optional_charge is None:
-        raise LookupError("Optional charge not found.")
+        optional_charge = OptionalCharge.objects.select_for_update().filter(id=optional_charge_id).first()
+        if optional_charge is None:
+            raise LookupError("Optional charge not found.")
 
-    enrollments = Enrollment.objects.filter(school_class_id=school_class.id, is_active=True)
-    if term_id:
-        enrollments = enrollments.filter(term_id=term_id)
-
-    student_ids = list(enrollments.values_list("student_id", flat=True).distinct())
-    if not student_ids:
-        return {
-            "created": 0,
-            "skipped": 0,
-            "student_count": 0,
-            "message": "No enrolled students found in this class.",
-        }
-
-    created_count = 0
-    skipped_count = 0
-    for student_id in student_ids:
-        _, created = StudentOptionalCharge.objects.get_or_create(
-            student_id=student_id,
-            optional_charge=optional_charge,
+        enrollments = Enrollment.objects.select_for_update().filter(
+            school_class_id=school_class.id,
+            is_active=True,
         )
-        if created:
-            created_count += 1
-        else:
-            skipped_count += 1
+        if term_id:
+            enrollments = enrollments.filter(term_id=term_id)
 
-    return {
-        "created": created_count,
-        "skipped": skipped_count,
-        "student_count": len(student_ids),
-        "message": f"Assigned to {created_count} new students ({skipped_count} already had this charge).",
-    }
+        student_ids = list(dict.fromkeys(enrollments.values_list("student_id", flat=True)))
+        if not student_ids:
+            return {
+                "created": 0,
+                "skipped": 0,
+                "student_count": 0,
+                "message": "No enrolled students found in this class.",
+            }
+
+        created_count = 0
+        skipped_count = 0
+        for student_id in student_ids:
+            _, created = StudentOptionalCharge.objects.select_for_update().get_or_create(
+                student_id=student_id,
+                optional_charge=optional_charge,
+            )
+            if created:
+                created_count += 1
+            else:
+                skipped_count += 1
+
+        return {
+            "created": created_count,
+            "skipped": skipped_count,
+            "student_count": len(student_ids),
+            "message": f"Assigned to {created_count} new students ({skipped_count} already had this charge).",
+        }

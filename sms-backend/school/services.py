@@ -1294,6 +1294,55 @@ class FinanceService:
         return entry
 
     @staticmethod
+    def _reverse_journal_entry(original_entry, *, entry_date, memo, source_type, source_id=None, posted_by=None, entry_key=None):
+        if original_entry is None:
+            return None
+
+        lines = []
+        for line in original_entry.lines.select_related('account', 'vote_head').order_by('id'):
+            lines.append(
+                {
+                    "account": line.account,
+                    "vote_head": line.vote_head,
+                    "debit": line.credit,
+                    "credit": line.debit,
+                    "description": f"Reversal of {line.description or original_entry.memo}",
+                }
+            )
+
+        return FinanceService._post_journal(
+            entry_date=entry_date,
+            memo=memo,
+            lines=lines,
+            source_type=source_type,
+            source_id=source_id,
+            posted_by=posted_by,
+            entry_key=entry_key,
+        )
+
+    @staticmethod
+    def _post_payment_journal(payment):
+        amount = Decimal(str(payment.amount or 0))
+        if amount <= Decimal("0.00"):
+            return None
+
+        accounts = FinanceService._get_default_accounts()
+        payment_entry_date = payment.payment_date.date() if getattr(payment, "payment_date", None) else timezone.now().date()
+        payment_label = payment.receipt_number or payment.id
+        return FinanceService._post_journal(
+            entry_date=payment_entry_date,
+            memo=f"Payment {payment_label} - {payment.payment_method}",
+            lines=[
+                {"account": accounts["1000"], "debit": amount, "credit": 0, "description": "Cash received"},
+                {"account": accounts["1100"], "debit": 0, "credit": amount, "description": "Accounts Receivable cleared"},
+            ],
+            source_type="Payment",
+            source_id=payment.id,
+            posted_by=None,
+            entry_key=f"payment:{payment.id}",
+        )
+
+    @staticmethod
     def recompute_cashbook_running_balances(book_type):
         entries = list(CashbookEntry.objects.filter(book_type=book_type).order_by('entry_date', 'created_at'))
         balance = Decimal('0.00')
@@ -1514,6 +1563,7 @@ class FinanceService:
 
         if created:
             payment._was_created = True
+            FinanceService._post_payment_journal(payment)
             payment_recorded.send(
                 sender=FinanceService,
                 payment_id=payment.id,
@@ -1850,7 +1900,20 @@ class FinanceService:
         if not payment.is_active:
             raise ValueError("Payment is already inactive.")
 
-        affected_invoices = [allocation.invoice for allocation in payment.allocations.select_related('invoice')]
+        allocations = list(payment.allocations.select_related('invoice'))
+        affected_invoices = [allocation.invoice for allocation in allocations]
+        allocation_ids = [allocation.id for allocation in allocations]
+        payment_journal = JournalEntry.objects.filter(
+            source_type="Payment",
+            source_id=payment.id,
+        ).first()
+        allocation_journals = {
+            entry.source_id: entry
+            for entry in JournalEntry.objects.filter(
+                source_type="PaymentAllocation",
+                source_id__in=allocation_ids,
+            ).prefetch_related('lines__account', 'lines__vote_head')
+        }
         payment.allocations.all().delete()
         payment.is_active = False
         payment.reversed_at = timezone.now()
@@ -1863,6 +1926,28 @@ class FinanceService:
         reversal_request.reviewed_at = timezone.now()
         reversal_request.review_notes = review_notes
         reversal_request.save(update_fields=['status', 'reviewed_by', 'reviewed_at', 'review_notes'])
+
+        reversal_entry_date = timezone.now().date()
+        payment_label = payment.receipt_number or payment.reference_number or str(payment.id)
+        FinanceService._reverse_journal_entry(
+            payment_journal,
+            entry_date=reversal_entry_date,
+            memo=f"Reversal of payment {payment_label}",
+            source_type="PaymentReversal",
+            source_id=reversal_request.id,
+            posted_by=reviewed_by,
+            entry_key=f"payment-reversal:{reversal_request.id}:payment:{payment.id}",
+        )
+        for allocation in allocations:
+            FinanceService._reverse_journal_entry(
+                allocation_journals.get(allocation.id),
+                entry_date=reversal_entry_date,
+                memo=f"Reversal of allocation {allocation.id} for payment {payment_label}",
+                source_type="PaymentReversal",
+                source_id=reversal_request.id,
+                posted_by=reviewed_by,
+                entry_key=f"payment-reversal:{reversal_request.id}:allocation:{allocation.id}",
+            )
 
         for invoice in affected_invoices:
             FinanceService.sync_invoice_status(invoice)

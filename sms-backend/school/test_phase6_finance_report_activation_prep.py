@@ -16,8 +16,12 @@ from finance.presentation.views import (
     FinanceBudgetVarianceReportView as StagedFinanceBudgetVarianceReportView,
     FinanceClassBalancesReportView as StagedFinanceClassBalancesReportView,
     FinanceInstallmentAgingView as StagedFinanceInstallmentAgingView,
+    FinanceOverdueAccountsCsvExportView as StagedFinanceOverdueAccountsCsvExportView,
     FinanceOverdueAccountsView as StagedFinanceOverdueAccountsView,
+    FinanceReceivablesAgingCsvExportView as StagedFinanceReceivablesAgingCsvExportView,
     FinanceReceivablesAgingView as StagedFinanceReceivablesAgingView,
+    FinanceSummaryCsvExportView as StagedFinanceSummaryCsvExportView,
+    FinanceSummaryPdfExportView as StagedFinanceSummaryPdfExportView,
     FinanceVoteHeadAllocationReportView as StagedFinanceVoteHeadAllocationReportView,
     FinanceVoteHeadBudgetReportView as StagedFinanceVoteHeadBudgetReportView,
     FinancialSummaryView as StagedFinancialSummaryView,
@@ -47,8 +51,12 @@ from school.views import (
     FinanceBudgetVarianceReportView as LiveFinanceBudgetVarianceReportView,
     FinanceClassBalancesReportView as LiveFinanceClassBalancesReportView,
     FinanceInstallmentAgingView as LiveFinanceInstallmentAgingView,
+    FinanceOverdueAccountsCsvExportView as LiveFinanceOverdueAccountsCsvExportView,
     FinanceOverdueAccountsView as LiveFinanceOverdueAccountsView,
+    FinanceReceivablesAgingCsvExportView as LiveFinanceReceivablesAgingCsvExportView,
     FinanceReceivablesAgingView as LiveFinanceReceivablesAgingView,
+    FinanceSummaryCsvExportView as LiveFinanceSummaryCsvExportView,
+    FinanceSummaryPdfExportView as LiveFinanceSummaryPdfExportView,
     FinanceVoteHeadAllocationReportView as LiveFinanceVoteHeadAllocationReportView,
     FinancialSummaryView as LiveFinancialSummaryView,
     VoteHeadBudgetReportView as LiveFinanceVoteHeadBudgetReportView,
@@ -374,6 +382,21 @@ class FinanceReportActivationPrepTests(TenantTestBase):
         force_authenticate(request, user=self.user)
         return view_class.as_view()(request)
 
+    def _assert_csv_contract_matches(self, live_response, staged_response):
+        self.assertEqual(staged_response.status_code, live_response.status_code)
+        self.assertEqual(staged_response.get("Content-Type"), live_response.get("Content-Type"))
+        self.assertEqual(staged_response.get("Content-Disposition"), live_response.get("Content-Disposition"))
+        self.assertEqual(staged_response.content, live_response.content)
+
+    def _assert_pdf_contract_matches(self, live_response, staged_response):
+        self.assertEqual(staged_response.status_code, live_response.status_code)
+        self.assertEqual(staged_response.get("Content-Type"), live_response.get("Content-Type"))
+        self.assertEqual(staged_response.get("Content-Disposition"), live_response.get("Content-Disposition"))
+        self.assertGreater(len(live_response.content), 0)
+        self.assertGreater(len(staged_response.content), 0)
+        self.assertTrue(live_response.content.startswith(b"%PDF"))
+        self.assertTrue(staged_response.content.startswith(b"%PDF"))
+
     def test_staged_finance_receivables_aging_matches_live_contract(self):
         path = "/api/finance/reports/receivables-aging/"
         live_response = self._invoke(LiveFinanceReceivablesAgingView, path)
@@ -461,6 +484,34 @@ class FinanceReportActivationPrepTests(TenantTestBase):
 
         self.assertEqual(staged_response.status_code, live_response.status_code)
         self.assertEqual(staged_response.data, live_response.data)
+
+    def test_staged_finance_receivables_aging_csv_matches_live_contract(self):
+        path = "/api/finance/reports/receivables-aging/export/csv/"
+        live_response = self._invoke(LiveFinanceReceivablesAgingCsvExportView, path)
+        staged_response = self._invoke(StagedFinanceReceivablesAgingCsvExportView, path)
+
+        self._assert_csv_contract_matches(live_response, staged_response)
+
+    def test_staged_finance_overdue_accounts_csv_matches_live_contract(self):
+        path = "/api/finance/reports/overdue-accounts/export/csv/"
+        live_response = self._invoke(LiveFinanceOverdueAccountsCsvExportView, path)
+        staged_response = self._invoke(StagedFinanceOverdueAccountsCsvExportView, path)
+
+        self._assert_csv_contract_matches(live_response, staged_response)
+
+    def test_staged_finance_summary_csv_matches_live_contract(self):
+        path = "/api/finance/reports/summary/export/csv/"
+        live_response = self._invoke(LiveFinanceSummaryCsvExportView, path)
+        staged_response = self._invoke(StagedFinanceSummaryCsvExportView, path)
+
+        self._assert_csv_contract_matches(live_response, staged_response)
+
+    def test_staged_finance_summary_pdf_matches_live_contract(self):
+        path = "/api/finance/reports/summary/export/pdf/"
+        live_response = self._invoke(LiveFinanceSummaryPdfExportView, path)
+        staged_response = self._invoke(StagedFinanceSummaryPdfExportView, path)
+
+        self._assert_pdf_contract_matches(live_response, staged_response)
 
     def test_staged_finance_vote_head_allocation_matches_live_contract(self):
         path = "/api/finance/reports/vote-head-allocation/"

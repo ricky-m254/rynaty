@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from django.db import models
+from django.db import models, transaction
 from django.db.models import Sum
 
 from school.models import (
@@ -205,29 +205,55 @@ def journal_get_or_create_account(code, name, account_type):
 
 
 def auto_post_journal(entry_key, entry_date, memo, source_type, source_id, lines):
-    try:
-        if JournalEntry.objects.filter(entry_key=entry_key).exists():
-            return
-        if any(account is None for account, _, _, _ in lines):
-            return
+    if any(account is None for account, _, _, _ in lines):
+        raise ValueError("Cannot auto-post journal without resolved chart of accounts.")
 
-        entry = JournalEntry.objects.create(
-            entry_date=entry_date,
-            memo=memo,
-            source_type=source_type,
-            source_id=source_id,
-            entry_key=entry_key,
-        )
-        for account, debit, credit, description in lines:
-            JournalLine.objects.create(
-                entry=entry,
-                account=account,
-                debit=debit,
-                credit=credit,
-                description=description,
+    normalized_lines = []
+    debit_total = Decimal("0.00")
+    credit_total = Decimal("0.00")
+    for account, debit, credit, description in lines:
+        debit_amount = Decimal(str(debit or 0))
+        credit_amount = Decimal(str(credit or 0))
+        normalized_lines.append((account, debit_amount, credit_amount, description))
+        debit_total += debit_amount
+        credit_total += credit_amount
+
+    if debit_total != credit_total:
+        raise ValueError("Journal entry must balance (debit == credit).")
+
+    try:
+        with transaction.atomic():
+            entry, created = JournalEntry.objects.get_or_create(
+                entry_key=entry_key,
+                defaults={
+                    "entry_date": entry_date,
+                    "memo": memo,
+                    "source_type": source_type,
+                    "source_id": source_id,
+                },
             )
+            if not created:
+                return entry
+
+            for account, debit_amount, credit_amount, description in normalized_lines:
+                JournalLine.objects.create(
+                    entry=entry,
+                    account=account,
+                    debit=debit_amount,
+                    credit=credit_amount,
+                    description=description,
+                )
+            return entry
     except Exception:
-        logger.warning("Caught and logged", exc_info=True)
+        logger.exception(
+            "Auto journal posting failed",
+            extra={
+                "entry_key": entry_key,
+                "source_type": source_type,
+                "source_id": source_id,
+            },
+        )
+        raise
 
 
 def resolve_tenant_pdf_meta(request):
