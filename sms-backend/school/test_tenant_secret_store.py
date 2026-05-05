@@ -1,10 +1,16 @@
+from unittest.mock import patch
+
+from cryptography.fernet import InvalidToken
 from django.contrib.auth import get_user_model
+from django.db import DatabaseError
 from django.test import TestCase
 from django_tenants.utils import schema_context
 from rest_framework.test import APIRequestFactory, force_authenticate
 
 from clients.models import Domain, Tenant
 from school.models import Module, Role, SchoolProfile, TenantSecret, TenantSettings, UserModuleAssignment, UserProfile
+from school.mpesa import MpesaError, _get_credentials
+from school.tenant_secrets import get_tenant_secret, sanitize_tenant_setting_value_for_storage, set_tenant_secret
 from school.views import SchoolProfileView, TenantSettingDeleteView, TenantSettingsView
 
 
@@ -111,3 +117,69 @@ class TenantSecretStoreTests(TenantTestBase):
 
         self.assertEqual(delete_response.status_code, 200)
         self.assertFalse(TenantSecret.objects.filter(key__startswith="tenant_setting:integrations.stripe:").exists())
+
+    def test_sanitize_tenant_setting_keeps_inline_secrets_when_secret_store_write_fails(self):
+        payload = {
+            "consumer_key": "ck_demo",
+            "consumer_secret": "cs_demo",
+            "shortcode": "174379",
+            "passkey": "pk_demo",
+            "environment": "sandbox",
+        }
+
+        with patch("school.tenant_secrets.set_tenant_secret", side_effect=DatabaseError("tenant secret table unavailable")):
+            sanitized = sanitize_tenant_setting_value_for_storage("integrations.mpesa", payload, updated_by=self.user)
+
+        self.assertEqual(sanitized["consumer_key"], "ck_demo")
+        self.assertEqual(sanitized["consumer_secret"], "cs_demo")
+        self.assertEqual(sanitized["passkey"], "pk_demo")
+        self.assertEqual(sanitized["shortcode"], "174379")
+        self.assertEqual(sanitized["environment"], "sandbox")
+
+    def test_get_tenant_secret_returns_default_when_decryption_fails(self):
+        set_tenant_secret(
+            "tenant_setting:integrations.mpesa:consumer_key",
+            "ck_live_demo",
+            updated_by=self.user,
+            description="mpesa consumer key",
+        )
+
+        with patch("school.tenant_secrets.decrypt_secret", side_effect=InvalidToken()):
+            value = get_tenant_secret(
+                "tenant_setting:integrations.mpesa:consumer_key",
+                default="fallback",
+            )
+
+        self.assertEqual(value, "fallback")
+
+    def test_mpesa_credentials_report_keyring_error_when_secret_rows_exist_but_are_unreadable(self):
+        TenantSettings.objects.create(
+            key="integrations.mpesa",
+            value={"shortcode": "174379", "environment": "production"},
+            category="integrations",
+        )
+        set_tenant_secret(
+            "tenant_setting:integrations.mpesa:consumer_key",
+            "ck_prod_demo",
+            updated_by=self.user,
+            description="mpesa consumer key",
+        )
+        set_tenant_secret(
+            "tenant_setting:integrations.mpesa:consumer_secret",
+            "cs_prod_demo",
+            updated_by=self.user,
+            description="mpesa consumer secret",
+        )
+        set_tenant_secret(
+            "tenant_setting:integrations.mpesa:passkey",
+            "pk_prod_demo",
+            updated_by=self.user,
+            description="mpesa passkey",
+        )
+
+        with patch("school.tenant_secrets.decrypt_secret", side_effect=InvalidToken()):
+            with self.assertRaises(MpesaError) as exc:
+                _get_credentials()
+
+        self.assertIn("could not be decrypted", str(exc.exception))
+        self.assertIn("DJANGO_TENANT_SECRET_KEYS", str(exc.exception))

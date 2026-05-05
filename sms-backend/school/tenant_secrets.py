@@ -7,6 +7,7 @@ from functools import lru_cache
 
 from cryptography.fernet import Fernet, InvalidToken
 from django.conf import settings
+from django.db import DatabaseError
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +111,15 @@ def _secret_row_model():
     return TenantSecret
 
 
+def _log_secret_store_warning(action: str, secret_key: str, exc: Exception) -> None:
+    logger.warning(
+        "Tenant secret store %s failed for %s: %s",
+        action,
+        secret_key,
+        exc,
+    )
+
+
 def log_tenant_secret_audit(*, action: str, object_id: str, details: str, user=None, model_name: str = "TenantSecret") -> bool:
     from .models import AuditLog
 
@@ -193,22 +203,46 @@ def set_tenant_secret(secret_key: str, raw_value, *, updated_by=None, descriptio
     return secret
 
 
+def tenant_secret_exists(secret_key: str) -> bool:
+    TenantSecret = _secret_row_model()
+    try:
+        return TenantSecret.objects.filter(key=secret_key).exists()
+    except DatabaseError as exc:
+        _log_secret_store_warning("exists", secret_key, exc)
+        return False
+
+
 def get_tenant_secret(secret_key: str, default=None):
     TenantSecret = _secret_row_model()
-    secret = TenantSecret.objects.filter(key=secret_key).first()
+    try:
+        secret = TenantSecret.objects.filter(key=secret_key).first()
+    except DatabaseError as exc:
+        _log_secret_store_warning("read", secret_key, exc)
+        return default
     if not secret or not secret.ciphertext:
         return default
-    return decrypt_secret(secret.ciphertext, secret.key_version)
+    try:
+        return decrypt_secret(secret.ciphertext, secret.key_version)
+    except InvalidToken as exc:
+        _log_secret_store_warning("decrypt", secret_key, exc)
+        return default
 
 
 def delete_tenant_secret(secret_key: str):
     TenantSecret = _secret_row_model()
-    TenantSecret.objects.filter(key=secret_key).delete()
+    try:
+        TenantSecret.objects.filter(key=secret_key).delete()
+    except DatabaseError as exc:
+        _log_secret_store_warning("delete", secret_key, exc)
 
 
 def delete_tenant_setting_secrets(setting_key: str):
     TenantSecret = _secret_row_model()
-    TenantSecret.objects.filter(key__startswith=f"tenant_setting:{setting_key}:").delete()
+    prefix = f"tenant_setting:{setting_key}:"
+    try:
+        TenantSecret.objects.filter(key__startswith=prefix).delete()
+    except DatabaseError as exc:
+        _log_secret_store_warning("delete-prefix", prefix, exc)
 
 
 def rotate_tenant_secret(secret):
@@ -280,6 +314,38 @@ def mask_tenant_setting_value_for_response(setting_key: str, value):
     return masked
 
 
+def _store_tenant_setting_secret_or_keep_inline(
+    *,
+    sanitized: dict,
+    setting_key: str,
+    field_name: str,
+    updated_by=None,
+) -> None:
+    raw_value = sanitized.get(field_name)
+    if field_name not in sanitized:
+        return
+    if not _stringify_secret(raw_value):
+        sanitized.pop(field_name, None)
+        return
+
+    try:
+        set_tenant_secret(
+            tenant_setting_secret_key(setting_key, field_name),
+            raw_value,
+            updated_by=updated_by,
+            description=f"{setting_key}.{field_name}",
+        )
+    except DatabaseError as exc:
+        _log_secret_store_warning(
+            "write-inline-fallback",
+            tenant_setting_secret_key(setting_key, field_name),
+            exc,
+        )
+        return
+
+    sanitized.pop(field_name, None)
+
+
 def sanitize_tenant_setting_value_for_storage(setting_key: str, value, *, updated_by=None):
     if not isinstance(value, dict):
         return value
@@ -294,27 +360,19 @@ def sanitize_tenant_setting_value_for_storage(setting_key: str, value, *, update
 
     if explicit_fields:
         for field_name in explicit_fields:
-            if field_name not in sanitized:
-                continue
-            raw_value = sanitized.pop(field_name)
-            if not _stringify_secret(raw_value):
-                continue
-            set_tenant_secret(
-                tenant_setting_secret_key(setting_key, field_name),
-                raw_value,
+            _store_tenant_setting_secret_or_keep_inline(
+                sanitized=sanitized,
+                setting_key=setting_key,
+                field_name=field_name,
                 updated_by=updated_by,
-                description=f"{setting_key}.{field_name}",
             )
 
     for field_name in discovered_fields - explicit_fields:
-        raw_value = sanitized.pop(field_name)
-        if not _stringify_secret(raw_value):
-            continue
-        set_tenant_secret(
-            tenant_setting_secret_key(setting_key, field_name),
-            raw_value,
+        _store_tenant_setting_secret_or_keep_inline(
+            sanitized=sanitized,
+            setting_key=setting_key,
+            field_name=field_name,
             updated_by=updated_by,
-            description=f"{setting_key}.{field_name}",
         )
 
     return sanitized
@@ -334,14 +392,22 @@ def store_school_profile_secrets(profile, secret_values: dict, *, updated_by=Non
             continue
         if raw_value is None:
             continue
-        set_tenant_secret(
-            school_profile_secret_key(field_name),
-            raw_value,
-            updated_by=updated_by,
-            description=f"SchoolProfile.{field_name}",
-        )
-        if getattr(profile, field_name, ""):
-            setattr(profile, field_name, "")
+        secret_key = school_profile_secret_key(field_name)
+        stored_in_secret_table = True
+        try:
+            set_tenant_secret(
+                secret_key,
+                raw_value,
+                updated_by=updated_by,
+                description=f"SchoolProfile.{field_name}",
+            )
+        except DatabaseError as exc:
+            _log_secret_store_warning("write-inline-fallback", secret_key, exc)
+            stored_in_secret_table = False
+
+        target_value = "" if stored_in_secret_table else _stringify_secret(raw_value)
+        if getattr(profile, field_name, "") != target_value:
+            setattr(profile, field_name, target_value)
             changed.append(field_name)
     if changed:
         profile.save(update_fields=changed + ["updated_at"])

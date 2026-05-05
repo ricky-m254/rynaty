@@ -40,7 +40,11 @@ def _get_credentials():
     Raises MpesaError if credentials are missing or disabled.
     """
     from .models import TenantSettings
-    from .tenant_secrets import merge_tenant_setting_secrets
+    from .tenant_secrets import (
+        merge_tenant_setting_secrets,
+        tenant_secret_exists,
+        tenant_setting_secret_key,
+    )
 
     setting = TenantSettings.objects.filter(key="integrations.mpesa").first()
     raw_value = setting.value if setting else None
@@ -58,6 +62,19 @@ def _get_credentials():
     required = ["consumer_key", "consumer_secret", "shortcode", "passkey"]
     missing = [k for k in required if not cfg.get(k)]
     if missing:
+        unreadable_secret_rows = [
+            field_name
+            for field_name in missing
+            if tenant_secret_exists(
+                tenant_setting_secret_key("integrations.mpesa", field_name)
+            )
+        ]
+        if unreadable_secret_rows:
+            raise MpesaError(
+                "Stored M-Pesa credentials could not be decrypted in this deployment. "
+                "Verify DJANGO_TENANT_SECRET_KEYS includes the original encryption key, "
+                "or keep DJANGO_SECRET_KEY consistent across deployments before retrying."
+            )
         raise MpesaError(
             f"M-Pesa credentials incomplete. Missing: {', '.join(missing)}. "
             "Please update Settings → Integrations → M-Pesa."
