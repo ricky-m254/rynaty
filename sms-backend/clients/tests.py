@@ -3,6 +3,7 @@ from datetime import timedelta
 from unittest.mock import patch, MagicMock
 
 from django.core.management import call_command
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.utils import timezone
@@ -30,6 +31,8 @@ from clients.models import (
     PlatformSetting,
     RestoreJob,
     SupportTicket,
+    TenantDataImportFile,
+    TenantDataImportRequest,
     Tenant,
 )
 from clients.platform_views import (
@@ -50,6 +53,7 @@ from clients.platform_views import (
     PlatformSubscriptionInvoiceViewSet,
     PlatformSubscriptionPaymentViewSet,
     PlatformSubscriptionPaymentMpesaCallbackView,
+    PlatformTenantDataImportRequestViewSet,
 )
 from clients.platform_urls import platform_login_view
 
@@ -128,6 +132,99 @@ class PlatformStep4HardeningTests(TestCase):
         self.assertEqual(payload["role"], GlobalSuperAdmin.ROLE_OWNER)
         self.assertEqual(payload["redirect_to"], "/platform")
         self.assertEqual(payload["tenant_id"], "public")
+
+    def test_data_import_request_create_and_attach_files(self):
+        create_request = self.factory.post(
+            "/api/platform/data-import-requests/",
+            {
+                "tenant": self.tenant.id,
+                "import_profile": TenantDataImportRequest.PROFILE_LEGACY_WORKBOOK_BUNDLE,
+                "source_system": "Legacy workbook bundle",
+                "source_reference": "April handoff",
+                "files": [
+                    SimpleUploadedFile(
+                        "Transact 2026_Backup.xlsx",
+                        b"sheet-a",
+                        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )
+                ],
+            },
+            format="multipart",
+        )
+        force_authenticate(create_request, user=self.admin)
+        create_response = PlatformTenantDataImportRequestViewSet.as_view({"post": "create"})(create_request)
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(create_response.data["status"], TenantDataImportRequest.STATUS_READY)
+        self.assertEqual(create_response.data["files_total"], 1)
+        self.assertIn("Transact 2023_Backup.xlsx", create_response.data["missing_required_files"])
+        self.assertEqual(create_response.data["command_preview"], "")
+
+        request_id = create_response.data["id"]
+        attach_request = self.factory.post(
+            f"/api/platform/data-import-requests/{request_id}/attach-files/",
+            {
+                "files": [
+                    SimpleUploadedFile(
+                        "Transact 2023_Backup.xlsx",
+                        b"sheet-b",
+                        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )
+                ]
+            },
+            format="multipart",
+        )
+        force_authenticate(attach_request, user=self.admin)
+        attach_response = PlatformTenantDataImportRequestViewSet.as_view({"post": "attach_files"})(
+            attach_request,
+            pk=request_id,
+        )
+
+        self.assertEqual(attach_response.status_code, 200)
+        self.assertEqual(attach_response.data["files_total"], 2)
+        self.assertTrue(attach_response.data["automation_ready"])
+        self.assertIn("run_platform_data_import_request --request-id", attach_response.data["command_preview"])
+
+    def test_run_platform_data_import_request_marks_request_completed(self):
+        import_request = TenantDataImportRequest.objects.create(
+            tenant=self.tenant,
+            import_profile=TenantDataImportRequest.PROFILE_LEGACY_WORKBOOK_BUNDLE,
+            status=TenantDataImportRequest.STATUS_READY,
+            requested_by=self.admin,
+            archive_raw_to_media=True,
+        )
+        for file_name, payload in (
+            ("Transact 2023_Backup.xlsx", b"payload-2023"),
+            ("Transact 2026_Backup.xlsx", b"payload-2026"),
+        ):
+            TenantDataImportFile.objects.create(
+                import_request=import_request,
+                file=SimpleUploadedFile(
+                    file_name,
+                    payload,
+                    content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                ),
+                original_name=file_name,
+                content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                size_bytes=len(payload),
+                checksum_sha256="a" * 64,
+                uploaded_by=self.admin,
+            )
+
+        def fake_import_command(name, **kwargs):
+            self.assertEqual(name, "import_olom_legacy_data")
+            self.assertEqual(kwargs["schema_name"], self.tenant.schema_name)
+            self.assertTrue(kwargs["archive_raw"])
+            kwargs["stdout"].write(json.dumps({"students_created": 2, "payments_created": 4}))
+
+        with patch("clients.management.commands.run_platform_data_import_request.call_command") as mocked_call:
+            mocked_call.side_effect = fake_import_command
+            call_command("run_platform_data_import_request", request_id=import_request.id)
+
+        import_request.refresh_from_db()
+        self.assertEqual(import_request.status, TenantDataImportRequest.STATUS_COMPLETED)
+        self.assertEqual(import_request.result_payload["command"], "import_olom_legacy_data")
+        self.assertEqual(import_request.result_payload["import_summary"]["students_created"], 2)
 
     def test_support_ticket_forbids_closing_before_resolve(self):
         create_request = self.factory.post(

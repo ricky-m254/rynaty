@@ -1,0 +1,1304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ page_title }}</title>
+    <style>
+        :root {
+            color-scheme: dark;
+            --bg: #08111f;
+            --bg-soft: #0d1728;
+            --panel: #101b2e;
+            --panel-alt: #14213a;
+            --line: rgba(148, 163, 184, 0.18);
+            --line-strong: rgba(148, 163, 184, 0.28);
+            --text: #e5eefb;
+            --muted: #8ea2c6;
+            --accent: #22c55e;
+            --accent-soft: rgba(34, 197, 94, 0.16);
+            --warning: #f59e0b;
+            --warning-soft: rgba(245, 158, 11, 0.16);
+            --danger: #f87171;
+            --danger-soft: rgba(248, 113, 113, 0.16);
+            --ready: #38bdf8;
+            --ready-soft: rgba(56, 189, 248, 0.16);
+            --radius: 8px;
+            --shadow: 0 22px 50px rgba(2, 8, 23, 0.35);
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            background:
+                radial-gradient(circle at top left, rgba(34, 197, 94, 0.08), transparent 26%),
+                radial-gradient(circle at top right, rgba(56, 189, 248, 0.07), transparent 22%),
+                var(--bg);
+            color: var(--text);
+        }
+
+        a { color: inherit; }
+
+        .shell {
+            width: min(1480px, calc(100vw - 32px));
+            margin: 0 auto;
+            padding: 24px 0 48px;
+        }
+
+        .band {
+            background: linear-gradient(180deg, rgba(16, 27, 46, 0.98), rgba(12, 22, 38, 0.98));
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            margin-top: 18px;
+            overflow: hidden;
+        }
+
+        .band-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 18px 22px;
+            border-bottom: 1px solid var(--line);
+            background: rgba(8, 17, 31, 0.44);
+        }
+
+        .band-title {
+            display: grid;
+            gap: 4px;
+        }
+
+        .eyebrow {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.14em;
+            color: var(--muted);
+            font-weight: 700;
+        }
+
+        h1, h2, h3, p { margin: 0; }
+
+        h1 { font-size: 30px; line-height: 1.1; }
+        h2 { font-size: 18px; line-height: 1.2; }
+        h3 { font-size: 14px; line-height: 1.2; }
+
+        .subtle {
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        .hero {
+            display: grid;
+            gap: 18px;
+            padding: 24px 22px 22px;
+        }
+
+        .hero-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 20px;
+        }
+
+        .hero-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .chip-row {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .chip,
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            min-height: 34px;
+            padding: 0 12px;
+            border-radius: 999px;
+            border: 1px solid var(--line);
+            background: rgba(255, 255, 255, 0.03);
+            color: var(--text);
+            font-size: 12px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .pill strong {
+            font-size: 13px;
+        }
+
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            border-top: 1px solid var(--line);
+        }
+
+        .metric {
+            padding: 18px 22px;
+            border-right: 1px solid var(--line);
+            display: grid;
+            gap: 6px;
+        }
+
+        .metric:last-child { border-right: 0; }
+
+        .metric-value {
+            font-size: 24px;
+            font-weight: 700;
+            line-height: 1;
+        }
+
+        .metric-label {
+            font-size: 12px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .grid-two {
+            display: grid;
+            grid-template-columns: minmax(0, 1.2fr) minmax(360px, 0.8fr);
+            gap: 0;
+        }
+
+        .pane {
+            padding: 22px;
+            border-right: 1px solid var(--line);
+        }
+
+        .pane:last-child { border-right: 0; }
+
+        .stack {
+            display: grid;
+            gap: 18px;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+        }
+
+        .field {
+            display: grid;
+            gap: 8px;
+        }
+
+        .field.span-2 { grid-column: span 2; }
+
+        label {
+            font-size: 12px;
+            color: var(--muted);
+            font-weight: 600;
+            letter-spacing: 0.02em;
+        }
+
+        input[type="text"],
+        select,
+        textarea {
+            width: 100%;
+            min-height: 42px;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            background: rgba(8, 17, 31, 0.78);
+            color: var(--text);
+            padding: 10px 12px;
+            font: inherit;
+        }
+
+        textarea {
+            min-height: 110px;
+            resize: vertical;
+        }
+
+        input:focus,
+        select:focus,
+        textarea:focus {
+            outline: none;
+            border-color: rgba(56, 189, 248, 0.56);
+            box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.12);
+        }
+
+        .toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            min-height: 42px;
+            padding: 0 12px;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            background: rgba(8, 17, 31, 0.78);
+        }
+
+        .dropzone {
+            display: grid;
+            gap: 12px;
+            padding: 16px;
+            border: 1px dashed rgba(142, 162, 198, 0.4);
+            border-radius: 8px;
+            background: rgba(10, 18, 31, 0.72);
+        }
+
+        .dropzone.active {
+            border-color: rgba(34, 197, 94, 0.68);
+            background: rgba(34, 197, 94, 0.08);
+        }
+
+        .file-list {
+            display: grid;
+            gap: 8px;
+        }
+
+        .file-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            min-height: 40px;
+            padding: 0 12px;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.02);
+            font-size: 13px;
+        }
+
+        .file-row button,
+        .ghost-button,
+        .primary-button,
+        .warning-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 38px;
+            border-radius: 6px;
+            padding: 0 14px;
+            font: inherit;
+            font-weight: 700;
+            cursor: pointer;
+            transition: 140ms ease;
+            text-decoration: none;
+        }
+
+        .primary-button {
+            border: 1px solid rgba(34, 197, 94, 0.24);
+            background: linear-gradient(135deg, #22c55e, #16a34a);
+            color: #05220f;
+        }
+
+        .primary-button:hover { filter: brightness(1.05); }
+
+        .ghost-button {
+            border: 1px solid var(--line);
+            background: rgba(255, 255, 255, 0.03);
+            color: var(--text);
+        }
+
+        .ghost-button:hover { border-color: var(--line-strong); }
+
+        .warning-button {
+            border: 1px solid rgba(245, 158, 11, 0.28);
+            background: linear-gradient(135deg, #fbbf24, #f59e0b);
+            color: #301f02;
+        }
+
+        .actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 28px;
+            padding: 0 10px;
+            border-radius: 999px;
+            border: 1px solid transparent;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .status-DRAFT { background: rgba(148, 163, 184, 0.12); color: #cbd5e1; border-color: rgba(148, 163, 184, 0.22); }
+        .status-READY { background: var(--ready-soft); color: #7dd3fc; border-color: rgba(56, 189, 248, 0.28); }
+        .status-PROCESSING { background: var(--warning-soft); color: #fbbf24; border-color: rgba(245, 158, 11, 0.28); }
+        .status-COMPLETED { background: var(--accent-soft); color: #4ade80; border-color: rgba(34, 197, 94, 0.24); }
+        .status-FAILED { background: var(--danger-soft); color: #fca5a5; border-color: rgba(248, 113, 113, 0.28); }
+        .status-CANCELLED { background: rgba(71, 85, 105, 0.18); color: #cbd5e1; border-color: rgba(100, 116, 139, 0.28); }
+
+        .queue-toolbar {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 220px;
+            gap: 12px;
+            padding: 18px 22px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .table-wrap {
+            overflow: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 960px;
+        }
+
+        th,
+        td {
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--line);
+            text-align: left;
+            vertical-align: top;
+            font-size: 13px;
+        }
+
+        th {
+            color: var(--muted);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            background: rgba(8, 17, 31, 0.44);
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+
+        tbody tr {
+            cursor: pointer;
+            transition: background 120ms ease;
+        }
+
+        tbody tr:hover,
+        tbody tr.selected {
+            background: rgba(56, 189, 248, 0.08);
+        }
+
+        .detail-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+        }
+
+        .meta {
+            padding: 12px 14px;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.03);
+            display: grid;
+            gap: 6px;
+        }
+
+        .meta-label {
+            font-size: 11px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-weight: 700;
+        }
+
+        .meta-value {
+            font-size: 13px;
+            line-height: 1.45;
+            word-break: break-word;
+        }
+
+        .command-box {
+            min-height: 82px;
+            padding: 12px;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            background: rgba(8, 17, 31, 0.86);
+            color: #d2e7ff;
+            font-family: Consolas, "Courier New", monospace;
+            font-size: 12px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+        }
+
+        .empty,
+        .message {
+            padding: 16px;
+            border-radius: 6px;
+            border: 1px solid var(--line);
+            background: rgba(255, 255, 255, 0.03);
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .message.success {
+            border-color: rgba(34, 197, 94, 0.24);
+            background: rgba(34, 197, 94, 0.10);
+            color: #bbf7d0;
+        }
+
+        .message.error {
+            border-color: rgba(248, 113, 113, 0.28);
+            background: rgba(248, 113, 113, 0.12);
+            color: #fecaca;
+        }
+
+        .message.warning {
+            border-color: rgba(245, 158, 11, 0.24);
+            background: rgba(245, 158, 11, 0.12);
+            color: #fde68a;
+        }
+
+        .hidden { display: none !important; }
+
+        .muted-list {
+            display: grid;
+            gap: 6px;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .split-actions {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+        }
+
+        @media (max-width: 1120px) {
+            .grid-two,
+            .detail-grid,
+            .queue-toolbar,
+            .form-grid,
+            .metric-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .pane {
+                border-right: 0;
+                border-bottom: 1px solid var(--line);
+            }
+
+            .pane:last-child {
+                border-bottom: 0;
+            }
+
+            .metric {
+                border-right: 0;
+                border-bottom: 1px solid var(--line);
+            }
+
+            .metric:last-child {
+                border-bottom: 0;
+            }
+
+            .field.span-2 {
+                grid-column: span 1;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="shell">
+        <section class="band">
+            <div class="hero">
+                <div class="hero-top">
+                    <div class="band-title">
+                        <span class="eyebrow">Platform Operations</span>
+                        <h1>Tenant Data Imports</h1>
+                        <p class="subtle">Legacy workbook intake, queue tracking, and import handoff for any tenant.</p>
+                    </div>
+                    <div class="hero-actions">
+                        <a class="ghost-button" href="/platform">Back to Platform</a>
+                    </div>
+                </div>
+                <div class="chip-row">
+                    <span class="chip">Public schema queue</span>
+                    <span class="chip">Workbook bundle attachments</span>
+                    <span class="chip">Reusable command handoff</span>
+                </div>
+            </div>
+            <div class="metric-grid">
+                <div class="metric">
+                    <span class="metric-label">Queue</span>
+                    <span class="metric-value" id="metric-total">0</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Ready</span>
+                    <span class="metric-value" id="metric-ready">0</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Processing</span>
+                    <span class="metric-value" id="metric-processing">0</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Completed</span>
+                    <span class="metric-value" id="metric-completed">0</span>
+                </div>
+            </div>
+        </section>
+
+        <div id="auth-message" class="message warning hidden" style="margin-top: 18px;"></div>
+        <div id="flash-message" class="message hidden" style="margin-top: 18px;"></div>
+
+        <section class="band">
+            <div class="band-header">
+                <div class="band-title">
+                    <span class="eyebrow">Intake</span>
+                    <h2>New Request</h2>
+                </div>
+                <div class="pill"><strong id="tenant-count">0</strong> tenants available</div>
+            </div>
+            <div class="grid-two">
+                <div class="pane">
+                    <form id="compose-form" class="stack">
+                        <div class="form-grid">
+                            <div class="field">
+                                <label for="tenant-search">Tenant Search</label>
+                                <input id="tenant-search" type="text" placeholder="Find tenant by school name or schema">
+                            </div>
+                            <div class="field">
+                                <label for="tenant-select">Tenant</label>
+                                <select id="tenant-select" required></select>
+                            </div>
+                            <div class="field">
+                                <label for="profile-select">Import Profile</label>
+                                <select id="profile-select">
+                                    <option value="LEGACY_WORKBOOK_BUNDLE">Legacy workbook bundle</option>
+                                    <option value="MANUAL_ARCHIVE">Manual archive</option>
+                                </select>
+                            </div>
+                            <div class="field">
+                                <label for="school-name-override">School Name Override</label>
+                                <input id="school-name-override" type="text" placeholder="Optional tenant profile name">
+                            </div>
+                            <div class="field">
+                                <label for="source-system">Source System</label>
+                                <input id="source-system" type="text" placeholder="Legacy desktop finance, SIS export, workbook set">
+                            </div>
+                            <div class="field">
+                                <label for="source-reference">Batch / Reference</label>
+                                <input id="source-reference" type="text" placeholder="April 2026 handoff, archive label, source batch">
+                            </div>
+                            <div class="field span-2">
+                                <label for="compose-notes">Notes</label>
+                                <textarea id="compose-notes" placeholder="Scope, assumptions, special handling, or audit notes"></textarea>
+                            </div>
+                            <div class="field span-2">
+                                <label>Archive Raw Files Into Tenant Media</label>
+                                <div class="toggle">
+                                    <input id="archive-raw" type="checkbox" checked>
+                                    <span class="subtle">Store the uploaded source bundle in tenant media during execution.</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="field">
+                            <label>Attachments</label>
+                            <div id="dropzone" class="dropzone" tabindex="0">
+                                <div class="split-actions">
+                                    <div>
+                                        <h3>Workbook bundle</h3>
+                                        <p class="subtle">Attach every source file that belongs to this import packet.</p>
+                                    </div>
+                                    <div class="actions">
+                                        <input id="compose-files" type="file" class="hidden" multiple>
+                                        <button type="button" class="ghost-button" id="pick-compose-files">Choose files</button>
+                                        <button type="button" class="ghost-button" id="clear-compose-files">Clear list</button>
+                                    </div>
+                                </div>
+                                <div id="compose-file-list" class="file-list">
+                                    <div class="empty">No files selected yet.</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="actions">
+                            <button type="submit" class="primary-button" id="create-request-button">Create import request</button>
+                        </div>
+                    </form>
+                </div>
+
+                <div class="pane">
+                    <div class="stack">
+                        <div class="band-title">
+                            <span class="eyebrow">Selection</span>
+                            <h2>Selected Request</h2>
+                            <p class="subtle">Status, attachments, and execution handoff stay with the same queue item.</p>
+                        </div>
+
+                        <div id="selected-request-empty" class="empty">Select a queue row to review the import bundle.</div>
+
+                        <div id="selected-request-panel" class="stack hidden">
+                            <div class="detail-grid" id="selected-request-meta"></div>
+
+                            <div class="stack">
+                                <div class="split-actions">
+                                    <h3>Command Handoff</h3>
+                                    <button type="button" class="ghost-button" id="copy-command-button">Copy command</button>
+                                </div>
+                                <div id="command-preview" class="command-box"></div>
+                            </div>
+
+                            <form id="status-form" class="stack">
+                                <div class="form-grid">
+                                    <div class="field">
+                                        <label for="status-select">Status</label>
+                                        <select id="status-select">
+                                            <option value="DRAFT">Draft</option>
+                                            <option value="READY">Ready</option>
+                                            <option value="PROCESSING">Processing</option>
+                                            <option value="COMPLETED">Completed</option>
+                                            <option value="FAILED">Failed</option>
+                                            <option value="CANCELLED">Cancelled</option>
+                                        </select>
+                                    </div>
+                                    <div class="field">
+                                        <label for="status-school-name">School Name Override</label>
+                                        <input id="status-school-name" type="text" placeholder="Optional tenant profile name">
+                                    </div>
+                                    <div class="field span-2">
+                                        <label for="status-notes">Notes</label>
+                                        <textarea id="status-notes" placeholder="Operator notes"></textarea>
+                                    </div>
+                                </div>
+                                <div class="actions">
+                                    <button type="submit" class="warning-button">Save request updates</button>
+                                </div>
+                            </form>
+
+                            <div class="stack">
+                                <div class="split-actions">
+                                    <h3>Attached Files</h3>
+                                    <div class="actions">
+                                        <input id="attach-files-input" type="file" class="hidden" multiple>
+                                        <button type="button" class="ghost-button" id="pick-attach-files">Attach more files</button>
+                                    </div>
+                                </div>
+                                <div id="attached-files" class="file-list"></div>
+                                <div id="missing-files" class="muted-list"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="band">
+            <div class="band-header">
+                <div class="band-title">
+                    <span class="eyebrow">Queue</span>
+                    <h2>Import Requests</h2>
+                </div>
+                <div class="chip-row">
+                    <span class="pill"><strong id="queue-visible-count">0</strong> visible</span>
+                </div>
+            </div>
+            <div class="queue-toolbar">
+                <input id="queue-search" type="text" placeholder="Search tenant, schema, source system, or notes">
+                <select id="queue-status-filter">
+                    <option value="">All statuses</option>
+                    <option value="DRAFT">Draft</option>
+                    <option value="READY">Ready</option>
+                    <option value="PROCESSING">Processing</option>
+                    <option value="COMPLETED">Completed</option>
+                    <option value="FAILED">Failed</option>
+                    <option value="CANCELLED">Cancelled</option>
+                </select>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Tenant</th>
+                            <th>Profile</th>
+                            <th>Status</th>
+                            <th>Files</th>
+                            <th>Source</th>
+                            <th>Requested By</th>
+                            <th>Updated</th>
+                        </tr>
+                    </thead>
+                    <tbody id="queue-body">
+                        <tr>
+                            <td colspan="7" class="empty">Loading queue...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <script>
+        const state = {
+            auth: null,
+            tenants: [],
+            requests: [],
+            selectedRequestId: null,
+            composeFiles: [],
+            filteredTenantText: "",
+            queueSearch: "",
+            queueStatus: "",
+        };
+
+        const platformRoles = new Set(["OWNER", "ADMIN", "SUPPORT", "AUDITOR"]);
+
+        function $(id) {
+            return document.getElementById(id);
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? "")
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#39;");
+        }
+
+        function formatDate(value) {
+            if (!value) return "—";
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) return String(value);
+            return new Intl.DateTimeFormat("en-KE", {
+                year: "numeric",
+                month: "short",
+                day: "2-digit",
+                hour: "2-digit",
+                minute: "2-digit",
+            }).format(date);
+        }
+
+        function formatBytes(bytes) {
+            const value = Number(bytes || 0);
+            if (!Number.isFinite(value) || value <= 0) return "0 B";
+            const units = ["B", "KB", "MB", "GB"];
+            let unit = 0;
+            let size = value;
+            while (size >= 1024 && unit < units.length - 1) {
+                size /= 1024;
+                unit += 1;
+            }
+            return `${size.toFixed(size >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
+        }
+
+        function showFlash(type, message) {
+            const node = $("flash-message");
+            if (!message) {
+                node.className = "message hidden";
+                node.textContent = "";
+                return;
+            }
+            node.className = `message ${type}`;
+            node.textContent = message;
+        }
+
+        function showAuthMessage(message) {
+            const node = $("auth-message");
+            if (!message) {
+                node.className = "message warning hidden";
+                node.textContent = "";
+                return;
+            }
+            node.className = "message warning";
+            node.innerHTML = `${escapeHtml(message)} <a href="/" style="text-decoration: underline;">Open platform login</a>`;
+        }
+
+        function looksLikeJwt(value) {
+            return typeof value === "string" && value.split(".").length === 3;
+        }
+
+        function tryParseJson(value) {
+            if (typeof value !== "string") return null;
+            const trimmed = value.trim();
+            if (!trimmed || (trimmed[0] !== "{" && trimmed[0] !== "[")) return null;
+            try {
+                return JSON.parse(trimmed);
+            } catch (error) {
+                return null;
+            }
+        }
+
+        function collectAuthCandidateFromObject(root, storeName, storageKey) {
+            const seen = new WeakSet();
+            const stack = [root];
+            const candidates = [];
+            while (stack.length) {
+                const current = stack.pop();
+                if (!current || typeof current !== "object") continue;
+                if (seen.has(current)) continue;
+                seen.add(current);
+
+                if (looksLikeJwt(current.accessToken)) {
+                    candidates.push({
+                        accessToken: current.accessToken,
+                        refreshToken: typeof current.refreshToken === "string" ? current.refreshToken : "",
+                        tenantId: typeof current.tenantId === "string" ? current.tenantId : "",
+                        authMode: typeof current.authMode === "string" ? current.authMode : "",
+                        role: typeof current.role === "string" ? current.role : "",
+                        storeName,
+                        storageKey,
+                    });
+                }
+
+                for (const value of Object.values(current)) {
+                    if (!value) continue;
+                    if (typeof value === "object") {
+                        stack.push(value);
+                        continue;
+                    }
+                    const parsed = tryParseJson(value);
+                    if (parsed) {
+                        stack.push(parsed);
+                    }
+                }
+            }
+            return candidates;
+        }
+
+        function scoreCandidate(candidate) {
+            let score = 0;
+            if (looksLikeJwt(candidate.accessToken)) score += 4;
+            if (looksLikeJwt(candidate.refreshToken)) score += 2;
+            if (candidate.authMode === "platform") score += 3;
+            if (candidate.tenantId === "public") score += 3;
+            if (platformRoles.has(candidate.role)) score += 2;
+            return score;
+        }
+
+        function discoverAuthState() {
+            const allCandidates = [];
+            [window.localStorage, window.sessionStorage].forEach((storage, index) => {
+                const storeName = index === 0 ? "localStorage" : "sessionStorage";
+                for (let i = 0; i < storage.length; i += 1) {
+                    const key = storage.key(i);
+                    const raw = storage.getItem(key);
+                    const parsed = tryParseJson(raw);
+                    if (!parsed) continue;
+                    allCandidates.push(...collectAuthCandidateFromObject(parsed, storeName, key));
+                }
+            });
+            allCandidates.sort((left, right) => scoreCandidate(right) - scoreCandidate(left));
+            return allCandidates[0] || null;
+        }
+
+        async function refreshAccessToken() {
+            if (!state.auth || !looksLikeJwt(state.auth.refreshToken)) {
+                return false;
+            }
+            const response = await fetch("/api/auth/refresh/", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ refresh: state.auth.refreshToken }),
+            });
+            if (!response.ok) {
+                return false;
+            }
+            const payload = await response.json();
+            state.auth.accessToken = payload.access || state.auth.accessToken;
+            state.auth.refreshToken = payload.refresh || state.auth.refreshToken;
+            return looksLikeJwt(state.auth.accessToken);
+        }
+
+        async function apiFetch(path, options = {}, allowRetry = true) {
+            const headers = new Headers(options.headers || {});
+            const isFormData = options.body instanceof FormData;
+            if (!isFormData && !headers.has("Content-Type")) {
+                headers.set("Content-Type", "application/json");
+            }
+            if (state.auth?.accessToken) {
+                headers.set("Authorization", `Bearer ${state.auth.accessToken}`);
+            }
+
+            const response = await fetch(path, { ...options, headers });
+            if (response.status === 401 && allowRetry && await refreshAccessToken()) {
+                return apiFetch(path, options, false);
+            }
+
+            const contentType = response.headers.get("content-type") || "";
+            const payload = contentType.includes("application/json")
+                ? await response.json()
+                : await response.text();
+
+            if (!response.ok) {
+                const detail = payload?.detail || payload?.error?.message || payload?.error || payload;
+                throw new Error(typeof detail === "string" ? detail : "Request failed.");
+            }
+            return payload;
+        }
+
+        function filteredTenants() {
+            const query = state.filteredTenantText.trim().toLowerCase();
+            if (!query) return state.tenants;
+            return state.tenants.filter((tenant) => {
+                const haystack = `${tenant.name} ${tenant.schema_name} ${tenant.subdomain || ""}`.toLowerCase();
+                return haystack.includes(query);
+            });
+        }
+
+        function filteredRequests() {
+            const query = state.queueSearch.trim().toLowerCase();
+            return state.requests.filter((request) => {
+                if (state.queueStatus && request.status !== state.queueStatus) {
+                    return false;
+                }
+                if (!query) return true;
+                const haystack = [
+                    request.tenant_name,
+                    request.tenant_schema_name,
+                    request.source_system,
+                    request.source_reference,
+                    request.notes,
+                ].join(" ").toLowerCase();
+                return haystack.includes(query);
+            });
+        }
+
+        function selectedRequest() {
+            return state.requests.find((request) => request.id === state.selectedRequestId) || null;
+        }
+
+        function renderMetrics() {
+            const requests = state.requests;
+            $("metric-total").textContent = String(requests.length);
+            $("metric-ready").textContent = String(requests.filter((request) => request.status === "READY").length);
+            $("metric-processing").textContent = String(requests.filter((request) => request.status === "PROCESSING").length);
+            $("metric-completed").textContent = String(requests.filter((request) => request.status === "COMPLETED").length);
+        }
+
+        function renderTenantSelect() {
+            const tenants = filteredTenants();
+            $("tenant-count").textContent = String(state.tenants.length);
+            const select = $("tenant-select");
+            const current = select.value;
+            select.innerHTML = tenants
+                .map((tenant) => `<option value="${tenant.id}">${escapeHtml(tenant.name)} (${escapeHtml(tenant.schema_name)})</option>`)
+                .join("");
+            if (current && tenants.some((tenant) => String(tenant.id) === current)) {
+                select.value = current;
+            }
+        }
+
+        function renderComposeFiles() {
+            const container = $("compose-file-list");
+            if (!state.composeFiles.length) {
+                container.innerHTML = '<div class="empty">No files selected yet.</div>';
+                return;
+            }
+            container.innerHTML = state.composeFiles.map((file, index) => `
+                <div class="file-row">
+                    <div>
+                        <strong>${escapeHtml(file.name)}</strong>
+                        <div class="subtle">${formatBytes(file.size)}</div>
+                    </div>
+                    <button type="button" class="ghost-button" data-remove-compose="${index}">Remove</button>
+                </div>
+            `).join("");
+        }
+
+        function renderQueue() {
+            const body = $("queue-body");
+            const requests = filteredRequests();
+            $("queue-visible-count").textContent = String(requests.length);
+            if (!requests.length) {
+                body.innerHTML = '<tr><td colspan="7" class="empty">No import requests match the current filters.</td></tr>';
+                return;
+            }
+            body.innerHTML = requests.map((request) => `
+                <tr data-request-id="${request.id}" class="${request.id === state.selectedRequestId ? "selected" : ""}">
+                    <td>
+                        <strong>${escapeHtml(request.tenant_name)}</strong>
+                        <div class="subtle">${escapeHtml(request.tenant_schema_name)}</div>
+                    </td>
+                    <td>${escapeHtml(request.import_profile_label)}</td>
+                    <td><span class="status-badge status-${request.status}">${escapeHtml(request.status_label)}</span></td>
+                    <td>
+                        <strong>${request.files_total}</strong>
+                        <div class="subtle">${formatBytes(request.total_size_bytes)}</div>
+                    </td>
+                    <td>
+                        <strong>${escapeHtml(request.source_system || "—")}</strong>
+                        <div class="subtle">${escapeHtml(request.source_reference || "")}</div>
+                    </td>
+                    <td>${escapeHtml(request.requested_by_username || "—")}</td>
+                    <td>${escapeHtml(formatDate(request.updated_at))}</td>
+                </tr>
+            `).join("");
+        }
+
+        function renderSelectedRequest() {
+            const request = selectedRequest();
+            const empty = $("selected-request-empty");
+            const panel = $("selected-request-panel");
+            if (!request) {
+                empty.classList.remove("hidden");
+                panel.classList.add("hidden");
+                return;
+            }
+            empty.classList.add("hidden");
+            panel.classList.remove("hidden");
+
+            const meta = [
+                ["Tenant", `${request.tenant_name} (${request.tenant_schema_name})`],
+                ["Profile", request.import_profile_label],
+                ["Status", `<span class="status-badge status-${request.status}">${escapeHtml(request.status_label)}</span>`],
+                ["Requested By", request.requested_by_username || "—"],
+                ["Source System", request.source_system || "—"],
+                ["Batch / Reference", request.source_reference || "—"],
+                ["Processed At", formatDate(request.processed_at)],
+                ["Last Error", request.last_error || "—"],
+            ];
+            $("selected-request-meta").innerHTML = meta.map(([label, value]) => `
+                <div class="meta">
+                    <div class="meta-label">${escapeHtml(label)}</div>
+                    <div class="meta-value">${value}</div>
+                </div>
+            `).join("");
+
+            $("status-select").value = request.status;
+            $("status-school-name").value = request.school_name_override || "";
+            $("status-notes").value = request.notes || "";
+
+            $("command-preview").textContent = request.command_preview || "This request is not automation-ready yet.";
+
+            const attached = $("attached-files");
+            if (!request.files.length) {
+                attached.innerHTML = '<div class="empty">No files attached.</div>';
+            } else {
+                attached.innerHTML = request.files.map((file) => `
+                    <div class="file-row">
+                        <div>
+                            <strong>${escapeHtml(file.original_name)}</strong>
+                            <div class="subtle">${formatBytes(file.size_bytes)}${file.download_url ? ` · <a href="${escapeHtml(file.download_url)}" target="_blank" rel="noreferrer">Open</a>` : ""}</div>
+                        </div>
+                        <div class="subtle">${escapeHtml(formatDate(file.uploaded_at))}</div>
+                    </div>
+                `).join("");
+            }
+
+            const missing = $("missing-files");
+            if (!request.missing_required_files.length) {
+                missing.innerHTML = request.automation_ready
+                    ? '<div class="message success">Automation-ready bundle.</div>'
+                    : '<div class="message">Manual archive profile. No required file map enforced.</div>';
+            } else {
+                missing.innerHTML = `
+                    <div class="message warning">Missing required files: ${request.missing_required_files.map(escapeHtml).join(", ")}</div>
+                `;
+            }
+        }
+
+        async function loadData(selectNewest = false) {
+            const [tenants, requests] = await Promise.all([
+                apiFetch("/api/platform/tenants/"),
+                apiFetch("/api/platform/data-import-requests/"),
+            ]);
+            state.tenants = Array.isArray(tenants) ? tenants : (tenants.results || []);
+            state.requests = Array.isArray(requests) ? requests : (requests.results || []);
+            if (selectNewest || (!selectedRequest() && state.requests.length)) {
+                state.selectedRequestId = state.requests[0].id;
+            }
+            renderAll();
+        }
+
+        function renderAll() {
+            renderMetrics();
+            renderTenantSelect();
+            renderComposeFiles();
+            renderQueue();
+            renderSelectedRequest();
+        }
+
+        async function createImportRequest(event) {
+            event.preventDefault();
+            showFlash("", "");
+
+            const payload = new FormData();
+            payload.append("tenant", $("tenant-select").value);
+            payload.append("import_profile", $("profile-select").value);
+            payload.append("source_system", $("source-system").value.trim());
+            payload.append("source_reference", $("source-reference").value.trim());
+            payload.append("school_name_override", $("school-name-override").value.trim());
+            payload.append("notes", $("compose-notes").value.trim());
+            payload.append("archive_raw_to_media", $("archive-raw").checked ? "true" : "false");
+            state.composeFiles.forEach((file) => payload.append("files", file));
+
+            const button = $("create-request-button");
+            button.disabled = true;
+            button.textContent = "Creating...";
+            try {
+                const created = await apiFetch("/api/platform/data-import-requests/", {
+                    method: "POST",
+                    body: payload,
+                });
+                state.composeFiles = [];
+                $("compose-form").reset();
+                $("archive-raw").checked = true;
+                state.filteredTenantText = "";
+                state.selectedRequestId = created.id;
+                await loadData();
+                showFlash("success", `Import request #${created.id} created.`);
+            } catch (error) {
+                showFlash("error", error.message || "Unable to create import request.");
+            } finally {
+                button.disabled = false;
+                button.textContent = "Create import request";
+            }
+        }
+
+        async function saveRequestUpdates(event) {
+            event.preventDefault();
+            const request = selectedRequest();
+            if (!request) return;
+            showFlash("", "");
+            try {
+                const updated = await apiFetch(`/api/platform/data-import-requests/${request.id}/`, {
+                    method: "PATCH",
+                    body: JSON.stringify({
+                        status: $("status-select").value,
+                        school_name_override: $("status-school-name").value.trim(),
+                        notes: $("status-notes").value.trim(),
+                    }),
+                });
+                state.requests = state.requests.map((item) => item.id === updated.id ? updated : item);
+                renderAll();
+                showFlash("success", `Request #${updated.id} updated.`);
+            } catch (error) {
+                showFlash("error", error.message || "Unable to save request updates.");
+            }
+        }
+
+        async function attachFilesToRequest(files) {
+            const request = selectedRequest();
+            if (!request || !files.length) return;
+            showFlash("", "");
+            const payload = new FormData();
+            files.forEach((file) => payload.append("files", file));
+            try {
+                const updated = await apiFetch(`/api/platform/data-import-requests/${request.id}/attach-files/`, {
+                    method: "POST",
+                    body: payload,
+                });
+                state.requests = state.requests.map((item) => item.id === updated.id ? updated : item);
+                renderAll();
+                showFlash("success", `Attached ${files.length} file${files.length === 1 ? "" : "s"} to request #${updated.id}.`);
+            } catch (error) {
+                showFlash("error", error.message || "Unable to attach files.");
+            }
+        }
+
+        function bindEvents() {
+            $("compose-form").addEventListener("submit", createImportRequest);
+            $("status-form").addEventListener("submit", saveRequestUpdates);
+
+            $("tenant-search").addEventListener("input", (event) => {
+                state.filteredTenantText = event.target.value;
+                renderTenantSelect();
+            });
+
+            $("queue-search").addEventListener("input", (event) => {
+                state.queueSearch = event.target.value;
+                renderQueue();
+            });
+
+            $("queue-status-filter").addEventListener("change", (event) => {
+                state.queueStatus = event.target.value;
+                renderQueue();
+            });
+
+            $("pick-compose-files").addEventListener("click", () => $("compose-files").click());
+            $("clear-compose-files").addEventListener("click", () => {
+                state.composeFiles = [];
+                $("compose-files").value = "";
+                renderComposeFiles();
+            });
+            $("compose-files").addEventListener("change", (event) => {
+                state.composeFiles = Array.from(event.target.files || []);
+                renderComposeFiles();
+            });
+
+            $("compose-file-list").addEventListener("click", (event) => {
+                const index = event.target.getAttribute("data-remove-compose");
+                if (index === null) return;
+                state.composeFiles.splice(Number(index), 1);
+                renderComposeFiles();
+            });
+
+            $("queue-body").addEventListener("click", (event) => {
+                const row = event.target.closest("tr[data-request-id]");
+                if (!row) return;
+                state.selectedRequestId = Number(row.getAttribute("data-request-id"));
+                renderQueue();
+                renderSelectedRequest();
+            });
+
+            $("pick-attach-files").addEventListener("click", () => $("attach-files-input").click());
+            $("attach-files-input").addEventListener("change", async (event) => {
+                const files = Array.from(event.target.files || []);
+                event.target.value = "";
+                await attachFilesToRequest(files);
+            });
+
+            $("copy-command-button").addEventListener("click", async () => {
+                const text = $("command-preview").textContent.trim();
+                if (!text || text === "This request is not automation-ready yet.") {
+                    showFlash("warning", "No runnable command is available for the selected request yet.");
+                    return;
+                }
+                try {
+                    await navigator.clipboard.writeText(text);
+                    showFlash("success", "Command copied.");
+                } catch (error) {
+                    showFlash("warning", "Clipboard access is not available in this browser session.");
+                }
+            });
+
+            const dropzone = $("dropzone");
+            ["dragenter", "dragover"].forEach((eventName) => {
+                dropzone.addEventListener(eventName, (event) => {
+                    event.preventDefault();
+                    dropzone.classList.add("active");
+                });
+            });
+            ["dragleave", "drop"].forEach((eventName) => {
+                dropzone.addEventListener(eventName, (event) => {
+                    event.preventDefault();
+                    dropzone.classList.remove("active");
+                });
+            });
+            dropzone.addEventListener("drop", (event) => {
+                const files = Array.from(event.dataTransfer?.files || []);
+                if (files.length) {
+                    state.composeFiles = files;
+                    renderComposeFiles();
+                }
+            });
+        }
+
+        async function init() {
+            bindEvents();
+            state.auth = discoverAuthState();
+            if (!state.auth) {
+                showAuthMessage("Platform authentication was not found in browser storage.");
+                renderAll();
+                return;
+            }
+            showAuthMessage("");
+            try {
+                await loadData(true);
+            } catch (error) {
+                showAuthMessage(error.message || "Unable to load the platform import queue.");
+            }
+        }
+
+        init();
+    </script>
+</body>
+</html>

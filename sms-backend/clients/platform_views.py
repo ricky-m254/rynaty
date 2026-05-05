@@ -6,6 +6,7 @@ import hashlib
 import logging
 import json
 import subprocess
+from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from datetime import timedelta
@@ -17,12 +18,15 @@ from django.db import transaction
 from django.db.models import Count, Max, Q, Sum
 from django.db.models.functions import TruncMonth
 from django.http import JsonResponse
+from django.template.response import TemplateResponse
 from django.utils import timezone
 from django.utils.text import slugify
+from django.views import View
 from django_tenants.utils import schema_context, get_public_schema_name
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -45,6 +49,8 @@ from clients.models import (
     PlatformNotificationDispatch,
     PlatformActionLog,
     PlatformSetting,
+    TenantDataImportFile,
+    TenantDataImportRequest,
     RestoreJob,
     SecurityIncident,
     SubscriptionInvoice,
@@ -79,6 +85,9 @@ from clients.serializers import (
     PlatformActionLogSerializer,
     RestoreJobSerializer,
     SecurityIncidentSerializer,
+    TenantDataImportRequestCreateSerializer,
+    TenantDataImportRequestSerializer,
+    TenantDataImportRequestUpdateSerializer,
     SubscriptionInvoiceSerializer,
     SubscriptionPaymentCreateSerializer,
     SubscriptionPaymentSerializer,
@@ -155,6 +164,20 @@ PLATFORM_INTEGRATION_CATALOG = [
         "setting_key": "integrations.sendgrid",
     },
 ]
+
+DATA_IMPORT_PROFILE_SPECS = {
+    TenantDataImportRequest.PROFILE_LEGACY_WORKBOOK_BUNDLE: {
+        "required_files": [
+            "Transact 2023_Backup.xlsx",
+            "Transact 2026_Backup.xlsx",
+        ],
+        "command_name": "import_olom_legacy_data",
+    },
+    TenantDataImportRequest.PROFILE_MANUAL_ARCHIVE: {
+        "required_files": [],
+        "command_name": "",
+    },
+}
 
 
 def _ticket_number() -> str:
@@ -240,6 +263,72 @@ def _platform_audit(
         getattr(tenant, "id", None),
         details or "",
     )
+
+
+def _data_import_profile_spec(profile: str) -> dict:
+    return DATA_IMPORT_PROFILE_SPECS.get(profile, {"required_files": [], "command_name": ""})
+
+
+def _extract_uploaded_files(request) -> list:
+    uploads = []
+    uploads.extend(request.FILES.getlist("files"))
+    uploads.extend(request.FILES.getlist("file"))
+    single_file = request.FILES.get("file")
+    if single_file and single_file not in uploads:
+        uploads.append(single_file)
+    return uploads
+
+
+def _store_tenant_data_import_files(
+    *,
+    import_request: TenantDataImportRequest,
+    uploads: list,
+    actor,
+) -> list[TenantDataImportFile]:
+    created_rows: list[TenantDataImportFile] = []
+    seen_names: set[str] = set(import_request.files.values_list("original_name", flat=True))
+    duplicate_names: list[str] = []
+    for upload in uploads:
+        original_name = Path(getattr(upload, "name", "") or "upload.bin").name[:255]
+        if original_name in seen_names:
+            duplicate_names.append(original_name)
+            continue
+        digest = hashlib.sha256()
+        for chunk in upload.chunks():
+            digest.update(chunk)
+        if hasattr(upload, "seek"):
+            upload.seek(0)
+        row = TenantDataImportFile.objects.create(
+            import_request=import_request,
+            file=upload,
+            original_name=original_name,
+            content_type=(getattr(upload, "content_type", "") or "")[:120],
+            size_bytes=int(getattr(upload, "size", 0) or 0),
+            checksum_sha256=digest.hexdigest(),
+            uploaded_by=actor if getattr(actor, "is_authenticated", False) else None,
+        )
+        created_rows.append(row)
+        seen_names.add(original_name)
+    if duplicate_names:
+        raise ValidationError(
+            {
+                "files": [
+                    f"Duplicate file name in request bundle: {name}" for name in sorted(set(duplicate_names))
+                ]
+            }
+        )
+    return created_rows
+
+
+class PlatformDataImportConsoleView(View):
+    def get(self, request, *args, **kwargs):
+        return TemplateResponse(
+            request,
+            "clients/platform_data_imports.html",
+            {
+                "page_title": "Tenant Data Imports",
+            },
+        )
 
 
 def _clean_identifier(value: str, *, max_length: int = 50) -> str:
@@ -1497,6 +1586,189 @@ class PlatformTenantViewSet(viewsets.ModelViewSet):
             },
             status=status.HTTP_200_OK,
         )
+
+
+class PlatformTenantDataImportRequestViewSet(
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.CreateModelMixin,
+    mixins.UpdateModelMixin,
+    viewsets.GenericViewSet,
+):
+    queryset = (
+        TenantDataImportRequest.objects.select_related("tenant", "requested_by")
+        .prefetch_related("files", "files__uploaded_by")
+        .order_by("-created_at", "-id")
+    )
+    permission_classes = [IsAuthenticated, IsGlobalSuperAdmin]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+    http_method_names = ["get", "post", "patch", "head", "options"]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        tenant_id = (self.request.query_params.get("tenant") or "").strip()
+        status_filter = (self.request.query_params.get("status") or "").strip().upper()
+        search = (self.request.query_params.get("search") or "").strip()
+        if tenant_id.isdigit():
+            queryset = queryset.filter(tenant_id=int(tenant_id))
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+        if search:
+            queryset = queryset.filter(
+                Q(tenant__name__icontains=search)
+                | Q(tenant__schema_name__icontains=search)
+                | Q(source_system__icontains=search)
+                | Q(source_reference__icontains=search)
+                | Q(notes__icontains=search)
+            )
+        return queryset
+
+    def get_serializer_class(self):
+        if self.action == "create":
+            return TenantDataImportRequestCreateSerializer
+        if self.action in {"partial_update", "update"}:
+            return TenantDataImportRequestUpdateSerializer
+        return TenantDataImportRequestSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        uploads = _extract_uploaded_files(request)
+
+        with transaction.atomic():
+            import_request = TenantDataImportRequest.objects.create(
+                tenant=serializer.validated_data["tenant"],
+                import_profile=serializer.validated_data.get(
+                    "import_profile",
+                    TenantDataImportRequest.PROFILE_LEGACY_WORKBOOK_BUNDLE,
+                ),
+                status=(
+                    TenantDataImportRequest.STATUS_READY
+                    if uploads
+                    else TenantDataImportRequest.STATUS_DRAFT
+                ),
+                source_system=serializer.validated_data.get("source_system", ""),
+                source_reference=serializer.validated_data.get("source_reference", ""),
+                school_name_override=serializer.validated_data.get("school_name_override", ""),
+                notes=serializer.validated_data.get("notes", ""),
+                archive_raw_to_media=serializer.validated_data.get("archive_raw_to_media", True),
+                requested_by=request.user if getattr(request.user, "is_authenticated", False) else None,
+            )
+            created_files = _store_tenant_data_import_files(
+                import_request=import_request,
+                uploads=uploads,
+                actor=request.user,
+            )
+
+        _platform_audit(
+            user=request.user,
+            action="CREATE",
+            model_name="TenantDataImportRequest",
+            object_id=import_request.id,
+            tenant=import_request.tenant,
+            request=request,
+            details=(
+                f"profile={import_request.import_profile} "
+                f"status={import_request.status} files={len(created_files)}"
+            ),
+            metadata={
+                "source_system": import_request.source_system,
+                "source_reference": import_request.source_reference,
+                "file_names": [row.original_name for row in created_files],
+            },
+        )
+        output = TenantDataImportRequestSerializer(import_request, context={"request": request}).data
+        return Response(output, status=status.HTTP_201_CREATED)
+
+    def partial_update(self, request, *args, **kwargs):
+        import_request = self.get_object()
+        serializer = self.get_serializer(data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+
+        updates = []
+        for field in (
+            "import_profile",
+            "source_system",
+            "source_reference",
+            "school_name_override",
+            "notes",
+            "archive_raw_to_media",
+        ):
+            if field in serializer.validated_data:
+                value = serializer.validated_data[field]
+                if getattr(import_request, field) != value:
+                    setattr(import_request, field, value)
+                    updates.append(field)
+
+        if "status" in serializer.validated_data:
+            next_status = serializer.validated_data["status"]
+            if import_request.status != next_status:
+                import_request.status = next_status
+                updates.append("status")
+            if next_status in {
+                TenantDataImportRequest.STATUS_COMPLETED,
+                TenantDataImportRequest.STATUS_FAILED,
+                TenantDataImportRequest.STATUS_CANCELLED,
+            }:
+                import_request.processed_at = timezone.now()
+            else:
+                import_request.processed_at = None
+            updates.append("processed_at")
+
+        if updates:
+            import_request.save(update_fields=sorted(set(updates + ["updated_at"])))
+            _platform_audit(
+                user=request.user,
+                action="UPDATE",
+                model_name="TenantDataImportRequest",
+                object_id=import_request.id,
+                tenant=import_request.tenant,
+                request=request,
+                details=f"updated fields={','.join(sorted(set(updates)))}",
+                metadata={field: serializer.validated_data.get(field) for field in serializer.validated_data},
+            )
+
+        output = TenantDataImportRequestSerializer(import_request, context={"request": request}).data
+        return Response(output)
+
+    @action(detail=True, methods=["post"], url_path="attach-files")
+    def attach_files(self, request, pk=None):
+        import_request = self.get_object()
+        if import_request.status in {
+            TenantDataImportRequest.STATUS_COMPLETED,
+            TenantDataImportRequest.STATUS_CANCELLED,
+        }:
+            return Response(
+                {"detail": "This import request is closed for new attachments."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        uploads = _extract_uploaded_files(request)
+        if not uploads:
+            return Response({"detail": "At least one file is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            created_files = _store_tenant_data_import_files(
+                import_request=import_request,
+                uploads=uploads,
+                actor=request.user,
+            )
+            if created_files and import_request.status == TenantDataImportRequest.STATUS_DRAFT:
+                import_request.status = TenantDataImportRequest.STATUS_READY
+                import_request.save(update_fields=["status", "updated_at"])
+
+        _platform_audit(
+            user=request.user,
+            action="ATTACH",
+            model_name="TenantDataImportRequest",
+            object_id=import_request.id,
+            tenant=import_request.tenant,
+            request=request,
+            details=f"attached files={len(created_files)}",
+            metadata={"file_names": [row.original_name for row in created_files]},
+        )
+        output = TenantDataImportRequestSerializer(import_request, context={"request": request}).data
+        return Response(output, status=status.HTTP_200_OK)
 
 
 class PlatformTenantSubscriptionViewSet(

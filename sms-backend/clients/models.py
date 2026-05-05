@@ -1,6 +1,10 @@
+from pathlib import Path
+
 from django.db import models
 from django.contrib.auth import get_user_model
 from django_tenants.models import TenantMixin, DomainMixin
+from django.utils import timezone
+from django.utils.text import slugify
 
 User = get_user_model()
 
@@ -446,6 +450,115 @@ class PlatformActionLog(models.Model):
 
     def __str__(self):
         return f"{self.action} {self.model_name}#{self.object_id}"
+
+
+def _platform_import_attachment_path(instance, filename: str) -> str:
+    tenant_hint = slugify(getattr(instance.import_request.tenant, "schema_name", "") or "tenant") or "tenant"
+    original_name = Path(filename or "upload.bin").name
+    stem = slugify(Path(original_name).stem) or "file"
+    suffix = Path(original_name).suffix[:20]
+    timestamp = timezone.now().strftime("%Y%m%d%H%M%S")
+    return (
+        f"platform/tenant-imports/{tenant_hint}/request-{instance.import_request_id}/"
+        f"{timestamp}-{stem}{suffix}"
+    )
+
+
+class TenantDataImportRequest(models.Model):
+    PROFILE_LEGACY_WORKBOOK_BUNDLE = "LEGACY_WORKBOOK_BUNDLE"
+    PROFILE_MANUAL_ARCHIVE = "MANUAL_ARCHIVE"
+    PROFILE_CHOICES = [
+        (PROFILE_LEGACY_WORKBOOK_BUNDLE, "Legacy workbook bundle"),
+        (PROFILE_MANUAL_ARCHIVE, "Manual archive"),
+    ]
+
+    STATUS_DRAFT = "DRAFT"
+    STATUS_READY = "READY"
+    STATUS_PROCESSING = "PROCESSING"
+    STATUS_COMPLETED = "COMPLETED"
+    STATUS_FAILED = "FAILED"
+    STATUS_CANCELLED = "CANCELLED"
+    STATUS_CHOICES = [
+        (STATUS_DRAFT, "Draft"),
+        (STATUS_READY, "Ready"),
+        (STATUS_PROCESSING, "Processing"),
+        (STATUS_COMPLETED, "Completed"),
+        (STATUS_FAILED, "Failed"),
+        (STATUS_CANCELLED, "Cancelled"),
+    ]
+
+    tenant = models.ForeignKey(
+        "clients.Tenant",
+        on_delete=models.CASCADE,
+        related_name="data_import_requests",
+    )
+    import_profile = models.CharField(
+        max_length=40,
+        choices=PROFILE_CHOICES,
+        default=PROFILE_LEGACY_WORKBOOK_BUNDLE,
+    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_DRAFT)
+    source_system = models.CharField(max_length=120, blank=True)
+    source_reference = models.CharField(max_length=120, blank=True)
+    school_name_override = models.CharField(max_length=255, blank=True)
+    notes = models.TextField(blank=True)
+    archive_raw_to_media = models.BooleanField(default=True)
+    requested_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="platform_data_import_requests",
+    )
+    processed_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.TextField(blank=True)
+    result_payload = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["status"]),
+            models.Index(fields=["import_profile"]),
+            models.Index(fields=["created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.tenant.schema_name}:{self.import_profile}:{self.status}"
+
+
+class TenantDataImportFile(models.Model):
+    import_request = models.ForeignKey(
+        "clients.TenantDataImportRequest",
+        on_delete=models.CASCADE,
+        related_name="files",
+    )
+    file = models.FileField(upload_to=_platform_import_attachment_path)
+    original_name = models.CharField(max_length=255)
+    content_type = models.CharField(max_length=120, blank=True)
+    size_bytes = models.BigIntegerField(default=0)
+    checksum_sha256 = models.CharField(max_length=64, blank=True)
+    uploaded_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="platform_data_import_files",
+    )
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["uploaded_at", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["import_request", "original_name"],
+                name="clients_data_import_file_unique_name_per_request",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.import_request_id}:{self.original_name}"
 
 
 class MaintenanceWindow(models.Model):

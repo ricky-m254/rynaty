@@ -24,6 +24,8 @@ from clients.models import (
     SupportTicket,
     SupportTicketNote,
     Tenant,
+    TenantDataImportFile,
+    TenantDataImportRequest,
     TenantSubscription,
 )
 
@@ -131,6 +133,178 @@ class TenantAdminCredentialSerializer(serializers.Serializer):
     username = serializers.CharField(max_length=150, required=False, allow_blank=True)
     password = serializers.CharField(min_length=8, trim_whitespace=False)
     email = serializers.EmailField(required=False, allow_blank=True)
+
+
+class TenantDataImportFileSerializer(serializers.ModelSerializer):
+    uploaded_by_username = serializers.CharField(source="uploaded_by.username", read_only=True)
+    download_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TenantDataImportFile
+        fields = [
+            "id",
+            "original_name",
+            "content_type",
+            "size_bytes",
+            "checksum_sha256",
+            "uploaded_by",
+            "uploaded_by_username",
+            "uploaded_at",
+            "download_url",
+        ]
+        read_only_fields = fields
+
+    def get_download_url(self, obj):
+        request = self.context.get("request")
+        if not getattr(obj, "file", None):
+            return ""
+        url = obj.file.url
+        return request.build_absolute_uri(url) if request else url
+
+
+class TenantDataImportRequestSerializer(serializers.ModelSerializer):
+    tenant_name = serializers.CharField(source="tenant.name", read_only=True)
+    tenant_schema_name = serializers.CharField(source="tenant.schema_name", read_only=True)
+    requested_by_username = serializers.CharField(source="requested_by.username", read_only=True)
+    files = TenantDataImportFileSerializer(many=True, read_only=True)
+    files_total = serializers.SerializerMethodField()
+    total_size_bytes = serializers.SerializerMethodField()
+    import_profile_label = serializers.SerializerMethodField()
+    status_label = serializers.SerializerMethodField()
+    automation_ready = serializers.SerializerMethodField()
+    missing_required_files = serializers.SerializerMethodField()
+    command_preview = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TenantDataImportRequest
+        fields = [
+            "id",
+            "tenant",
+            "tenant_name",
+            "tenant_schema_name",
+            "import_profile",
+            "import_profile_label",
+            "status",
+            "status_label",
+            "source_system",
+            "source_reference",
+            "school_name_override",
+            "notes",
+            "archive_raw_to_media",
+            "requested_by",
+            "requested_by_username",
+            "processed_at",
+            "last_error",
+            "result_payload",
+            "files_total",
+            "total_size_bytes",
+            "automation_ready",
+            "missing_required_files",
+            "command_preview",
+            "files",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "tenant_name",
+            "tenant_schema_name",
+            "import_profile_label",
+            "status_label",
+            "requested_by",
+            "requested_by_username",
+            "processed_at",
+            "last_error",
+            "result_payload",
+            "files_total",
+            "total_size_bytes",
+            "automation_ready",
+            "missing_required_files",
+            "command_preview",
+            "files",
+            "created_at",
+            "updated_at",
+        ]
+
+    def _profile_spec(self, obj) -> dict:
+        specs = {
+            TenantDataImportRequest.PROFILE_LEGACY_WORKBOOK_BUNDLE: {
+                "required_files": [
+                    "Transact 2023_Backup.xlsx",
+                    "Transact 2026_Backup.xlsx",
+                ],
+                "command_preview": f"python manage.py run_platform_data_import_request --request-id {obj.id}",
+            },
+            TenantDataImportRequest.PROFILE_MANUAL_ARCHIVE: {
+                "required_files": [],
+                "command_preview": "",
+            },
+        }
+        return specs.get(obj.import_profile, {"required_files": [], "command_preview": ""})
+
+    def get_files_total(self, obj):
+        prefetched = getattr(obj, "_prefetched_objects_cache", {}).get("files")
+        return len(prefetched) if prefetched is not None else obj.files.count()
+
+    def get_total_size_bytes(self, obj):
+        prefetched = getattr(obj, "_prefetched_objects_cache", {}).get("files")
+        if prefetched is not None:
+            return sum(getattr(item, "size_bytes", 0) or 0 for item in prefetched)
+        return sum(obj.files.values_list("size_bytes", flat=True))
+
+    def get_import_profile_label(self, obj):
+        return obj.get_import_profile_display()
+
+    def get_status_label(self, obj):
+        return obj.get_status_display()
+
+    def get_missing_required_files(self, obj):
+        required = self._profile_spec(obj)["required_files"]
+        attached = {row.original_name for row in obj.files.all()}
+        return [name for name in required if name not in attached]
+
+    def get_automation_ready(self, obj):
+        spec = self._profile_spec(obj)
+        if not spec["command_preview"]:
+            return False
+        return not self.get_missing_required_files(obj)
+
+    def get_command_preview(self, obj):
+        if not self.get_automation_ready(obj):
+            return ""
+        command = self._profile_spec(obj)["command_preview"]
+        if obj.archive_raw_to_media:
+            command = f"{command} --archive-raw"
+        return command
+
+
+class TenantDataImportRequestCreateSerializer(serializers.Serializer):
+    tenant = serializers.PrimaryKeyRelatedField(queryset=Tenant.objects.order_by("name"))
+    import_profile = serializers.ChoiceField(
+        choices=TenantDataImportRequest.PROFILE_CHOICES,
+        default=TenantDataImportRequest.PROFILE_LEGACY_WORKBOOK_BUNDLE,
+    )
+    source_system = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    source_reference = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    school_name_override = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    notes = serializers.CharField(required=False, allow_blank=True)
+    archive_raw_to_media = serializers.BooleanField(required=False, default=True)
+
+
+class TenantDataImportRequestUpdateSerializer(serializers.Serializer):
+    import_profile = serializers.ChoiceField(
+        choices=TenantDataImportRequest.PROFILE_CHOICES,
+        required=False,
+    )
+    status = serializers.ChoiceField(
+        choices=TenantDataImportRequest.STATUS_CHOICES,
+        required=False,
+    )
+    source_system = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    source_reference = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    school_name_override = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    notes = serializers.CharField(required=False, allow_blank=True)
+    archive_raw_to_media = serializers.BooleanField(required=False)
 
 
 class TenantSubscriptionSerializer(serializers.ModelSerializer):

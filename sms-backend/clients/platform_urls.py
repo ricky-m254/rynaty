@@ -34,6 +34,7 @@ from clients.platform_views import (
     PlatformFraudAlertsOverviewView,
     PlatformAuditExportView,
     PlatformTenantWalletSummaryView,
+    PlatformTenantDataImportRequestViewSet,
 )
 
 router = SimpleRouter()
@@ -52,6 +53,7 @@ router.register(r"settings", PlatformSettingViewSet, basename="platform-setting"
 router.register(r"api-keys", PlatformApiKeyViewSet, basename="platform-api-key")
 router.register(r"integrations", PlatformIntegrationViewSet, basename="platform-integration")
 router.register(r"admin-users", PlatformAdminUserViewSet, basename="platform-admin-user")
+router.register(r"data-import-requests", PlatformTenantDataImportRequestViewSet, basename="platform-data-import-request")
 router.register(r"maintenance/windows", PlatformMaintenanceWindowViewSet, basename="platform-maintenance-window")
 router.register(r"deployment/releases", PlatformDeploymentReleaseViewSet, basename="platform-deployment-release")
 router.register(r"deployment/feature-flags", PlatformFeatureFlagViewSet, basename="platform-feature-flag")

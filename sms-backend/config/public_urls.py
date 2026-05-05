@@ -5,6 +5,8 @@ from django.views.static import serve as static_serve
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework_simplejwt.views import TokenRefreshView
 
+from clients.platform_views import PlatformDataImportConsoleView
+
 
 # Security note: @csrf_exempt is correct here.  This is a stateless JWT login
 # endpoint — credentials travel in the JSON request body, not in a cookie.
@@ -158,6 +160,10 @@ urlpatterns = [
 
     # 4. Platform (Super Tenant) APIs
     path("api/platform/", include("clients.platform_urls")),
+
+    # 4b. Platform operator console pages
+    path("platform/data-imports/", PlatformDataImportConsoleView.as_view(), name="platform-data-import-console"),
+    path("platform/data-imports", PlatformDataImportConsoleView.as_view()),
 
     # 5. Catch-all: serve the React SPA for any remaining public-schema route
     re_path(r"^(?!api/|admin/|static/|media/).*$", _serve_react_app),
