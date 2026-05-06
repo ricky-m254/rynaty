@@ -85,3 +85,11 @@ artifacts/cdp-*/
 artifacts/chrome-*/
 artifacts/*.log
 artifacts/*.zip
+artifacts/github_job_*
+artifacts/github_run_*
+artifacts/reports/
+artifacts/pip-temp/
+artifacts/*.runtime.json
+olom excel/
+sms-backend/media/communication/
+sms-backend/media/media_files/
